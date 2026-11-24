@@ -32,16 +32,22 @@ import type { PluginDefinitionAddress } from '@pluxel/core'
 import type { InspectedSemanticOwner } from '../rolldown/plugins/pluginSemanticsPlugin.ts'
 import type { ConfigDeclarationFact } from '../rolldown/plugins/configSourcePlugin.ts'
 import { parseStandaloneWithLang } from '../rolldown/plugins/pluginUtils.ts'
-import type { PluginControlManifest } from '@pluxel/core/internal/control-manifest'
+import type {
+	ControlCatalogEntry,
+	PluginControlManifest,
+} from '@pluxel/core/internal/control-manifest'
+import { publicInstanceMembers, readDocumentation } from './public-members'
 
 type CompilerContracts = Pick<
 	typeof import('@pluxel/core/internal/control-manifest'),
 	| 'encodeControlData'
 	| 'isControlExportName'
+	| 'renderControlCatalog'
 	| 'renderPluginDescriptors'
 	| 'verifyPluginControlMaterial'
 > & {
 	pluginDefinitionIndexKey: (typeof import('@pluxel/core'))['pluginDefinitionIndexKey']
+	formatPluginDefinitionReference: (typeof import('@pluxel/core'))['formatPluginDefinitionReference']
 	controlSha256(content: string | Uint8Array): string
 }
 
@@ -107,9 +113,11 @@ export async function generateControl(options: {
 }): Promise<PluginControlGeneration> {
 	const {
 		pluginDefinitionIndexKey,
+		formatPluginDefinitionReference,
 		controlSha256,
 		encodeControlData,
 		isControlExportName,
+		renderControlCatalog,
 		renderPluginDescriptors,
 		verifyPluginControlMaterial,
 	} = options.contracts
@@ -228,17 +236,24 @@ export async function generateControl(options: {
 				`${code}\nexport const ${helpers.get(key)!} = ${fact.schemaExpression};\ntype __pluxelControlRequireObject_${owner.className}<T extends object> = T;\nexport type __pluxelControlOutput_${owner.className} = __pluxelControlRequireObject_${owner.className}<NonNullable<(typeof ${helpers.get(key)!})['~standard']['types']>['output']>;\n`,
 			)
 		}
-		const instanceHelpers = new Set<string>()
+		const instanceExports = new Map<string, string>()
 		for (const source of definitions) {
 			const path = moduleFile(source.moduleId)
 			const key = `${path}#${source.className}`
-			if (instanceHelpers.has(key)) continue
-			instanceHelpers.add(key)
+			if (instanceExports.has(key)) continue
 			const code = captured.get(path) ?? read(path) ?? fail(`Missing Plugin source ${path}`)
-			captured.set(
-				path,
-				`${code}\nexport type __pluxelControlInstance_${source.className} = ${source.className};\n`,
+			const ast =
+				parseStandaloneWithLang(overrides.get(path) ?? originals.get(path) ?? code, path) ??
+				fail(`Cannot parse control source ${path}`)
+			const named = ast.body.some(
+				(statement) =>
+					statement.type === 'ExportNamedDeclaration' &&
+					statement.declaration?.type === 'ClassDeclaration' &&
+					statement.declaration.id?.name === source.className,
 			)
+			const name = named ? source.className : `__pluxelControlInstance_${source.className}`
+			instanceExports.set(key, name)
+			if (!named) captured.set(path, `${code}\nexport type ${name} = ${source.className};\n`)
 		}
 		const nodeTypes = dirname(createRequire(import.meta.url).resolve('@types/node/package.json'))
 		const configuredTypes = authorConfig?.options.types as readonly string[] | undefined
@@ -475,6 +490,7 @@ export async function generateControl(options: {
 					!/\.[cm]?[jt]sx?$/.test(path) &&
 					!path.startsWith(temporary + sep),
 			)
+			const configurationSources: string[] = []
 			const declarations: string[] = [
 				...ambientRoots.map(
 					(path) =>
@@ -488,6 +504,7 @@ export async function generateControl(options: {
 			]
 			const exported = new Set<string>(['PluginDescriptor', '__ControlInput', '__ControlOutput'])
 			const manifestDefinitions: PluginControlManifest['definitions'][number][] = []
+			const catalog: ControlCatalogEntry[] = []
 			const manifestServices: PluginControlManifest['services'][number][] = []
 			for (const source of definitions) {
 				options.signal?.throwIfAborted()
@@ -543,9 +560,16 @@ export async function generateControl(options: {
 				const classImport =
 					canonicalClass ??
 					`./${localDeclaration.replace(/\.d\.(ts|mts|cts)$/, (_, extension: string) => (extension === 'mts' ? '.mjs' : extension === 'cts' ? '.cjs' : '.js'))}`
-				declarations.push(
-					`import type { ${canonicalClass ? JSON.stringify(source.definition.exportName) : `__pluxelControlInstance_${source.className}`} as __${exportName}Class } from ${JSON.stringify(classImport)}\n`,
-				)
+				const className = canonicalClass
+					? source.definition.exportName
+					: instanceExports.get(`${moduleFile(source.moduleId)}#${source.className}`)!
+				let instanceType = `import(${JSON.stringify(classImport)}).${className}`
+				if (!isControlExportName(className)) {
+					instanceType = `__${exportName}Class`
+					declarations.push(
+						`import type { ${JSON.stringify(className)} as ${instanceType} } from ${JSON.stringify(classImport)}\n`,
+					)
+				}
 				const input = shape
 					? rewriteImports(shape.input, file.fileName, 'index.d.mts', true)
 					: 'never'
@@ -553,9 +577,36 @@ export async function generateControl(options: {
 					? rewriteImports(shape.output, file.fileName, 'index.d.mts', true)
 					: 'never'
 				const classDocumentation = originalDocumentation(klass)
+				const emittedFile = declarationProject.program.getSourceFile(file.fileName)
+				const emittedClass = emittedFile && findClass(emittedFile, source.className)
+				const emittedSymbol =
+					emittedClass?.name && declarationProject.checker.getSymbolAtLocation(emittedClass.name)
+				if (!emittedClass || !emittedSymbol)
+					throw new Error(
+						`Missing emitted control class ${source.className} in ${identify(file.fileName)}`,
+					)
+				const emittedInstance = declarationProject.checker.getDeclaredTypeOfSymbol(emittedSymbol)
+				const members = new Set<string>()
+				for (const member of publicInstanceMembers(
+					declarationProject,
+					emittedInstance,
+					undefined,
+					source.kind,
+				))
+					members.add(member.name)
+				const summary = readDocumentation([emittedClass], true)
+				catalog.push({
+					...(source.kind === 'service'
+						? { kind: 'service' as const, access: source.access }
+						: { kind: 'plugin' as const, hasConfig: shape !== undefined }),
+					reference: formatPluginDefinitionReference(source.definition),
+					exportName,
+					...(summary && { documentation: summary }),
+					members: [...members],
+				})
 				if (source.kind === 'service') {
 					declarations.push(
-						`${classDocumentation}export type ${exportName}Instance = __${exportName}Class\n`,
+						`${classDocumentation}export type ${exportName}Instance = ${instanceType}\n`,
 						`${classDocumentation}export declare const ${exportName}: ServiceDefinition<${exportName}Instance, ${JSON.stringify(source.access)}>\n`,
 					)
 					const instanceInputs = declarationGraph.closure([file.fileName])
@@ -583,12 +634,11 @@ export async function generateControl(options: {
 						)
 						.join('') ?? ''
 				if (shape) {
-					declarations.push(
+					configurationSources.push(
 						`/** Original configuration expressions. These are source descriptions, never executable exports.\n${configDocumentation}${shape.sources.map((item) => ` * ${item.source} ${JSON.stringify(item.path)}\n * ${escapeComment(item.expression)}\n${item.dependencies.map((dependency) => ` * ${dependency.source} #${dependency.name}\n * ${escapeComment(dependency.declaration)}\n`).join('')}`).join('')} */\n`,
-					)
-					declarations.push(
 						`export type ${exportName}ConfigDeclaration = ${readonlyLiteral(shape.sources)}\n`,
 					)
+					declarations.push(`export type { ${exportName}ConfigDeclaration } from "./config.mjs"\n`)
 				} else
 					declarations.push(
 						`/** This Plugin declares no managed configuration source. */\nexport type ${exportName}ConfigDeclaration = never\n`,
@@ -596,7 +646,7 @@ export async function generateControl(options: {
 				declarations.push(
 					`/** ${shape ? `Schema input before validation, defaults and transforms, including managed Part paths.\n * See {@link ${exportName}ConfigDeclaration} for the original expressions and dependencies.\n${configDocumentation}` : 'This Plugin declares no managed configuration input.\n'} */\nexport type ${exportName}ConfigInput = ${input}\n`,
 					`/** ${shape ? `Validated Schema output after defaults and transforms, including managed Part paths.\n * See {@link ${exportName}ConfigDeclaration} for the original expressions and dependencies.\n${configDocumentation}` : 'This Plugin declares no managed configuration output.\n'} */\nexport type ${exportName}ConfigOutput = ${output}\n`,
-					`${classDocumentation}export type ${exportName}Instance = __${exportName}Class\n`,
+					`${classDocumentation}export type ${exportName}Instance = ${instanceType}\n`,
 					`${classDocumentation}export declare const ${exportName}: PluginDescriptor<${exportName}ConfigInput, ${exportName}ConfigOutput, ${exportName}Instance>\n`,
 				)
 				const environment = {
@@ -666,6 +716,8 @@ export async function generateControl(options: {
 				)
 			}
 			materials['index.d.mts'] = declarations.join('\n')
+			if (configurationSources.length > 0) materials['config.d.mts'] = configurationSources.join('')
+			materials['catalog.json'] = renderControlCatalog(catalog)
 			materials['index.mjs'] = renderPluginDescriptors(
 				manifestDefinitions.map((entry) => ({
 					exportName: entry.exportName,

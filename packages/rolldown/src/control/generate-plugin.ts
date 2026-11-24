@@ -1,4 +1,4 @@
-import { pluginDefinitionIndexKey } from '@pluxel/core'
+import { formatPluginDefinitionReference, pluginDefinitionIndexKey } from '@pluxel/core'
 import * as contracts from './manifest'
 import { generateControl } from './generate'
 import { inspectPluginSource } from '../rolldown/plugins/pluginSemanticsPlugin'
@@ -10,7 +10,7 @@ export function generatePluginControl(
 ) {
 	return generateControl({
 		...options,
-		contracts: { ...contracts, pluginDefinitionIndexKey },
+		contracts: { ...contracts, formatPluginDefinitionReference, pluginDefinitionIndexKey },
 		pluginAnalysis: [{ inspectPluginSource }, { extractConfigDeclarationFacts }],
 	})
 }

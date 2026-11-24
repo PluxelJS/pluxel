@@ -14,13 +14,20 @@ import {
 	writeFile,
 } from 'node:fs/promises'
 import { dirname, join, resolve, sep } from 'node:path'
-import { parsePluginDefinitionAddress, parsePluginEntryAddress } from '@pluxel/core'
+import {
+	formatPluginDefinitionReference,
+	parsePluginDefinitionAddress,
+	parsePluginEntryAddress,
+} from '@pluxel/core'
 import {
 	isControlExportName,
 	encodeControlData,
+	parseControlCatalog,
 	parsePluginControlManifest,
+	renderControlCatalog,
 	renderPluginDescriptors,
 	verifyPluginControlMaterial,
+	type ControlCatalogEntry,
 	type PluginControlManifest,
 } from '@pluxel/host/internal/control-manifest'
 import {
@@ -172,7 +179,11 @@ export async function syncPluginControl(
 	if (total > MAX_BYTES) throw failure('control_material_limit', 'Control manifests exceed 64 MiB')
 	const materials = new Map<
 		string,
-		{ manifest: PluginControlManifest; files: Record<string, string> }
+		{
+			manifest: PluginControlManifest
+			files: Record<string, string>
+			catalog: ReadonlyMap<string, ControlCatalogEntry>
+		}
 	>()
 	for (const item of snapshots) {
 		const manifestText = await download(
@@ -197,7 +208,12 @@ export async function syncPluginControl(
 		for (const file of manifest.files)
 			files[file.path] = await download(transport, item.snapshot, file.path, file.size)
 		await verifyPluginControlMaterial(manifest, files)
-		materials.set(item.snapshot, { manifest, files })
+		const rows = parseControlCatalog(files['catalog.json'], manifest)
+		materials.set(item.snapshot, {
+			manifest,
+			files,
+			catalog: new Map(rows.map((row) => [`${row.kind}:${row.reference}`, row])),
+		})
 	}
 
 	const files: Record<string, string> = Object.create(null)
@@ -206,7 +222,7 @@ export async function syncPluginControl(
 		for (const [path, content] of Object.entries(material.files)) {
 			// Providers are emitted once in their canonical entry modules. Preserve the
 			// verified declaration closure and data, without unreachable runtime copies.
-			if (path === 'manifest.json' || path.endsWith('.mjs')) continue
+			if (path === 'manifest.json' || path === 'catalog.json' || path.endsWith('.mjs')) continue
 			files[`${prefix}/${path}`] = content
 		}
 	}
@@ -244,7 +260,7 @@ export async function syncPluginControl(
 		if (family(exportName).some((name) => names.has(name)))
 			throw failure('control_contract_mismatch', 'Control exports collide in one canonical entry')
 		for (const name of family(exportName)) names.add(name)
-		return { exportName, module }
+		return { exportName, module, suffixes }
 	}
 	const exports = selection
 		.sort((left, right) => compare(definitionKey(left.definition), definitionKey(right.definition)))
@@ -254,21 +270,23 @@ export async function syncPluginControl(
 			const definition = material?.manifest.definitions.find(
 				(item) => definitionKey(item.definition) === key && item.exportName === entry.exportName,
 			)
-			if (!definition)
+			const reference = formatPluginDefinitionReference(entry.definition)
+			const catalog = material?.catalog.get(`plugin:${reference}`)
+			if (!definition || !catalog)
 				throw failure(
 					'control_contract_mismatch',
 					'The selected Plugin definition is absent from its material snapshot',
 				)
-			const { exportName, module } = layout(entry.definition, 'Plugin')
+			const { exportName, module, suffixes } = layout(entry.definition, 'Plugin')
 			return {
 				definition: entry.definition,
 				exportName,
 				module,
+				suffixes,
 				contracts: definition.contracts,
 				source: `materials/${entry.snapshot.slice(7)}/${definition.module.replace(/\.mjs$/, '.d.mts')}`,
-				originalModule: definition.module,
 				originalExport: entry.exportName,
-				snapshot: entry.snapshot,
+				catalog: { ...catalog, exportName },
 			}
 		})
 	const serviceExports = serviceSelection
@@ -279,24 +297,29 @@ export async function syncPluginControl(
 			const service = material?.manifest.services.find(
 				(item) => definitionKey(item.definition) === key && item.exportName === entry.exportName,
 			)
-			if (!service)
+			const reference = formatPluginDefinitionReference(entry.definition)
+			const catalog = material?.catalog.get(`service:${reference}`)
+			if (!service || !catalog)
 				throw failure(
 					'control_contract_mismatch',
 					'The selected service definition is absent from its material snapshot',
 				)
-			const { exportName, module } = layout(entry.definition, 'Service')
+			const { exportName, module, suffixes } = layout(entry.definition, 'Service')
 			return {
 				definition: entry.definition,
 				exportName,
 				module,
+				suffixes,
 				contract: service.contract,
 				access: service.access,
 				source: `materials/${entry.snapshot.slice(7)}/${service.module.replace(/\.mjs$/, '.d.mts')}`,
-				originalModule: service.module,
 				originalExport: entry.exportName,
-				snapshot: entry.snapshot,
+				catalog: { ...catalog, exportName },
 			}
 		})
+	files['catalog.json'] = renderControlCatalog(
+		[...exports, ...serviceExports].map(({ catalog }) => catalog),
+	)
 	for (const module of namesByModule.keys()) {
 		const definitions = exports.filter((entry) => entry.module === module)
 		const services = serviceExports.filter((entry) => entry.module === module)
@@ -315,23 +338,17 @@ export async function syncPluginControl(
 				},
 			})),
 		)
-		files[module.replace(/\.mjs$/, '.d.mts')] =
-			definitions
-				.map((entry) => {
-					const path = JSON.stringify(
-						`../../materials/${entry.snapshot.slice(7)}/${entry.originalModule}`,
-					)
-					return `export { ${entry.originalExport} as ${entry.exportName} } from ${path};\nexport type { ${['ConfigDeclaration', 'ConfigInput', 'ConfigOutput', 'Instance'].map((suffix) => `${entry.originalExport}${suffix} as ${entry.exportName}${suffix}`).join(', ')} } from ${path};\n`
-				})
-				.join('') +
-			services
-				.map((entry) => {
-					const path = JSON.stringify(
-						`../../materials/${entry.snapshot.slice(7)}/${entry.originalModule}`,
-					)
-					return `export { ${entry.originalExport} as ${entry.exportName} } from ${path};\nexport type { ${entry.originalExport}Instance as ${entry.exportName}Instance } from ${path};\n`
-				})
-				.join('')
+		files[module.replace(/\.mjs$/, '.d.mts')] = [...definitions, ...services]
+			.map(({ exportName, originalExport, suffixes, source }) => {
+				const name = (suffix: string) =>
+					originalExport === exportName
+						? exportName + suffix
+						: `${originalExport}${suffix} as ${exportName}${suffix}`
+				const members = [name(''), ...suffixes.map((suffix) => `type ${name(suffix)}`)]
+				const path = JSON.stringify(`../../${source.replace(/\.d\.mts$/, '.mjs')}`)
+				return `export {\n\t${members.join(',\n\t')},\n} from ${path};\n`
+			})
+			.join('')
 	}
 
 	const unsigned = {

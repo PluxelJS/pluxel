@@ -5,6 +5,67 @@ description: 使用构建生成的插件描述符、配置源码声明和实例�
 
 插件构建会生成独立的 `control` 入口。入口里的值是冻结的地址提供者，提供 `address()` 和 `nodeAddress(forkId?)`。它们携带构建绑定的类型与校验信息，类型文件保留原 class 的方法、属性、继承、重载与泛型。脚本通过 `sdk.plugin(Descriptor.nodeAddress())` 选择插件，再使用同一个引用读取配置、启停节点或调用业务实例。
 
+## 按需浏览业务接口
+
+在作者侧用 Node 打开含 `manifest.json` 的目录。要看一次构建交付的插件和服务，传 `dist/control`。要看目标 Host 已接纳的插件和已安装服务所提供的控制材料，先用 `pluxel dev sync` 或 `pluxel script sync` 同步全部，再打开输出目录下的 `current`。按包或 definition 同步时，列表只包含选中的定义。也可调用 `syncPluginControl`，只取返回的 `out` 用于打开目录，大型应用无需把整个同步结果打印给 agent。
+
+新构建会在 control 根目录生成 `catalog.json`。每个定义占一行，包含 `kind`、完整 `reference`、实际导出名、公开成员名和已有的类说明。插件行标出 `hasConfig`，服务行标出访问范围 `access`。同步后的目录只列选中的定义。只知道方法名时可以直接搜索：
+
+```sh
+rg -F '"generate"' projects/plugin-host/dist/control/catalog.json
+```
+
+也可以用 SDK 筛选目录，只把选中的接口输出给 agent：
+
+```js
+import { openControl } from '@pluxel/agent-sdk/control'
+
+using control = await openControl('.pluxel/control/current')
+const matches = control.plugins.filter((p) => p.members?.includes('generate'))
+console.log(matches.map((p) => p.reference))
+
+const studio = 'source:app/src/showcase/ReportStudio.ts::ReportStudioPlugin'
+const method = await control.inspectPlugin(studio, { member: 'generate' })
+console.log(method.importStatement, method.members, method.types)
+
+const config = await control.inspectConfig(studio)
+if (config) console.log(config.input, config.output)
+```
+
+`inspectPlugin(studio)` 返回这个插件的公开业务成员及签名，带 `member` 时展开该成员的参数、返回类型和已有文档。`ReportStudioPlugin.generate` 的结果包含请求必填字段 `title`、`engine`，六种引擎取值和返回的 `ShowcaseArtifact`。返回的 class 或超出展开范围的类型在 `omittedTypes` 给出声明文件与行号。材料内路径相对 `control.root`，外部声明使用绝对路径。把 `importStatement` 复制到 Host 脚本，即可通过 `sdk.plugin(ReportStudioPlugin.nodeAddress()).instance()` 借用实例。
+
+`inspectConfig(studio)` 返回验证前的 `input` 类型和验证后的 `output` 类型。要看默认值、校验和转换，可以按 `sources` 的 Part 路径选择 schema，并用其中的 `dependencies` 下标读取结果里对应的原始声明。多个配置引用同一声明时只存一份。无托管配置的插件返回 `null`。有配置的构建将详细的 `ConfigDeclaration` 放在 `config.d.mts`，继续通过原入口导出。
+
+服务目录可用同样的方式筛选。例如在包含 Commands 服务的材料上，下面的查询会返回 `list` 的签名、关联类型、文档、导入语句和服务访问范围：
+
+```js
+const commands = control.services.find(
+	(s) => s.reference === 'package:@pluxel/services/commands::Commands',
+)
+if (commands) {
+	const api = await control.inspectService(commands.reference, { member: 'list' })
+	console.log(api.access, api.importStatement, api.members, api.types)
+}
+```
+
+复制该导入到 Host 脚本后，使用 `sdk.ctx.service(Commands).list()`。访问范围为 `owner` 的服务需要从插件的 Context 借用，见[借用已安装的服务](./scripts.md#借用已安装的服务)。
+
+查询插件和服务时，如果 TypeScript 无法打印某个复杂泛型方法的实例签名，`signatures` 保留原声明的全部重载，`declaredIn` 给出各重载所属类型、文件和行号。查询依赖包接口需要安装对应的公开类型依赖，例如完整查询 `ElysiaApp` 用到 Elysia 的 Bun 类型 `@types/bun`。
+
+源码仓库里的演示可以直接查看应用或独立服务包的构建产物：
+
+```sh
+node projects/plugin-host/dev/control.mjs
+node projects/plugin-host/dev/control.mjs projects/plugin-host/dist/control \
+  'source:app/src/showcase/ReportStudio.ts::ReportStudioPlugin' generate
+node projects/plugin-host/dev/control.mjs projects/plugin-host/dist/control \
+  'source:app/src/showcase/ReportStudio.ts::ReportStudioPlugin' --config
+node projects/plugin-host/dev/control.mjs packages/services/dist/control \
+  'package:@pluxel/services/commands::Commands' list --service
+```
+
+打开目录只读取清单与其中登记的 `catalog.json`。旧材料仍可查询，目录行缺少 `members` 表示这份材料没有成员索引，空数组表示已知没有公开业务成员。首次查详细接口时校验材料并启动 TypeScript，后续查询复用同一会话，`using` 负责关闭。查询只读声明与已安装的公开类型依赖。Vite 接纳改动后重新同步，再打开 `current` 即可查看新快照；已打开的会话仍读取原快照。
+
 ## 取得控制入口
 
 发布生成的 `./control` 时，插件包须在 `peerDependencies` 显式声明兼容的 `@pluxel/host`，因为标准地址方法使用共享的 Host 工厂。仅此入口需要 Host 时，将该 peer 标为 optional；其他运行入口也使用 Host 时保持必需。开发构建在 `devDependencies` 安装兼容版本。构建会拒绝缺失 peer、仅 devDependency 或嵌套运行依赖，不会修改这些声明。脚本作者安装匹配目标平台的 Host；控制入口不加载插件实现。
@@ -129,7 +190,7 @@ export default (async (sdk) => {
 
 ## 声明中的注释
 
-控制材料的声明生成始终保留公共 JSDoc，独立于作者用于其他构建产物的 `removeComments` 设置。class、成员、继承声明和关联类型中的说明、`@param`、`@returns`、`@example`、`@deprecated` 等注释随原声明交付。生成入口的描述符和实例类型也附上原 class 文档，配置类型说明输入、验证后的输出以及对应源码描述。
+控制材料的声明生成始终保留公共 JSDoc，独立于作者用于其他构建产物的 `removeComments` 设置。类说明的首段会进入目录，可用业务词搜索。方法文档适合记录签名无法表达的写入、副作用、重试条件和资源释放要求。`ReportStudioPlugin.generate` 的注释就说明了缓存命中也会创建新制品，并给出可用的引擎示例。成员、继承声明和关联类型中的 `@param`、`@returns`、`@throws`、`@example`、`@deprecated` 等注释随原声明交付。生成入口的描述符和实例类型也附上原 class 文档，配置类型说明输入、验证后的输出以及对应源码描述。
 
 只修改本地声明的说明文字会更新材料快照，同时保持配置和实例类型摘要。作者的 `stripInternal` 设置继续生效。插件包模式保留原公开 class 身份，其成员的类型提示使用原包发布的声明文档；控制材料同时携带可阅读的本地声明。生成器保留原有说明，不推测缺失的业务语义。
 

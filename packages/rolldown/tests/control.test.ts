@@ -10,8 +10,9 @@ import { rolldown } from 'rolldown'
 import { build as pack, type TsdownPlugin } from 'vite-plus/pack'
 import { pluginDefinitionIndexKey } from '@pluxel/core'
 import { generatePluginControl } from '../src/control/generate-plugin'
+import { openControl } from '../src/control/inspection'
 import { createPluginControlPlugin } from '../src/control/plugin'
-import { verifyPluginControlMaterial } from '../src/control/manifest'
+import { parseControlCatalog, verifyPluginControlMaterial } from '../src/control/manifest'
 import { createPluginSemanticsPlugin } from '../src/rolldown/plugins/pluginSemanticsPlugin'
 import { configSourcePlugin } from '../src/rolldown/plugins/configSourcePlugin'
 
@@ -738,12 +739,12 @@ void enabled
 				definitions: [{ moduleId: counter, className: 'Counter', definition }],
 			})
 		const before = await generate()
-		expect(before.files['index.d.mts']).toContain('defaults.count')
-		expect(before.files['index.d.mts']).toContain('{"count":2}')
+		expect(before.files['config.d.mts']).toContain('defaults.count')
+		expect(before.files['config.d.mts']).toContain('{"count":2}')
 		expect(before.definitionInputs[pluginDefinitionIndexKey(definition)]).toContain(defaults)
 		await writeFile(defaults, '{"count":5}\n')
 		const after = await generate()
-		expect(after.files['index.d.mts']).toContain('{"count":5}')
+		expect(after.files['config.d.mts']).toContain('{"count":5}')
 		expect(after.manifest.definitions[0]!.contracts.config).not.toBe(
 			before.manifest.definitions[0]!.contracts.config,
 		)
@@ -851,7 +852,7 @@ void enabled
 			)
 			.replace(
 				'private brand = 0',
-				'/** @internal Author internal member. */\n internalOnly():void {}\n private brand = 0',
+				'/** @internal Author internal member. */\n internalOnly():void {}\n protected hiddenFromScripts():void {}\n private brand = 0',
 			)
 			.replace(
 				'private readonly config =',
@@ -874,18 +875,41 @@ void enabled
 			})
 		const before = await generate()
 		const index = before.files['index.d.mts']!
+		const [catalogEntry] = parseControlCatalog(before.files['catalog.json']!, before.manifest)
+		expect(catalogEntry).toMatchObject({
+			kind: 'plugin',
+			reference: 'source:app/counter.ts::Counter',
+			exportName: 'Counter',
+			hasConfig: true,
+			documentation: 'Counter author entry.',
+		})
+		expect([...catalogEntry!.members!].sort()).toEqual(
+			[
+				'part',
+				'same',
+				'handle',
+				'self',
+				'payload',
+				'ambient',
+				'overload',
+				'generic',
+				'inherited',
+			].sort(),
+		)
 		expect(index).toContain(`${classDocumentation}\nexport type CounterInstance`)
+		expect(index).toMatch(/export type CounterInstance = import\("[^"]+"\)\.Counter\b/)
 		expect(index).toContain(`${classDocumentation}\nexport declare const Counter`)
 		expect(index).not.toContain('Not attached author documentation')
 		expect(index).toContain('Schema input before validation, defaults and transforms')
 		expect(index).toContain('Validated Schema output after defaults and transforms')
 		expect(index).toContain('{@link CounterConfigDeclaration}')
 		expect(index).toContain('Author managed configuration source')
-		expect(index).toContain('Author Schema definition and defaults')
+		expect(before.files['config.d.mts']).toContain('Author Schema definition and defaults')
 		const declarations = Object.entries(before.files)
 			.filter(([path]) => path.startsWith('types/') && /\.d\.[cm]?ts$/.test(path))
 			.map(([, code]) => code)
 			.join('\n')
+		expect(declarations).not.toContain('__pluxelControlInstance_Counter')
 		for (const marker of [
 			'Counter author entry.',
 			'Author method contract.',
@@ -931,10 +955,13 @@ void enabled
 			verifyPluginControlMaterial(generation.manifest, generation.files),
 		).resolves.toEqual(generation.manifest)
 		expect(generation.files['index.mjs']).not.toMatch(/CounterPart|throw new/)
-		expect(generation.files['index.d.mts']).toContain('ConfigDeclaration')
-		expect(generation.files['index.d.mts']).toContain('DEFAULT_COUNT = 2')
-		expect(generation.files['index.d.mts']).toContain('v.minValue(0)')
-		expect(generation.files['index.d.mts']).toContain('"path": readonly ["part"]')
+		expect(generation.files['index.d.mts']).toContain(
+			'export type { CounterConfigDeclaration } from "./config.mjs"',
+		)
+		expect(generation.files['index.d.mts']).not.toContain('DEFAULT_COUNT = 2')
+		expect(generation.files['config.d.mts']).toContain('DEFAULT_COUNT = 2')
+		expect(generation.files['config.d.mts']).toContain('v.minValue(0)')
+		expect(generation.files['config.d.mts']).toContain('"path": readonly ["part"]')
 		const consumer = resolve(directory, 'consumer')
 		await mkdir(consumer)
 		for (const [path, text] of Object.entries(generation.files)) {
@@ -946,6 +973,17 @@ void enabled
 			['counter.ts', 'part.ts', 'payload.ts', 'ambient.d.ts', 'detail.d.ts'].map((path) =>
 				rm(resolve(directory, path)),
 			),
+		)
+		using catalog = await openControl(consumer)
+		const usage = await catalog.inspectPlugin(definition, { member: 'payload' })
+		expect(usage.members[0]?.signatures).toEqual(['payload(value: Payload): Payload;'])
+		expect(usage.types.map((type) => type.name)).toContain('Payload')
+		const config = await catalog.inspectConfig(definition)
+		expect(config?.input).toMatch(/count\?:\s*number/)
+		expect(config?.output).toMatch(/count:\s*number/)
+		expect(config?.sources.map((source) => source.path)).toContainEqual(['part'])
+		expect(config?.dependencies.map((item) => item.declaration).join('\n')).toContain(
+			'DEFAULT_COUNT',
 		)
 		await writeFile(
 			resolve(consumer, 'usage.mts'),

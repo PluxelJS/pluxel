@@ -4,6 +4,7 @@ export default defineConfig({
 		host: './src/host.ts',
 		source: './src/source.ts',
 		client: './src/client.ts',
+		control: './src/control.ts',
 		'internal/cli': './src/internal-cli.ts',
 		'internal/client': './src/internal-client.ts',
 	},

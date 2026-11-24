@@ -5,6 +5,8 @@ import { pluginDefinitionIndexKey, type PluginDefinitionAddress } from '@pluxel/
 import {
 	encodeControlData,
 	parsePluginControlManifest,
+	parseControlCatalog,
+	renderControlCatalog,
 	renderPluginDescriptors,
 	verifyPluginControlMaterialSync,
 	type PluginControlManifest,
@@ -314,7 +316,22 @@ it('carries each bundled published service contract and its complete declaration
 })
 
 it('preserves existing application services and dependency contracts when their control export names collide', async () => {
-	const material = materialFor('owner')
+	const oldMaterial = materialFor('owner')
+	const publishedSummary = {
+		kind: 'service' as const,
+		reference: 'package:@example/published-clock::Clock',
+		exportName: 'Clock',
+		access: 'owner' as const,
+		documentation: 'Read the clock.',
+		members: ['now'],
+	}
+	const material = sealMaterial(
+		{
+			...oldMaterial.files,
+			'catalog.json': renderControlCatalog([publishedSummary]),
+		},
+		oldMaterial.manifest.services,
+	)
 	const applicationDefinition: PluginDefinitionAddress = {
 		entry: { kind: 'source-entry', sourceSpace: 'app', path: 'clock.ts' },
 		exportName: 'Clock',
@@ -340,6 +357,15 @@ it('preserves existing application services and dependency contracts when their 
 	expect(verifyPluginControlMaterialSync(result.manifest, result.files, sha256)).toEqual(
 		result.manifest,
 	)
+	expect(parseControlCatalog(result.files['catalog.json'], result.manifest)).toEqual([
+		{
+			kind: 'service',
+			reference: 'source:app/clock.ts::Clock',
+			exportName: 'Clock',
+			access: 'root',
+		},
+		{ ...publishedSummary, exportName: result.manifest.services[1]!.exportName },
+	])
 	expect(result.manifest.services).toHaveLength(2)
 	expect(result.manifest.services[0]).toEqual(base.manifest.services[0])
 	expect(result.manifest.services[1]).toMatchObject({

@@ -1,7 +1,7 @@
-import { createHash } from 'node:crypto'
 import { readFile, realpath, stat } from 'node:fs/promises'
-import { dirname, isAbsolute, relative, resolve, sep } from 'node:path'
+import { dirname, isAbsolute, resolve } from 'node:path'
 import type { PluginControlManifest } from '@pluxel/core/internal/control-manifest'
+import { openControlMaterial } from './control/read-material'
 
 export type ServiceMaterialContracts = Pick<
 	typeof import('@pluxel/core/internal/control-manifest'),
@@ -68,34 +68,8 @@ export async function readServicePackageMaterial(
 		!contracts.isControlFilePath(declared.slice(2))
 	)
 		throw new TypeError('Package pluxel.control must name a relative control manifest')
-	const contained = async (root: string, path: string): Promise<string> => {
-		const physical = await realpath(path),
-			local = relative(root, physical)
-		if (isAbsolute(local) || local === '..' || local.startsWith(`..${sep}`))
-			throw new TypeError('Service control material escapes its actual package owner')
-		return physical
-	}
-	const manifestFile = await contained(owner.root, resolve(owner.root, declared))
-	const manifestStat = await stat(manifestFile)
-	if (manifestStat.size > 4 * 1024 * 1024)
-		throw new TypeError('Service control manifest exceeds its byte budget')
-	const text = await readFile(manifestFile, 'utf8'),
-		manifest = contracts.parsePluginControlManifest(JSON.parse(text)),
-		directory = dirname(manifestFile)
-	const inputs = [manifestFile],
-		files: Record<string, string> = { 'manifest.json': text }
-	for (const file of manifest.files) {
-		const path = await contained(directory, resolve(directory, file.path))
-		const fileStat = await stat(path)
-		if (fileStat.size !== file.size)
-			throw new TypeError(`Service control file size mismatch: ${file.path}`)
-		files[file.path] = await readFile(path, 'utf8')
-		inputs.push(path)
-	}
-	contracts.verifyPluginControlMaterialSync(manifest, files, (content) =>
-		createHash('sha256').update(content).digest('hex'),
-	)
-	return { manifest, files, inputs }
+	const material = await openControlMaterial(owner.root, resolve(owner.root, declared), contracts)
+	return material.readFiles()
 }
 
 /** Native declaration entries prove aliases without evaluating or naming minified implementations. */

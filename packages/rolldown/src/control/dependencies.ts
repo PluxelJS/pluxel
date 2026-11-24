@@ -1,5 +1,5 @@
 import { readFile } from 'node:fs/promises'
-import { pluginDefinitionIndexKey } from '@pluxel/core'
+import { formatPluginDefinitionReference, pluginDefinitionIndexKey } from '@pluxel/core'
 import { version } from 'typescript'
 import {
 	findServicePackage,
@@ -34,6 +34,9 @@ export async function mergeBundledServiceMaterials(
 	if (dependencies.length === 0) return base
 	const files: Record<string, string> = { ...base?.files }
 	delete files['manifest.json']
+	const catalog: contracts.ControlCatalogEntry[] = base
+		? [...contracts.parseControlCatalog(files['catalog.json'], base.manifest)]
+		: []
 	const definitions = [...(base?.manifest.definitions ?? [])],
 		services = [...(base?.manifest.services ?? [])]
 	const known = new Set(services.map((entry) => pluginDefinitionIndexKey(entry.definition)))
@@ -58,11 +61,17 @@ export async function mergeBundledServiceMaterials(
 		if (selected.length === 0) continue
 		const prefix = `dependencies/${dependency.manifest.snapshot.slice(7, 31)}`
 		for (const [path, source] of Object.entries(dependency.files)) {
-			if (path === 'manifest.json' || path.endsWith('.mjs')) continue
+			if (path === 'manifest.json' || path === 'catalog.json' || path.endsWith('.mjs')) continue
 			files[`${prefix}/${path}`] = source
 		}
 		for (const path of dependency.inputs)
 			inputs[path] = contracts.controlSha256(await readFile(path, 'utf8'))
+		const serviceSummaries = new Map(
+			contracts
+				.parseControlCatalog(dependency.files['catalog.json'], dependency.manifest)
+				.filter((entry) => entry.kind === 'service')
+				.map((entry) => [entry.reference, entry]),
+		)
 		for (const entry of selected) {
 			const key = pluginDefinitionIndexKey(entry.definition)
 			let exportName = entry.exportName
@@ -73,10 +82,15 @@ export async function mergeBundledServiceMaterials(
 			known.add(key)
 			const imported = `__Bundled_${contracts.controlSha256(key).slice(0, 24)}`
 			declarations += `import type { ${entry.exportName}Instance as ${imported} } from ${JSON.stringify(`./${prefix}/${entry.module}`)}\nexport type ${exportName}Instance = ${imported}\nexport declare const ${exportName}: __BundledServiceDefinition<${exportName}Instance, ${JSON.stringify(entry.access)}>\n`
+			catalog.push({
+				...serviceSummaries.get(formatPluginDefinitionReference(entry.definition))!,
+				exportName,
+			})
 			services.push({ ...entry, module: 'index.mjs', exportName })
 			definitionInputs[key] = [...dependency.inputs]
 		}
 	}
+	files['catalog.json'] = contracts.renderControlCatalog(catalog)
 	files['index.d.mts'] = declarations
 	files['index.mjs'] = contracts.renderPluginDescriptors(
 		definitions.map((entry) => ({

@@ -30,6 +30,7 @@ export default defineConfig({
 	entry: {
 		index: 'src/application.ts',
 		'internal/agent': 'src/inspect/index.ts',
+		'internal/control-inspection': 'src/control/inspection.ts',
 		control: 'src/control/index.ts',
 		scripts: 'src/scripts.ts',
 		build: 'src/cli/index.ts',

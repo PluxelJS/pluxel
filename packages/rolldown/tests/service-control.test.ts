@@ -474,7 +474,9 @@ it('proves published service aliases from verified sidecars and native declarati
 	const moduleId = resolve(owner, 'source.ts')
 	await writeFile(
 		moduleId,
-		'export class PublicService { static readonly access = "root" as const; value():string { return "ok" } }',
+		`class ServiceBase { inherited(): void {} protected hidden(): void {} }
+		/** Published lookup service. */
+		export class PublicService extends ServiceBase { static readonly access = "root" as const; value():string { return "ok" } }`,
 	)
 	const definition = {
 		entry: { kind: 'package-root' as const, packageName: 'published-service' },
@@ -485,6 +487,18 @@ it('proves published service aliases from verified sidecars and native declarati
 		definitions: [],
 		services: [{ moduleId, className: 'PublicService', definition, access: 'root' }],
 	})
+	expect(
+		serviceControlContracts.parseControlCatalog(material.files['catalog.json'], material.manifest),
+	).toEqual([
+		{
+			kind: 'service',
+			reference: 'package:published-service::PublicService',
+			exportName: 'PublicService',
+			access: 'root',
+			documentation: 'Published lookup service.',
+			members: ['value', 'inherited'],
+		},
+	])
 	for (const [name, content] of Object.entries(material.files)) {
 		const path = resolve(owner, 'control', name)
 		await mkdir(dirname(path), { recursive: true })

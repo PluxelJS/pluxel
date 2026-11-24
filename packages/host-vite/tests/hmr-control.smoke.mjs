@@ -5,6 +5,7 @@ import { dirname, join } from 'node:path'
 import { setTimeout as delay } from 'node:timers/promises'
 import { createRequire } from 'node:module'
 import { fileURLToPath } from 'node:url'
+import { formatPluginDefinitionReference } from '@pluxel/core'
 import { controlHmr, runScript } from '@pluxel/agent-sdk/client'
 import { host } from '@pluxel/host-vite'
 import { createServer } from 'vite'
@@ -18,6 +19,7 @@ const entries = ['probe', 'neighbor']
 const pluginFile = (name) => join(root, 'entries', name + '.entry.ts')
 const artifactFile = join(root, 'content.txt')
 const appFile = join(root, 'app.ts')
+const clockFile = join(root, 'clock.ts')
 const offsetFile = join(root, 'entries/offset.mjs')
 const scriptFile = join(root, 'read.ts')
 const entry = (name) => ({
@@ -43,6 +45,7 @@ metrics.evaluated.push('${generation}')
 export class Probe extends BasePlugin {
   readonly version: ${version} = ${version}
   readonly value = this.version + offset
+  ${version === 0 ? 'preview' : 'render'}(): number { return this.value }
   async init() {
     metrics.started.push('${generation}')
     ${name === 'probe' ? 'await metrics.gate?.promise' : ''}
@@ -54,9 +57,14 @@ export class Probe extends BasePlugin {
 
 function application(name) {
 	return `
-import { defineHostApplication } from '@pluxel/host'
+import { defineHostApplication, defineHostService } from '@pluxel/host'
+import { installRootService } from '@pluxel/core/host'
+import { Clock } from './clock.ts'
 export default defineHostApplication(() => ({
   name: '${name}',
+  services: [defineHostService({
+    name: 'clock', provides: [installRootService(Clock, { create: () => new Clock() })],
+  })],
   sources: [{ directory: './entries', include: ['*.entry.ts'] }],
   pluginNodes: ${JSON.stringify(
 		entries.map((label) => ({
@@ -115,23 +123,43 @@ async function materials() {
 		({ definition }) => definition.entry.path === entry('probe').path,
 	)
 	assert.ok(selected, JSON.stringify(index))
-	const manifest = []
-	let offset = 0
-	for (;;) {
-		const chunk = await client.materialFile({
-			snapshot: selected.snapshot,
-			path: 'manifest.json',
-			offset,
-		})
-		manifest.push(Buffer.from(chunk.data, 'base64'))
-		if (chunk.done) break
-		offset = chunk.nextOffset
+	async function readJson(path) {
+		const buffers = []
+		let offset = 0
+		for (;;) {
+			const chunk = await client.materialFile({ snapshot: selected.snapshot, path, offset })
+			buffers.push(Buffer.from(chunk.data, 'base64'))
+			if (chunk.done) break
+			offset = chunk.nextOffset
+		}
+		return JSON.parse(Buffer.concat(buffers).toString('utf8'))
 	}
-	const material = JSON.parse(Buffer.concat(manifest).toString('utf8'))
+	const [material, catalog] = await Promise.all([
+		readJson('manifest.json'),
+		readJson('catalog.json'),
+	])
+	const { members } = catalog.find(
+		(row) =>
+			row.kind === 'plugin' &&
+			row.reference === formatPluginDefinitionReference(selected.definition),
+	)
+	const clock = index.services.find(({ definition }) => definition.exportName === 'Clock')
+	assert.ok(clock, JSON.stringify(index.services))
+	assert.equal(clock.snapshot, selected.snapshot)
+	const clockMembers = catalog.find(
+		(row) =>
+			row.kind === 'service' && row.reference === formatPluginDefinitionReference(clock.definition),
+	).members
 	const contract = (name) =>
 		material.definitions.find(({ definition }) => definition.entry.path === entry(name).path)
 			.contracts.instance
-	return { snapshot: selected.snapshot, probe: contract('probe'), neighbor: contract('neighbor') }
+	return {
+		snapshot: selected.snapshot,
+		probe: contract('probe'),
+		neighbor: contract('neighbor'),
+		members,
+		clockMembers,
+	}
 }
 
 try {
@@ -173,6 +201,7 @@ export const metrics = (globalThis as unknown as { __pluxelHmrTest: {
 } }).__pluxelHmrTest
 `,
 		'app.ts': application('original'),
+		'clock.ts': 'export class Clock { now(): number { return 1 } }',
 		'content.txt': 'initial',
 		'entries/offset.mjs': 'export const offset = 0',
 		'entries/probe.entry.ts': 'export const invalid = ;',
@@ -261,6 +290,8 @@ export default (async (sdk) => {
 	assert.equal(recovered.application.state, 'ready')
 	const original = await readPlugin(0)
 	const accepted = await materials()
+	assert.ok(accepted.members.includes('preview'))
+	assert.deepEqual(accepted.clockMembers, ['now'])
 
 	// Intermediate saves stay out of the running catalog and its control materials.
 	await observed(() => writeFile(pluginFile('probe'), 'export const stillInvalid = ;'))
@@ -273,6 +304,8 @@ export default (async (sdk) => {
 	assert.deepEqual(updates.at(-1), rejectedStatus.application.latestUpdate)
 	const retained = await materials()
 	assert.equal(retained.snapshot, accepted.snapshot)
+	assert.deepEqual(retained.members, accepted.members)
+	assert.deepEqual(retained.clockMembers, accepted.clockMembers)
 	assert.deepEqual(metrics.stopped, [])
 
 	await observed(() => writeFile(pluginFile('probe'), plugin('probe', 1)))
@@ -283,6 +316,8 @@ export default (async (sdk) => {
 	assert.notEqual(next.snapshot, accepted.snapshot)
 	assert.notEqual(next.probe, accepted.probe)
 	assert.equal(next.neighbor, accepted.neighbor)
+	assert.ok(next.members.includes('render'))
+	assert.ok(!next.members.includes('preview'))
 	assert.deepEqual(metrics.stopped, ['probe:0'])
 
 	// A real watcher event arriving during initialization waits for the next apply.
@@ -317,6 +352,15 @@ export default (async (sdk) => {
 	assert.notEqual(replacement.hostEpoch, original.hostEpoch)
 	assert.deepEqual(updates.at(-1), replacement.application.latestUpdate)
 	await readPlugin(3)
+
+	await observed(() =>
+		writeFile(clockFile, 'export class Clock { timestamp(): number { return 2 } }'),
+	)
+	const pendingClock = await materials()
+	assert.deepEqual(pendingClock.clockMembers, ['now'])
+	await control('apply')
+	const updatedClock = await materials()
+	assert.deepEqual(updatedClock.clockMembers, ['timestamp'])
 
 	// Matching bytes cannot bypass validation of the physical source owner.
 	const linkedSource = join(root, 'same-bytes.ts')

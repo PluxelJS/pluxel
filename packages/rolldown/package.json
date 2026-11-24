@@ -42,6 +42,10 @@
 			"@pluxel/source": "./src/internal-cli.ts",
 			"default": "./dist/internal/cli.mjs"
 		},
+		"./internal/control-inspection": {
+			"@pluxel/source": "./src/control/inspection.ts",
+			"default": "./dist/internal/control-inspection.mjs"
+		},
 		"./oxlint": {
 			"@pluxel/source": "./src/workspace/oxlint/index.ts",
 			"default": "./dist/oxlint.mjs"
@@ -114,6 +118,7 @@
 			"./distribution": "./dist/distribution.mjs",
 			"./internal/agent": "./dist/internal/agent.mjs",
 			"./internal/cli": "./dist/internal/cli.mjs",
+			"./internal/control-inspection": "./dist/internal/control-inspection.mjs",
 			"./oxlint": "./dist/oxlint.mjs",
 			"./plugins": "./dist/plugins.mjs",
 			"./resolver/oxc": "./dist/resolver/oxc.mjs",

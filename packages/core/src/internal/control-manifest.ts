@@ -1,4 +1,5 @@
 import {
+	formatPluginDefinitionReference,
 	parsePluginDefinitionAddress,
 	pluginDefinitionIndexKey,
 	type PluginDefinitionAddress,
@@ -24,6 +25,105 @@ export type PluginControlManifest = Readonly<{
 	services: readonly ServiceControlManifestEntry[]
 	files: readonly Readonly<{ path: string; size: number; sha256: string }>[]
 }>
+
+type ControlCatalogSummary = Readonly<{
+	reference: string
+	exportName: string
+	documentation?: string
+	/** Absent when the original material predates member indexes for this kind. */
+	members?: readonly string[]
+}>
+
+export type ControlCatalogPluginEntry = ControlCatalogSummary &
+	Readonly<{ kind: 'plugin'; hasConfig: boolean }>
+export type ControlCatalogServiceEntry = ControlCatalogSummary &
+	Readonly<{ kind: 'service'; access: ServiceControlManifestEntry['access'] }>
+export type ControlCatalogEntry = ControlCatalogPluginEntry | ControlCatalogServiceEntry
+
+/** Keep one complete Plugin or Service on each line for JSON readers and text searches. */
+export function renderControlCatalog(entries: readonly ControlCatalogEntry[]): string {
+	if (entries.length === 0) return '[]\n'
+	const lines = entries.map((entry) => {
+		const { kind, reference, exportName, documentation, members } = entry
+		return JSON.stringify({
+			kind,
+			reference,
+			exportName,
+			...(entry.kind === 'plugin' ? { hasConfig: entry.hasConfig } : { access: entry.access }),
+			documentation,
+			members,
+		})
+	})
+	return `[\n${lines.join(',\n')}\n]\n`
+}
+
+/** Bind indexed metadata to the manifest. Older materials supply identity/access without member names. */
+export function parseControlCatalog(
+	text: string | undefined,
+	manifest: Pick<PluginControlManifest, 'definitions' | 'services'>,
+): readonly ControlCatalogEntry[] {
+	const plugins = manifest.definitions.map(({ definition, exportName, contracts }) =>
+		Object.freeze({
+			kind: 'plugin' as const,
+			reference: formatPluginDefinitionReference(definition),
+			exportName,
+			hasConfig: contracts.config !== null,
+		}),
+	)
+	const services = manifest.services.map(({ definition, exportName, access }) =>
+		Object.freeze({
+			kind: 'service' as const,
+			reference: formatPluginDefinitionReference(definition),
+			exportName,
+			access,
+		}),
+	)
+	const entries = [...plugins, ...services]
+	if (text === undefined) return Object.freeze(entries)
+	const rows: unknown = JSON.parse(text)
+	if (!Array.isArray(rows)) throw new TypeError('Invalid control catalog')
+	const legacy = rows.every(
+		(row: unknown) => row && typeof row === 'object' && !Object.hasOwn(row, 'kind'),
+	)
+	if (rows.length !== (legacy ? plugins.length : entries.length))
+		throw new TypeError('Control catalog does not cover the manifest definitions')
+	const expected = new Map(entries.map((entry) => [`${entry.kind}:${entry.reference}`, entry]))
+	const result = rows.map((value: unknown) => {
+		if (!value || typeof value !== 'object') throw new TypeError('Invalid control catalog entry')
+		const kind = legacy ? 'plugin' : 'kind' in value ? value.kind : undefined
+		if (kind !== 'plugin' && kind !== 'service') throw new TypeError('Invalid control catalog kind')
+		const keys = ['reference', 'exportName', kind === 'plugin' ? 'hasConfig' : 'access']
+		if (!legacy) keys.push('kind')
+		for (const key of ['documentation', 'members']) if (Object.hasOwn(value, key)) keys.push(key)
+		const row = record(value, keys, 'Control catalog entry')
+		const { reference, documentation, members } = row
+		if (typeof reference !== 'string') throw new TypeError('Invalid control catalog reference')
+		const key = `${kind}:${reference}`
+		const entry = expected.get(key)
+		if (
+			!entry ||
+			entry.exportName !== row.exportName ||
+			(entry.kind === 'plugin' ? entry.hasConfig !== row.hasConfig : entry.access !== row.access)
+		)
+			throw new TypeError(`Control catalog does not match manifest definition: ${key}`)
+		expected.delete(key)
+		if (documentation !== undefined && typeof documentation !== 'string')
+			throw new TypeError('Invalid control catalog documentation')
+		if (
+			members !== undefined &&
+			(!Array.isArray(members) ||
+				!members.every((name: unknown) => typeof name === 'string') ||
+				new Set(members).size !== members.length)
+		)
+			throw new TypeError('Invalid control catalog member names')
+		return Object.freeze({
+			...entry,
+			...(typeof documentation === 'string' && { documentation }),
+			...(Array.isArray(members) && { members: Object.freeze(members as string[]) }),
+		})
+	})
+	return Object.freeze(legacy ? [...result, ...services] : result)
+}
 
 export type ServiceControlDescriptorData = Readonly<{
 	format: 1
@@ -318,6 +418,7 @@ export function verifyPluginControlMaterialSync(
 	}
 	if (files['manifest.json'] !== `${encodeControlData(manifest)}\n`)
 		throw new TypeError('Control manifest file mismatch')
+	if (Object.hasOwn(files, 'catalog.json')) parseControlCatalog(files['catalog.json']!, manifest)
 	const modules = new Map<string, PluginControlManifest['definitions'][number][]>()
 	for (const entry of manifest.definitions) {
 		const definitions = modules.get(entry.module) ?? []

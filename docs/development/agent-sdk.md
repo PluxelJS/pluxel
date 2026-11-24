@@ -1,15 +1,16 @@
 ---
 title: Agent SDK
-description: 按执行位置选择源码查询、进程内 Host 操作或外部 Node 客户端函数。
+description: 从源码或控制材料发现插件，选择进程内 Host 操作和外部 Node 客户端函数。
 ---
 
 `@pluxel/agent-sdk` 是 agent 和自动化程序的公共库，按代码执行的位置选择入口：
 
-| 入口                       | 执行环境             | 调用                                                                                           |
-| -------------------------- | -------------------- | ---------------------------------------------------------------------------------------------- |
-| `@pluxel/agent-sdk/source` | Node，可读取项目源码 | `inspectPlugin`、`listPlugins`、`inspectFile`、`inspectProject`                                |
-| `@pluxel/agent-sdk/host`   | 已启动的 Host 内部   | `Script`、`ScriptSdk`、`ScriptError`、`createScriptScope`                                      |
-| `@pluxel/agent-sdk/client` | 外部 Node 程序       | `listHosts`、`runScript`、`controlHmr`、`getScriptResult`、`cancelScript`、`syncPluginControl` |
+| 入口                        | 执行环境                     | 调用                                                                                               |
+| --------------------------- | ---------------------------- | -------------------------------------------------------------------------------------------------- |
+| `@pluxel/agent-sdk/source`  | Node，可读取项目源码         | `inspectPlugin`、`listPlugins`、`inspectFile`、`inspectProject`                                    |
+| `@pluxel/agent-sdk/control` | Node，有构建或同步的控制材料 | `openControl`、`catalog.plugins` / `services`、`inspectPlugin` / `inspectService`、`inspectConfig` |
+| `@pluxel/agent-sdk/host`    | 已启动的 Host 内部           | `Script`、`ScriptSdk`、`ScriptError`、`createScriptScope`                                          |
+| `@pluxel/agent-sdk/client`  | 外部 Node 程序               | `listHosts`、`runScript`、`controlHmr`、`getScriptResult`、`cancelScript`、`syncPluginControl`     |
 
 包要求 Node 24 或更新版本，不提供混合根入口。源码查询和客户端函数直接用 `node tool.mjs` 调用；终端命令的选择见下节。代码调用无需启动 CLI，也不需要额外的 client 会话或脚本包装。
 
@@ -22,6 +23,8 @@ description: 按执行位置选择源码查询、进程内 Host 操作或外部 
 ## 查询源码
 
 `/source` 接收显式工作区，每次调用自行结算，见[源码查询](./inspection.md)。它使用 Rolldown 的共享静态分析器，不创建 Host、脚本执行器或远端连接。同一个标准 definition 可来自源码发现、生成控制入口或运行节点的 `address.definition`。
+
+要给已有的应用写脚本，从 `/control` 打开一次构建或同步的材料。用生成的 `catalog.json` 按成员名找插件或服务，再按完整 definition 查方法签名、关联类型和导入语句。插件也可查配置，服务会标出访问范围。见[按需浏览业务接口](./plugin-control.md#按需浏览业务接口)。
 
 ## 操作进程内的 Host
 

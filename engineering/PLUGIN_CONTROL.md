@@ -18,6 +18,8 @@ Core 拥有规范身份和精确地址值的弱证据注册。class/生成入口
 
 ## 生成与声明
 
+构建从 emit 后的声明提取公开业务成员名与已有类文档，在材料根写 `catalog.json`，与其他文件一起进入 format 3 清单校验。同步按 `kind` 和完整 definition 区分插件与服务，将选中的定义按实际导出名写入接收端目录。服务行保留访问范围。`openControl` 固定快照，先校验并读取这个目录文件；首次详细查询才读取完整材料并启动可复用的声明检查器。`inspectPlugin` 和 `inspectService` 查询成员和关联类型，`inspectConfig` 读取生成入口的配置输入、输出与按 Part 路径保留的 schema。长配置源码类型单独写入 `config.d.mts`，从原公共入口转导出。公开示例见[按需浏览业务接口](../docs/development/plugin-control.md#按需浏览业务接口)。
+
 `createPluginControlPlugin` 接入唯一 `createPluginBuildPipeline`，在 generateBundle pre 阶段从本次 collector 的 sourceDefinitions/sourceContents 生成 `control/` 并登记 watch 依赖。tsdown exports hook 组合 customExports，同时生成开发/发布 `./control`；finalization 维护 `pluxel.control` 和原字段顺序。modules 与 standalone 使用相同格式。
 
 `generatePluginControl` 固定 native TypeScript 的源码、声明与设置，在镜像文件系统中 declaration-only emit，不求值插件。Schema 类型见证只用于 emit。分析和 emit 继承作者 target/lib/类型配置及原路径基址；构建使用 tsdownConfigResolved 的配置路径或 false，直接调用的 `tsconfig` 省略时从 root 查找，确无配置才用默认环境。整批程序由构建 owner 选择，临时目录不能增加 DOM globals 或改变 types 解析。

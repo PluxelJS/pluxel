@@ -1,7 +1,7 @@
 {
 	"name": "@pluxel/agent-sdk",
 	"version": "1.1.0",
-	"description": "Source queries, in-process Host operations and Node clients for Pluxel agents.",
+	"description": "Source and control interface queries, in-process Host operations and Node clients for Pluxel agents.",
 	"license": "AGPL-3.0-only",
 	"repository": {
 		"type": "git",
@@ -17,6 +17,10 @@
 		"./client": {
 			"@pluxel/source": "./src/client.ts",
 			"default": "./dist/client.mjs"
+		},
+		"./control": {
+			"@pluxel/source": "./src/control.ts",
+			"default": "./dist/control.mjs"
 		},
 		"./host": {
 			"@pluxel/source": "./src/host.ts",
@@ -39,6 +43,7 @@
 	"publishConfig": {
 		"exports": {
 			"./client": "./dist/client.mjs",
+			"./control": "./dist/control.mjs",
 			"./host": "./dist/host.mjs",
 			"./internal/cli": "./dist/internal/cli.mjs",
 			"./internal/client": "./dist/internal/client.mjs",

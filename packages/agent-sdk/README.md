@@ -3,6 +3,7 @@
 Agent 和自动化调用方使用具名入口选择所需环境：
 
 - `/source`：普通 Node 函数 `inspectPlugin`、`listPlugins`、`inspectFile`、`inspectProject`，直接查询磁盘源码。
+- `/control` 在 Node 打开已构建或同步的控制材料。用 `openControl` 按成员名筛选插件或服务，用 `inspectPlugin` 或 `inspectService` 查签名及关联类型，用 `inspectConfig` 查插件配置。见[按需浏览业务接口](../../docs/development/plugin-control.md#按需浏览业务接口)。
 - `/host`：Node/Vite 共用的 `Script`、`ScriptSdk`、`ScriptError` 及 `createScriptScope`，操作进程内已启动的 Host。SDK 控制操作成功直接返回值，失败抛错；`sdk.ctx` 直接提供当前根 Context 的 logger、effects、events 和可选 logging；`plugin.context()` 取得当前 generation 的 fs、tinybase、vault 等内建能力，额外安装的依赖才使用 `ctx.service(...)`。脚本 effects 随 run 释放，借用的 Context 与能力在 run 或 generation 结束后失效。
 - `/client`：普通 Node 函数，发现现有 Host、执行脚本、查询/取消原 receipt、控制 HMR 和同步控制材料。终端命令也使用这些函数。
 

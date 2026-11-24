@@ -1,6 +1,8 @@
+import { execFile } from 'node:child_process'
 import { mkdtemp, mkdir, readFile, readlink, rm, symlink, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join, resolve } from 'node:path'
+import { promisify } from 'node:util'
 import { afterEach, expect, it, vi } from 'vitest'
 import { cli, define } from 'gunshi'
 import {
@@ -13,8 +15,11 @@ import { formatPluginDefinitionReference } from '@pluxel/core'
 import {
 	controlSha256,
 	encodeControlData,
+	renderControlCatalog,
 	renderPluginDescriptors,
 	verifyPluginControlMaterial,
+	type ControlCatalogEntry,
+	type ControlCatalogServiceEntry,
 } from '@pluxel/host/internal/control-manifest'
 import {
 	createPluginControlMaterialReader,
@@ -54,7 +59,9 @@ async function fixture(
 		packageName?: string
 		canonicalExportName?: string
 		entry?: PluginControlMaterialsSnapshot['definitions'][number]['definition']['entry']
-		service?: boolean
+		service?: ControlCatalogServiceEntry['access']
+		sibling?: string
+		catalog?: (rows: readonly ControlCatalogEntry[]) => readonly ControlCatalogEntry[]
 	}> = {},
 ) {
 	const directory = await mkdtemp(join(tmpdir(), 'pluxel-control-sync-'))
@@ -76,17 +83,26 @@ async function fixture(
 		exportName: options.canonicalExportName ?? 'Counter',
 	}
 	const contracts = { config: `sha256:${'a'.repeat(64)}`, instance: `sha256:${'b'.repeat(64)}` }
+	const plugins = options.service ? [] : [{ definition, exportName }]
+	if (options.sibling)
+		plugins.push({
+			definition: { ...definition, exportName: options.sibling },
+			exportName: options.sibling,
+		})
 	const service = {
 		definition,
 		exportName,
 		module: 'index.mjs',
 		contract: contracts.instance,
-		access: 'all' as const,
+		access: options.service ?? 'all',
 		source: 'index.d.mts',
 	}
 	const files: Record<string, string> = {
 		'index.mjs': renderPluginDescriptors(
-			options.service ? [] : [{ exportName, descriptor: { format: 2, definition, contracts } }],
+			plugins.map((plugin) => ({
+				exportName: plugin.exportName,
+				descriptor: { format: 2, definition: plugin.definition, contracts },
+			})),
 			options.service
 				? [
 						{
@@ -101,9 +117,41 @@ async function fixture(
 					]
 				: [],
 		),
-		'index.d.mts': options.service
-			? `import type { ServiceDefinition } from '@pluxel/core';\nexport interface ${exportName}Instance { count: number; add(delta: number): number }\nexport declare const ${exportName}: ServiceDefinition<${exportName}Instance, 'all'>;\n`
-			: `import type { PluginDescriptor } from '@pluxel/host/internal/agent-types';\ndeclare class ${exportName}Instance { count: number; add(delta: number): number }\nexport type { ${exportName}Instance };\nexport type ${exportName}ConfigDeclaration = readonly [{ readonly expression: 'schema' }];\nexport type ${exportName}ConfigInput = { step?: number };\nexport type ${exportName}ConfigOutput = { step: number };\nexport declare const ${exportName}: PluginDescriptor<${exportName}ConfigInput, ${exportName}ConfigOutput, ${exportName}Instance>;\n`,
+		'index.d.mts': [
+			"import type { PluginDescriptor } from '@pluxel/host/internal/agent-types';",
+			...plugins.map(
+				({ exportName: name }) =>
+					`declare class ${name}Instance { count: number; add(delta: number): number }
+export type { ${name}Instance };
+export type ${name}ConfigDeclaration = readonly [{ readonly expression: 'schema' }];
+export type ${name}ConfigInput = { step?: number };
+export type ${name}ConfigOutput = { step: number };
+export declare const ${name}: PluginDescriptor<${name}ConfigInput, ${name}ConfigOutput, ${name}Instance>;`,
+			),
+			options.service
+				? `import type { ServiceDefinition } from '@pluxel/core';
+export interface ${exportName}Instance { read(): number }
+export declare const ${exportName}: ServiceDefinition<${exportName}Instance, '${service.access}'>;`
+				: '',
+		].join('\n'),
+	}
+	if (options.catalog) {
+		const rows: ControlCatalogEntry[] = plugins.map((plugin) => ({
+			kind: 'plugin',
+			reference: formatPluginDefinitionReference(plugin.definition),
+			exportName: plugin.exportName,
+			hasConfig: true,
+			members: ['add', 'count'],
+		}))
+		if (options.service)
+			rows.push({
+				kind: 'service',
+				reference: formatPluginDefinitionReference(definition),
+				exportName,
+				access: service.access,
+				members: ['read'],
+			})
+		files['catalog.json'] = renderControlCatalog(options.catalog(rows))
 	}
 	const entries = await Promise.all(
 		Object.entries(files).map(async ([path, content]) => ({
@@ -115,9 +163,12 @@ async function fixture(
 	const unsigned = {
 		format: 3 as const,
 		compiler: 'script-sync-test',
-		definitions: options.service
-			? []
-			: [{ definition, exportName, module: 'index.mjs', contracts, source: 'index.d.mts' }],
+		definitions: plugins.map((plugin) => ({
+			...plugin,
+			module: 'index.mjs',
+			contracts,
+			source: 'index.d.mts',
+		})),
 		services: options.service ? [service] : [],
 		files: entries,
 	}
@@ -129,7 +180,11 @@ async function fixture(
 	const snapshot: PluginControlMaterialsSnapshot = {
 		catalogRevision: 3,
 		materials: [{ snapshot: manifest.snapshot, manifest, files }],
-		definitions: options.service ? [] : [{ definition, snapshot: manifest.snapshot, exportName }],
+		definitions: plugins.map((plugin) => ({
+			definition: plugin.definition,
+			exportName: plugin.exportName,
+			snapshot: manifest.snapshot,
+		})),
 		services: options.service ? [{ definition, snapshot: manifest.snapshot, exportName }] : [],
 		unavailableServices: [],
 		unavailable: [],
@@ -176,8 +231,10 @@ it('groups one canonical entry and reports exceptional export aliases without am
 		result.definitions[0].module.replace(/\.mjs$/, '.d.mts'),
 		'utf8',
 	)
-	expect(declaration).toContain('Gauge as Gauge')
+	expect(declaration).toContain('\n\tGauge,\n')
+	expect(declaration).toContain('\n\ttype GaugeInstance,\n')
 	expect(declaration).toContain('DefaultPlugin as Plugin_')
+	expect(declaration).toContain('type DefaultPluginInstance as Plugin_')
 })
 
 it('selects definitions across index pages and downloads only their complete verified snapshots', async () => {
@@ -242,7 +299,8 @@ it('synchronizes required service descriptors and their instance types across mi
 	const service = await fixture({
 		packageName: '@test/mixed',
 		canonicalExportName: 'Clock',
-		service: true,
+		service: 'root',
+		catalog: (rows) => rows.map((row) => ({ ...row, documentation: 'Reads the clock.' })),
 	})
 	const unrelated = await Promise.all(
 		Array.from({ length: 16 }, (_, index) =>
@@ -278,7 +336,7 @@ it('synchronizes required service descriptors and their instance types across mi
 	expect(clock.importStatement).toContain('import { Clock }')
 	expect(await readFile(clock.module, 'utf8')).toContain('createServiceControlReference')
 	expect(await readFile(clock.module.replace(/\.mjs$/, '.d.mts'), 'utf8')).toContain(
-		'ClockInstance as ClockInstance',
+		'\n\ttype ClockInstance,\n',
 	)
 	expect(new Set(file.mock.calls.map(([input]) => input.snapshot))).toEqual(
 		new Set([plugin.snapshot.materials[0].snapshot, service.snapshot.materials[0].snapshot]),
@@ -286,6 +344,16 @@ it('synchronizes required service descriptors and their instance types across mi
 	const exact = await writePluginControl({ source, out, definition: clock.definition })
 	expect(exact.definitions).toEqual([])
 	expect(exact.services).toEqual([clock])
+	expect(JSON.parse(await readFile(join(out, 'current/catalog.json'), 'utf8'))).toEqual([
+		{
+			kind: 'service',
+			reference: formatPluginDefinitionReference(clock.definition),
+			exportName: 'Clock',
+			access: 'root',
+			documentation: 'Reads the clock.',
+			members: ['read'],
+		},
+	])
 })
 
 it('keeps long source-entry identities within material path budgets and reports unavailable definitions', async () => {
@@ -324,8 +392,78 @@ it('keeps long source-entry identities within material path budgets and reports 
 	})
 })
 
+it('keeps service summaries distinct across kinds and packages when canonical exports collide', async () => {
+	const mixed = await fixture({
+		packageName: '@test/mixed',
+		canonicalExportName: 'Clock',
+		materialExportName: 'SourceClock',
+		sibling: 'Clock',
+		service: 'all',
+		catalog: (rows) =>
+			rows.map((row) => ({
+				...row,
+				documentation: row.kind === 'plugin' ? 'Counts calls.' : 'Reads the clock.',
+			})),
+	})
+	const legacy = await fixture({
+		packageName: '@test/legacy',
+		canonicalExportName: 'Clock',
+		service: 'owner',
+	})
+	using _mixedReader = mixed.reader
+	using _legacyReader = legacy.reader
+	using source = createPluginControlMaterialReader(async () => ({
+		catalogRevision: 21,
+		materials: [...legacy.snapshot.materials, ...mixed.snapshot.materials],
+		definitions: mixed.snapshot.definitions,
+		services: [...legacy.snapshot.services, ...mixed.snapshot.services],
+		unavailable: [],
+		unavailableServices: [],
+	}))
+	const out = join(mixed.directory, 'same-name')
+	const currentCatalog = join(out, 'current/catalog.json')
+	const result = await writePluginControl({ source, out })
+	const alias = result.services.find((entry) => entry.module === result.definitions[0].module)!
+	expect(alias.exportName).toMatch(/^Service_[a-f0-9]{64}$/)
+	expect(alias.importStatement).toContain(`import { ${alias.exportName} }`)
+	expect(await readFile(alias.module.replace(/\.mjs$/, '.d.mts'), 'utf8')).toContain(
+		`SourceClock as ${alias.exportName}`,
+	)
+	const plugin = {
+		kind: 'plugin',
+		reference: 'package:@test/mixed::Clock',
+		exportName: 'Clock',
+		hasConfig: true,
+		members: ['add', 'count'],
+		documentation: 'Counts calls.',
+	}
+	const service = {
+		kind: 'service',
+		reference: plugin.reference,
+		exportName: alias.exportName,
+		access: 'all',
+		members: ['read'],
+		documentation: 'Reads the clock.',
+	}
+	const oldService = {
+		kind: 'service',
+		reference: 'package:@test/legacy::Clock',
+		exportName: 'Clock',
+		access: 'owner',
+	}
+	expect(JSON.parse(await readFile(currentCatalog, 'utf8'))).toEqual([plugin, oldService, service])
+	await writePluginControl({ source, out, definition: alias.definition })
+	expect(JSON.parse(await readFile(currentCatalog, 'utf8'))).toEqual([plugin, service])
+	await writePluginControl({ source, out, packageName: '@test/legacy' })
+	expect(JSON.parse(await readFile(currentCatalog, 'utf8'))).toEqual([oldService])
+})
+
 it('keeps canonical imports stable when material aliases and the set of same-name Plugins change', async () => {
-	const original = await fixture({ materialExportName: 'Plugin_previous_alias' })
+	const original = await fixture({
+		materialExportName: 'Plugin_previous_alias',
+		sibling: 'Sibling',
+		catalog: (rows) => rows.map((row) => ({ ...row, documentation: 'Counts requests.' })),
+	})
 	const other = await fixture({ packageName: '@test/another-counter' })
 	using _originalReader = original.reader
 	using _otherReader = other.reader
@@ -344,22 +482,61 @@ it('keeps canonical imports stable when material aliases and the set of same-nam
 			encodeControlData(entry.definition) ===
 			encodeControlData(original.snapshot.definitions[0].definition),
 	)!
-	expect(first.definitions).toHaveLength(2)
+	expect(first.definitions).toHaveLength(3)
 	expect(new Set(first.definitions.map((entry) => entry.module)).size).toBe(2)
-	expect(first.definitions.map((entry) => entry.exportName)).toEqual(['Counter', 'Counter'])
+	expect(first.definitions.map((entry) => entry.exportName)).toEqual([
+		'Counter',
+		'Counter',
+		'Sibling',
+	])
 	expect(selected.exportName).toBe('Counter')
+	const catalogFile = join(out, 'current/catalog.json')
+	const indexedCounter = {
+		kind: 'plugin',
+		reference: 'package:@test/synced-counter::Counter',
+		exportName: 'Counter',
+		hasConfig: true,
+		documentation: 'Counts requests.',
+		members: ['add', 'count'],
+	}
+	const legacyCounter = {
+		kind: 'plugin',
+		reference: 'package:@test/another-counter::Counter',
+		exportName: 'Counter',
+		hasConfig: true,
+	}
+	expect(JSON.parse(await readFile(catalogFile, 'utf8'))).toEqual([
+		legacyCounter,
+		indexedCounter,
+		{
+			...indexedCounter,
+			reference: 'package:@test/synced-counter::Sibling',
+			exportName: 'Sibling',
+		},
+	])
 	expect(await readFile(selected.module.replace(/\.mjs$/, '.d.mts'), 'utf8')).toContain(
 		`Plugin_previous_alias as ${selected.exportName}`,
 	)
+	await writePluginControl({ source: together, out, definition: selected.definition })
+	expect(JSON.parse(await readFile(catalogFile, 'utf8'))).toEqual([indexedCounter])
+	const subsetManifest = JSON.parse(await readFile(join(out, 'current/manifest.json'), 'utf8'))
+	expect(
+		subsetManifest.files
+			.map((file: { path: string }) => file.path)
+			.filter((path: string) => path.endsWith('catalog.json')),
+	).toEqual(['catalog.json'])
 
 	const renamed = await fixture()
 	using renamedReader = renamed.reader
 	const next = await writePluginControl({ source: renamedReader, out })
 	expect(next.definitions).toHaveLength(1)
 	expect(next.definitions[0]).toEqual(selected)
+	expect(JSON.parse(await readFile(catalogFile, 'utf8'))).toEqual([
+		{ ...legacyCounter, reference: indexedCounter.reference },
+	])
 	expect(next.snapshot).not.toBe(first.snapshot)
 	expect(await readFile(selected.module.replace(/\.mjs$/, '.d.mts'), 'utf8')).toContain(
-		`Counter as ${selected.exportName}`,
+		`\n\t${selected.exportName},\n`,
 	)
 })
 
@@ -388,10 +565,15 @@ it.each(process.platform === 'win32' ? ['?query'] : ['?query', 'back\\slash'])(
 	},
 )
 
-it('publishes verified entry modules atomically and compiles imports through their stable current paths', async () => {
+it('publishes verified entry modules atomically and compiles the import found by an offline agent', async () => {
 	const controller = new AbortController()
 	compilationController = controller
-	const { directory, reader } = await fixture()
+	const { directory, reader } = await fixture({
+		canonicalExportName: 'Clock',
+		service: 'root',
+		sibling: 'Counter',
+		catalog: (rows) => rows,
+	})
 	using source = reader
 	const out = join(directory, 'control with \'single\' "double" #')
 	const first = await writePluginControl({ source, out })
@@ -413,7 +595,7 @@ it('publishes verified entry modules atomically and compiles imports through the
 		files[
 			first.definitions[0].module.slice(join(out, 'current').length + 1).replace(/\.mjs$/, '.d.mts')
 		],
-	).toContain(`CounterConfigDeclaration as ${first.definitions[0].exportName}ConfigDeclaration`)
+	).toContain(`\n\ttype ${first.definitions[0].exportName}ConfigDeclaration,\n`)
 	await expect(writePluginControl({ source, out })).resolves.toMatchObject({
 		snapshot: first.snapshot,
 		out: first.out,
@@ -432,6 +614,52 @@ it('publishes verified entry modules atomically and compiles imports through the
 			},
 		}),
 	)
+	const { stdout } = await promisify(execFile)(
+		process.execPath,
+		[
+			'--input-type=module',
+			'-e',
+			`
+			import { registerHooks } from 'node:module'
+			let listing = true
+			registerHooks({ resolve(specifier, context, next) {
+				if (specifier === '@pluxel/host/internal/control-reference') {
+					throw new Error('Browsing executed a descriptor')
+				}
+				if (listing && (specifier === 'typescript' || specifier.startsWith('typescript/'))) {
+					throw new Error('Listing loaded the declaration compiler')
+				}
+				return next(specifier, context)
+			} })
+			const { openControl } = await import('@pluxel/agent-sdk/control')
+			using control = await openControl(process.argv[1])
+			const [plugin] = control.plugins
+			const [service] = control.services
+			listing = false
+			const inspection = await control.inspectPlugin(plugin.reference, { member: 'add' })
+			const serviceInspection = await control.inspectService(service.reference, { member: 'read' })
+			console.log(JSON.stringify({ plugin, inspection, service, serviceInspection }))
+			`,
+			join(out, 'current'),
+		],
+		{ cwd: directory, signal: controller.signal },
+	)
+	const { plugin, inspection, service, serviceInspection } = JSON.parse(stdout)
+	expect(plugin).toMatchObject({
+		reference: 'package:@test/synced-counter::Counter',
+		hasConfig: true,
+		members: ['add', 'count'],
+	})
+	expect(inspection.members).toMatchObject([{ name: 'add' }])
+	expect(inspection.members[0].signatures.join(' ')).toContain('delta: number')
+	expect(service).toMatchObject({
+		reference: 'package:@test/synced-counter::Clock',
+		access: 'root',
+		members: ['read'],
+	})
+	expect(serviceInspection.members).toMatchObject([
+		{ name: 'read', signatures: ['read(): number;'] },
+	])
 	const script = join(directory, 'task.ts')
 	async function compile() {
 		controller.signal.throwIfAborted()
@@ -445,7 +673,19 @@ it('publishes verified entry modules atomically and compiles imports through the
 	}
 	await writeFile(
 		script,
-		`import type {Script} from '@pluxel/agent-sdk/host';\n${first.definitions[0].importStatement}\nexport default (async (sdk) => { const select=sdk.plugin; const counter=select(Counter.nodeAddress()); const {get,patch}=counter.config; const before=await get(); const result=await patch({set:{step:2}},{expectedManagedRevision:before.managedRevision}); const {instance}=await counter.instance(); return {result,count:instance.add(2)} }) satisfies Script;\n`,
+		`import type { Script } from '@pluxel/agent-sdk/host';
+${inspection.importStatement}
+${serviceInspection.importStatement}
+export default (async (sdk) => {
+	const select = sdk.plugin;
+	const counter = select(Counter.nodeAddress());
+	const { get, patch } = counter.config;
+	const before = await get();
+	const result = await patch({ set: { step: 2 } }, { expectedManagedRevision: before.managedRevision });
+	const { instance } = await counter.instance();
+	return { result, count: instance.add(2), time: sdk.ctx.service(Clock).read() };
+}) satisfies Script;
+`,
 	)
 	const artifact = await compile()
 	expect(artifact.code).toContain('synced-counter')
@@ -482,6 +722,21 @@ it('rejects corrupted or mixed chunks before publishing and preserves author fil
 	const installed = await writePluginControl({ source, out: owned })
 	const current = await readlink(join(owned, 'current'))
 	const before = await readFile(installed.definitions[0].module, 'utf8')
+	const inconsistent = await fixture({
+		sibling: 'Sibling',
+		service: 'root',
+		catalog: (rows) =>
+			rows.map((row) => (row.kind === 'service' ? { ...row, access: 'all' } : row)),
+	})
+	using invalidCatalog = inconsistent.reader
+	await expect(
+		writePluginControl({
+			source: invalidCatalog,
+			out: owned,
+			definition: inconsistent.snapshot.definitions[0].definition,
+		}),
+	).rejects.toThrow(/catalog/i)
+	expect(await readlink(join(owned, 'current'))).toBe(current)
 	await expect(writePluginControl({ source: corrupt, out: owned })).rejects.toMatchObject({
 		code: 'protocol_mismatch',
 	})

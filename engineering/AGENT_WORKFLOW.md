@@ -20,6 +20,7 @@ Host 拥有装配、catalog、运行意图和持久策略，coordinator 调用 C
 | 入口                                        | 职责                                                                                                 |
 | ------------------------------------------- | ---------------------------------------------------------------------------------------------------- |
 | `@pluxel/agent-sdk/source`                  | 普通源码查询函数；实现与类型由 Rolldown 拥有，见 [Toolchain](TOOLCHAIN.md#offline-plugin-inspection) |
+| `@pluxel/agent-sdk/control`                 | 在作者侧查询构建或同步的插件和服务接口，见[控制材料](PLUGIN_CONTROL.md)                              |
 | `@pluxel/agent-sdk/host`                    | 唯一 Script/ScriptSdk、`ScriptError`、`createScriptScope` 和地址关联类型                             |
 | `@pluxel/agent-sdk/client`                  | 外部发现、提交、HMR、材料同步和原 receipt 查询/取消                                                  |
 | `@pluxel/agent-sdk/internal/cli`            | 官方命令挂载与终端呈现                                                                               |

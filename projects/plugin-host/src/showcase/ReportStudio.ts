@@ -83,9 +83,11 @@ const StudioConfig = v.object({
 	),
 })
 
+/** Render and publish report previews, inspect recent artifacts, and monitor the preview cache. */
 @Plugin({ displayName: 'Report Studio · Architecture Lab' })
 export class ReportStudioPlugin extends BasePlugin {
 	private readonly config = this.configs.use(StudioConfig)
+	/** Emits the artifact after the draft and release writes succeed. */
 	readonly generated = new EvtChannel<readonly [artifact: ShowcaseArtifact]>(this.ctx)
 	private cache?: CacheNamespace
 	private limiter?: RateLimiter
@@ -222,6 +224,7 @@ export class ReportStudioPlugin extends BasePlugin {
 		})
 	}
 
+	/** Read recent artifacts, active providers, cache statistics, and the last rate and outbound results. */
 	snapshot(): ShowcaseSnapshot {
 		return Object.freeze({
 			revision: this.revision,
@@ -246,6 +249,13 @@ export class ReportStudioPlugin extends BasePlugin {
 		})
 	}
 
+	/**
+	 * Publish a new draft and release on each successful call, including preview cache hits.
+	 * @param input The trimmed title must contain 1–80 UTF-16 code units.
+	 * @returns Artifact metadata. `objectKey` locates the object in the drafts bucket.
+	 * @throws A rate-limit error includes the retry delay in milliseconds.
+	 * @example await instance.generate({ title: 'Weekly report', engine: 'echarts' })
+	 */
 	async generate(input: ShowcaseRenderRequest): Promise<ShowcaseArtifact> {
 		const title = normalizeTitle(input.title)
 		const engine = parseEngine(input.engine)
@@ -299,6 +309,7 @@ export class ReportStudioPlugin extends BasePlugin {
 		return artifact
 	}
 
+	/** Send a GET to the configured outbound target. Inspect `ok` and `message` for the result. */
 	async probeOutbound(): Promise<NonNullable<ShowcaseSnapshot['lastOutbound']>> {
 		try {
 			const response = await this.ctx.wretch
@@ -323,6 +334,7 @@ export class ReportStudioPlugin extends BasePlugin {
 		return this.lastOutbound
 	}
 
+	/** Clear the preview cache and return its statistics after the operation. */
 	async clearCache(): Promise<ShowcaseCacheStats> {
 		const cache = this.requireCache()
 		await cache.clear()
@@ -331,6 +343,7 @@ export class ReportStudioPlugin extends BasePlugin {
 		return stats
 	}
 
+	/** Observe future revisions. Dispose the returned subscription to stop receiving updates. */
 	subscribe(listener: (revision: number) => void): Disposable {
 		this.listeners.add(listener)
 		let active = true

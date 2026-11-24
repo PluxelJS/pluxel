@@ -1,6 +1,6 @@
 import { createHash } from 'node:crypto'
 import * as contracts from '@pluxel/core/internal/control-manifest'
-import { pluginDefinitionIndexKey } from '@pluxel/core'
+import { formatPluginDefinitionReference, pluginDefinitionIndexKey } from '@pluxel/core'
 import MagicString from 'magic-string'
 import type { TsdownPlugin } from 'vite-plus/pack'
 import { generateControl } from './control/generate'
@@ -76,6 +76,7 @@ export function createServiceBuildPlugin(options: {
 				const generation = await generateControl({
 					contracts: {
 						...contracts,
+						formatPluginDefinitionReference,
 						pluginDefinitionIndexKey,
 						controlSha256: (source) => createHash('sha256').update(source).digest('hex'),
 					},
