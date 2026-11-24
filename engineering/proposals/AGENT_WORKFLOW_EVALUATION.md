@@ -1,6 +1,6 @@
 # Agent 工作流对照研究
 
-状态：尚未开展。统一脚本 SDK、插件控制和维护入口已有正式实现；当前架构见 [Agent Workflow](../AGENT_WORKFLOW.md)、[Plugin Control](../PLUGIN_CONTROL.md)和[工程索引](../README.md)。这里保留对 agent 使用效率的独立研究问题。
+首轮已用六个独立模型会话对照三项任务。输入、逐次查询、token 与 Host 回放见[首轮研究记录](../records/agent-control-evaluation/README.md)。其余任务和重复样本仍待研究。当前实现见 [Agent Workflow](../AGENT_WORKFLOW.md)、[Plugin Control](../PLUGIN_CONTROL.md)和[工程索引](../README.md)。本页保留后续研究问题。
 
 ## 要回答的问题
 

@@ -1,0 +1,296 @@
+{
+	"repositoryHead": "7ee930604cc3f0a4ba2d64040b335d4cb9894ee3",
+	"controlIndexCommit": "7bfd0c51e018b2e3647c792964886cec6c40f05c",
+	"cli": "0.170.0",
+	"model": "gpt-6.2-sol",
+	"reasoningEffort": "low",
+	"instructions": "You are completing one Pluxel authoring task in a controlled study. Use only the study MCP tools to consult this case's generated material. No shell, internet, repository, skills, other MCP tools, or guesses about opaque module paths. Each case gets a fresh conversation. You have up to 12 study-tool calls. Answer only the JSON requested. The evaluator will run your answer once privately; the model does not get feedback on that run. The SDK callback pattern is 'import type { Script } from \"@pluxel/agent-sdk/host\"; export default (async sdk => { const { instance } = await sdk.plugin(Descriptor.nodeAddress()).instance(); return instance.method(input) }) satisfies Script'. Import the actual descriptor from its exact path under ./material/ relative to the script; use a normal static named import. Do not start, stop or configure plugins.",
+	"tasks": {
+		"1": {
+			"request": "The Host has just admitted a plugin from a newly installed dynamic source. Find the running default plugin that can estimate processing time for priority tickets, among multiple plugins named Router. Return {\"script\":\"<complete TypeScript>\"} which calls that capability with tickets=4 and rate=3 and returns the method's result unchanged.",
+			"criterion": "Private Vite run returns number 19 from the new priority plugin."
+		},
+		"2": {
+			"request": "After an accepted HMR change, our previous script calling estimateDispatch on the default priority ticket plugin failed with SDK error control_contract_mismatch. You have freshly synchronized control material. Recover the operation for tickets=4 and rate=3 with the current contract. Return {\"script\":\"<complete TypeScript>\"} which calls the current capability and returns its result unchanged.",
+			"criterion": "The prior descriptor is rejected with control_contract_mismatch; private Vite run with the current descriptor returns number 119."
+		},
+		"3": {
+			"request": "Find the author schema for shardBudget. Return {\"file\":\"<author filename ending in .ts, not generated declaration>\",\"symbol\":\"<schema variable>\",\"field\":\"<field>\",\"default\":<number>,\"min\":<number>,\"max\":<number>,\"integer\":<boolean>}. Read from the captured original author schema; documentation may name the field's default but not all its constraints.",
+			"criterion": "Return policy.ts, DispatchPolicy, shardBudget, default 7, interval [2,12], integer=true."
+		}
+	},
+	"materials": [
+		"sha256:d145aba9fefe5386ab61c2184176ae39a7045d067c89d927b420c47109b979fa",
+		"sha256:6cc7a90cd62b1dffd3eade39ad23fa1c01c533c9da734df7e5f896fd3f87129c"
+	],
+	"trials": [
+		{
+			"arm": "A",
+			"task": 1,
+			"calls": [
+				{
+					"tool": "search",
+					"input": {
+						"text": "priority"
+					},
+					"bytes": 2937,
+					"error": false
+				},
+				{
+					"tool": "files",
+					"input": {},
+					"bytes": 1110,
+					"error": false
+				},
+				{
+					"tool": "read",
+					"input": {
+						"path": "entries/65ba3fd89dcedde856a13c7b9a124910beb64b19f77f8daf6e4a2c27f5afe6dc/index.mjs"
+					},
+					"bytes": 488,
+					"error": false
+				},
+				{
+					"tool": "read",
+					"input": {
+						"path": "manifest.json"
+					},
+					"bytes": 3837,
+					"error": false
+				},
+				{
+					"tool": "read",
+					"input": {
+						"path": "materials/61b202f0d6450bff771c2757f04563f1bb1b1749cc75cef1896cd28a3dd881f1/types/2eb6f75618a1e932/priority.entry.d.ts"
+					},
+					"bytes": 928,
+					"error": false
+				}
+			],
+			"explicitReadFiles": 3,
+			"usage": {
+				"input_tokens": 76389,
+				"cached_input_tokens": 67840,
+				"cache_write_input_tokens": 0,
+				"output_tokens": 350,
+				"reasoning_output_tokens": 0
+			},
+			"answer": {
+				"script": "import type { Script } from \"@pluxel/agent-sdk/host\";\nimport { Router } from \"./material/entries/65ba3fd89dcedde856a13c7b9a124910beb64b19f77f8daf6e4a2c27f5afe6dc/index.mjs\";\n\nexport default (async sdk => {\n  const { instance } = await sdk.plugin(Router.nodeAddress()).instance();\n  return instance.estimateDispatch({ tickets: 4, rate: 3 });\n}) satisfies Script;"
+			}
+		},
+		{
+			"arm": "B",
+			"task": 1,
+			"calls": [
+				{
+					"tool": "files",
+					"input": {},
+					"bytes": 1110,
+					"error": false
+				},
+				{
+					"tool": "catalog",
+					"input": {},
+					"bytes": 577,
+					"error": false
+				},
+				{
+					"tool": "member",
+					"input": {
+						"member": "estimateDispatch",
+						"reference": "source:app/entries/priority.entry.ts::Router"
+					},
+					"bytes": 578,
+					"error": false
+				}
+			],
+			"explicitReadFiles": 0,
+			"usage": {
+				"input_tokens": 67870,
+				"cached_input_tokens": 60672,
+				"cache_write_input_tokens": 0,
+				"output_tokens": 244,
+				"reasoning_output_tokens": 0
+			},
+			"answer": {
+				"script": "import type { Script } from \"@pluxel/agent-sdk/host\";\nimport { Router } from \"./material/entries/65ba3fd89dcedde856a13c7b9a124910beb64b19f77f8daf6e4a2c27f5afe6dc/index.mjs\";\n\nexport default (async sdk => {\n  const { instance } = await sdk.plugin(Router.nodeAddress()).instance();\n  return instance.estimateDispatch({ tickets: 4, rate: 3 });\n}) satisfies Script;"
+			}
+		},
+		{
+			"arm": "A",
+			"task": 2,
+			"calls": [
+				{
+					"tool": "search",
+					"input": {
+						"text": "estimateDispatch"
+					},
+					"bytes": 2,
+					"error": false
+				},
+				{
+					"tool": "search",
+					"input": {
+						"text": "priority"
+					},
+					"bytes": 2937,
+					"error": false
+				},
+				{
+					"tool": "read",
+					"input": {
+						"path": "materials/380b04ef15474ae35add156f3ef38cee495d6000f111941255f001b0c1541f2c/types/2eb6f75618a1e932/priority.entry.d.ts"
+					},
+					"bytes": 934,
+					"error": false
+				},
+				{
+					"tool": "read",
+					"input": {
+						"path": "entries/65ba3fd89dcedde856a13c7b9a124910beb64b19f77f8daf6e4a2c27f5afe6dc/index.mjs"
+					},
+					"bytes": 488,
+					"error": false
+				},
+				{
+					"tool": "read",
+					"input": {
+						"path": "manifest.json"
+					},
+					"bytes": 3837,
+					"error": false
+				}
+			],
+			"explicitReadFiles": 3,
+			"usage": {
+				"input_tokens": 95326,
+				"cached_input_tokens": 80640,
+				"cache_write_input_tokens": 0,
+				"output_tokens": 369,
+				"reasoning_output_tokens": 0
+			},
+			"answer": {
+				"script": "import type { Script } from \"@pluxel/agent-sdk/host\";\nimport { Router } from \"./material/entries/65ba3fd89dcedde856a13c7b9a124910beb64b19f77f8daf6e4a2c27f5afe6dc/index.mjs\";\n\nexport default (async sdk => {\n  const { instance } = await sdk.plugin(Router.nodeAddress()).instance();\n  return instance.estimateRoutedDispatch({ tickets: 4, rate: 3 });\n}) satisfies Script;\n"
+			}
+		},
+		{
+			"arm": "B",
+			"task": 2,
+			"calls": [
+				{
+					"tool": "catalog",
+					"input": {},
+					"bytes": 583,
+					"error": false
+				},
+				{
+					"tool": "search",
+					"input": {
+						"text": "estimateDispatch"
+					},
+					"bytes": 2,
+					"error": false
+				},
+				{
+					"tool": "member",
+					"input": {
+						"reference": "source:app/entries/priority.entry.ts::Router",
+						"member": "estimateRoutedDispatch"
+					},
+					"bytes": 590,
+					"error": false
+				}
+			],
+			"explicitReadFiles": 0,
+			"usage": {
+				"input_tokens": 71720,
+				"cached_input_tokens": 62336,
+				"cache_write_input_tokens": 0,
+				"output_tokens": 261,
+				"reasoning_output_tokens": 0
+			},
+			"answer": {
+				"script": "import type { Script } from \"@pluxel/agent-sdk/host\";\nimport { Router } from \"./material/entries/65ba3fd89dcedde856a13c7b9a124910beb64b19f77f8daf6e4a2c27f5afe6dc/index.mjs\";\n\nexport default (async sdk => {\n  const { instance } = await sdk.plugin(Router.nodeAddress()).instance();\n  return instance.estimateRoutedDispatch({ tickets: 4, rate: 3 });\n}) satisfies Script;\n"
+			}
+		},
+		{
+			"arm": "A",
+			"task": 3,
+			"calls": [
+				{
+					"tool": "search",
+					"input": {
+						"text": "shardBudget"
+					},
+					"bytes": 1029,
+					"error": false
+				},
+				{
+					"tool": "read",
+					"input": {
+						"path": "materials/61b202f0d6450bff771c2757f04563f1bb1b1749cc75cef1896cd28a3dd881f1/config.d.mts"
+					},
+					"bytes": 910,
+					"error": false
+				}
+			],
+			"explicitReadFiles": 1,
+			"usage": {
+				"input_tokens": 71463,
+				"cached_input_tokens": 65280,
+				"cache_write_input_tokens": 0,
+				"output_tokens": 155,
+				"reasoning_output_tokens": 0
+			},
+			"answer": {
+				"file": "policy.ts",
+				"symbol": "DispatchPolicy",
+				"field": "shardBudget",
+				"default": 7,
+				"min": 2,
+				"max": 12,
+				"integer": true
+			}
+		},
+		{
+			"arm": "B",
+			"task": 3,
+			"calls": [
+				{
+					"tool": "search",
+					"input": {
+						"text": "shardBudget"
+					},
+					"bytes": 1029,
+					"error": false
+				},
+				{
+					"tool": "read",
+					"input": {
+						"path": "materials/61b202f0d6450bff771c2757f04563f1bb1b1749cc75cef1896cd28a3dd881f1/config.d.mts"
+					},
+					"bytes": 910,
+					"error": false
+				}
+			],
+			"explicitReadFiles": 1,
+			"usage": {
+				"input_tokens": 72054,
+				"cached_input_tokens": 66816,
+				"cache_write_input_tokens": 0,
+				"output_tokens": 155,
+				"reasoning_output_tokens": 0
+			},
+			"answer": {
+				"file": "policy.ts",
+				"symbol": "DispatchPolicy",
+				"field": "shardBudget",
+				"default": 7,
+				"min": 2,
+				"max": 12,
+				"integer": true
+			}
+		}
+	]
+}
