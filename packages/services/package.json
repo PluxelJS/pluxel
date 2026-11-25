@@ -198,7 +198,6 @@
 	},
 	"devDependencies": {
 		"@electric-sql/pglite": "catalog:prod",
-		"@libsql/client": "catalog:backend",
 		"@logtape/logtape": "catalog:prod",
 		"@mantine/core": "catalog:frontend",
 		"@pluxel/agent-sdk": "workspace:*",
@@ -221,7 +220,6 @@
 		"playwright-core": "catalog:prod",
 		"react": "catalog:frontend",
 		"react-dom": "catalog:frontend",
-		"tinybase": "catalog:prod",
 		"tsx": "catalog:dev",
 		"valibot": "catalog:validation",
 		"vite": "catalog:build",

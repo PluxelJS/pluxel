@@ -3,7 +3,7 @@ title: 插件状态（TinyBase）
 description: 使用内建 Store 保存插件状态，为需要跨重启恢复的数据选择持久后端。
 ---
 
-每个插件节点可以通过 `ctx.tinybase` 打开自己的 TinyBase Store。Node 和浏览器的直接启动入口默认把快照存在内存里。Cloudflare Worker 的快照可供同一个根上的后续请求读取，根被替换或 isolate 被回收时就会丢失。业务需要跨重启恢复时，在打开 Store 时指定 `durable: true`。 [Host 存储](../host/configuration.md#选择文件后端)
+每个插件节点可以通过 `ctx.tinybase` 打开自己的 TinyBase Store。Core 把 Store 的 Tables 和 Values 写成 JSON 快照，交给 Host 文档存储保存，无需安装 SQL 驱动。Node 和浏览器的直接启动入口默认把快照存在内存里。Cloudflare Worker 的快照可供同一个根上的后续请求读取，根被替换或 isolate 被回收时就会丢失。业务需要跨重启恢复时，在打开 Store 时指定 `durable: true`。 [Host 存储](../host/configuration.md#选择文件后端)
 
 随版本交付的只读字典和模板可以直接导入。部署配置使用 `configs.use()`，部署凭据由 Vault 提供。 [发布前确定哪些输入](../host/runtime-portability.md#发布前确定哪些输入)
 
