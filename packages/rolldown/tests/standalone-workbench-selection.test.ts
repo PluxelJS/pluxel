@@ -47,6 +47,9 @@ async function linkDependencies(root: string): Promise<void> {
 		join(root, 'node_modules/@types/node'),
 		'dir',
 	)
+	const { version: capnwebVersion } = JSON.parse(
+		await readFile(join(root, 'node_modules/capnweb/package.json'), 'utf8'),
+	) as { version: string }
 	await put(
 		root,
 		'package.json',
@@ -54,8 +57,8 @@ async function linkDependencies(root: string): Promise<void> {
 			name: '@example/standalone-workbench-selection',
 			type: 'module',
 			exports: { '.': './owners.ts' },
-			dependencies: { capnweb: '0.12.0' },
-			peerDependencies: { capnweb: '0.12.0' },
+			dependencies: { capnweb: capnwebVersion },
+			peerDependencies: { capnweb: capnwebVersion },
 		}),
 	)
 	await put(

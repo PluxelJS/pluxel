@@ -9,7 +9,7 @@ description: 使用内建 Store 保存插件状态，为需要跨重启恢复的
 
 ## 打开并使用原生 Store
 
-下面的插件在同一个 Host 根上保存主题选择，允许使用会话存储。
+下面的插件在同一个 Host 根上保存主题选择，允许使用会话存储。它把自己创建的 Store 交给 Core，因此插件的 `peerDependencies.tinybase` 和 `devDependencies.tinybase` 都要指向已安装 `@pluxel/core` 清单中 `pluxel.tinybase` 指定的精确版本。可以使用指向该版本的 pnpm catalog。Host 会核对插件实际解析到的版本，再共享同一份 TinyBase。
 
 ```ts twoslash
 // @filename: preferences.ts

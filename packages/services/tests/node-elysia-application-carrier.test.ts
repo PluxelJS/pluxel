@@ -63,7 +63,9 @@ describe('Node Elysia application carrier', () => {
 		}
 		await hooks.open?.(peer as never)
 		expect(carrier.pending('owner-a')).toBe(1)
+		expect(raw!.getBufferedAmount()).toBe(0)
 		peer.bufferedAmount = 128
+		expect(raw!.getBufferedAmount()).toBe(128)
 		expect(raw!.send('queued')).toBe(-1)
 		expect(peer.send).toHaveBeenCalledWith('queued', { compress: undefined })
 		peer.bufferedAmount = 16 * 1024 * 1024

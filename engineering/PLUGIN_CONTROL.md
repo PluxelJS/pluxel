@@ -108,7 +108,7 @@ script sync/dev sync 共用客户端实现；packageName/完整 definition 互�
 
 ### 已知限制
 
-- Elysia 2.0.0-rc.0 在独立 TypeScript 7.0.2 严格 library checking 下可复现 TS2536/TS2344，Services 可选安装检查有该上游声明失败。
+- Elysia 2.0.0-rc.5 在 TypeScript 7.0.2 开启完整库声明检查时仍可复现 TS2536/TS2344。最小输入只导入 Elysia，Services 的独立安装检查用相同依赖对照诊断。[隔离复现](experiments/elysia-declarations/README.md)
 - 既往交付检查中的嵌套 fixture 超时和 Typst 观察缺口见[验收记录](records/host-deployment.md#控制-sdk-交付观察2026-11-15)。
 - 控制索引的首轮对照覆盖动态发现、HMR 恢复和按字段名定位配置，每项每组各有一个样本。[观测值与复核范围](records/agent-control-evaluation/README.md)
 - 跨 isolate 的业务调用、持久任务和离线配置校验见 [Agent 执行与控制提案](proposals/AGENT_WORKFLOW.md)。

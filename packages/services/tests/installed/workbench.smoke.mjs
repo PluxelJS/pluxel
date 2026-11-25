@@ -124,8 +124,11 @@ try {
 	)
 	run(process.execPath, ['probe.mjs'], root)
 	const packagedManifest = JSON.parse(readFileSync(join(plugin, 'package.json'), 'utf8'))
-	assert.equal(packagedManifest.peerDependencies.capnweb, '0.12.0')
-	assert.equal(packagedManifest.pluxel.workbenchCapnweb, '0.12.0')
+	const capnwebVersion = JSON.parse(
+		readFileSync(join(nodeModules, 'capnweb/package.json'), 'utf8'),
+	).version
+	assert.equal(packagedManifest.peerDependencies.capnweb, capnwebVersion)
+	assert.equal(packagedManifest.pluxel.workbenchCapnweb, capnwebVersion)
 	assert.equal(packagedManifest.dependencies?.capnweb, undefined)
 	mkdirSync(join(plugin, 'node_modules'), { recursive: true })
 	cpSync(

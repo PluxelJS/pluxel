@@ -1,3 +1,4 @@
+import { execFileSync } from 'node:child_process'
 import { BasePlugin, Plugin } from '@pluxel/core'
 import { installOwnerViewService } from '@pluxel/core/host'
 import { createHost, defineHostService } from '@pluxel/host'
@@ -17,6 +18,31 @@ class Greeter extends BasePlugin {
 		this.ctx.service(ElysiaApp).get('/greeting', () => greeting.message())
 	}
 }
+
+it('imports the Fetch entry without loading the Node Host, ZenFS or a listener', () => {
+	const handlerType = execFileSync(
+		process.execPath,
+		[
+			'--conditions=@pluxel/source',
+			'--import',
+			'tsx',
+			'--input-type=module',
+			'--eval',
+			`
+		import { registerHooks } from 'node:module'
+		const nodeOnly = new Set(['@pluxel/host', '@pluxel/core/host', '@zenfs/core', 'srvx/node', 'crossws/adapters/node'])
+		registerHooks({ resolve(specifier, context, next) {
+			if (nodeOnly.has(specifier)) throw new Error('Fetch entry loaded ' + specifier)
+			return next(specifier, context)
+		} })
+		const { createElysiaHandler } = await import('@pluxel/services/elysia')
+		process.stdout.write(typeof createElysiaHandler)
+		`,
+		],
+		{ cwd: new URL('../', import.meta.url), encoding: 'utf8' },
+	)
+	expect(handlerType).toBe('function')
+})
 
 it('runs a custom service and Management commands with the Workbench disabled', async () => {
 	const greeting = defineHostService({

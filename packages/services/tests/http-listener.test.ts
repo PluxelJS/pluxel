@@ -4,10 +4,11 @@ import { resolveHostEnv } from '@pluxel/host/environment'
 import { BasePlugin, Plugin } from '@pluxel/core'
 
 import { websocket } from 'elysia/websocket'
+import { ElysiaWS } from 'elysia/ws'
 import { mkdtemp, mkdir, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import { afterEach, expect, it, vi } from 'vitest'
+import { afterEach, assert, expect, it, vi } from 'vitest'
 import type { Server } from 'srvx'
 
 afterEach(() => vi.unstubAllEnvs())
@@ -23,7 +24,8 @@ class ListenerSocketProbe extends BasePlugin {
 			.use(websocket())
 			.ws('/probe/socket', {
 				message(socket, message) {
-					socket.send(message)
+					assert.instanceOf(socket, ElysiaWS)
+					socket.send(JSON.stringify({ message, bufferedAmount: socket.raw.getBufferedAmount() }))
 				},
 			})
 	}
@@ -173,7 +175,10 @@ it.each([false, true])(
 					once: true,
 				})
 			})
-			expect(reply).toBe('echo probe')
+			expect(JSON.parse(String(reply))).toEqual({
+				message: 'echo probe',
+				bufferedAmount: expect.any(Number),
+			})
 			expect(fallbackFetch).not.toHaveBeenCalled()
 		} finally {
 			if (socket.readyState !== WebSocket.CLOSED) {

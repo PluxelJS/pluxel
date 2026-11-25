@@ -64,7 +64,7 @@ const checkServiceDeclarations = async (root, optional = false) => {
 					.split(/\r?\n/),
 			}))
 	const declarations = await check('tsconfig.json')
-	// Elysia 2.0.0-rc.0 fails library checking even when imported without Pluxel.
+	// The installed Elysia declarations can fail library checking on their own.
 	// Compare the complete diagnostics under the same installed dependencies and options.
 	await writeFile(
 		join(root, 'elysia-baseline.ts'),
@@ -78,21 +78,21 @@ const checkServiceDeclarations = async (root, optional = false) => {
 	for (const diagnostic of elysia.diagnostics) {
 		if (diagnostic.startsWith(' ')) continue
 		expect(diagnostic).toMatch(
-			/^node_modules\/\.pnpm\/elysia@2\.0\.0-rc\.0[^/]*\/node_modules\/elysia\/dist\/[^\s]+\.d\.ts\(\d+,\d+\): error TS\d+:/,
+			/^node_modules\/\.pnpm\/elysia@2\.0\.0-rc\.5(?:_[^/]+)?\/node_modules\/elysia\/dist\/[^\s]+\.d\.ts\(\d+,\d+\): error TS\d+:/,
 		)
 	}
-	// capnweb 0.12.0 (also upstream main) spreads a Promise union as a tuple tail.
+	// capnweb 0.13.1 spreads a Promise union as a tuple tail.
 	// These two diagnostics remain exact; all other errors must match the pure Elysia import.
 	const upstreamDiagnostics = optional
 		? [333, 469].map(
 				(column) =>
-					`node_modules/.pnpm/capnweb@0.12.0/node_modules/capnweb/dist/index.d.ts(63,${column}): error TS2574: A rest element type must be an array type.`,
+					`node_modules/.pnpm/capnweb@0.13.1/node_modules/capnweb/dist/index.d.ts(72,${column}): error TS2574: A rest element type must be an array type.`,
 			)
 		: []
 	expect(declarations.diagnostics).toEqual([...upstreamDiagnostics, ...elysia.diagnostics])
 	if (declarations.failed)
 		process.stdout.write(
-			`KNOWN_UPSTREAM_DECLARATION_ERRORS: ${optional ? 'capnweb 0.12.0 TS2574 and ' : ''}pure Elysia import baseline; no additional installed declaration errors\n`,
+			`KNOWN_UPSTREAM_DECLARATION_ERRORS: ${optional ? 'capnweb 0.13.1 TS2574 and ' : ''}pure Elysia import baseline; no additional installed declaration errors\n`,
 		)
 }
 

@@ -10,7 +10,7 @@ Node 生产与 Vite 开发共用按 Plugin generation 发布路由的机制。�
 
 ## 依赖上游公开接口的能力
 
-- **等价路由冲突。** 当前可拒绝不同 owner 下 kind、method 和声明路径都相同的路由。待 Elysia 公开与实际 matcher 一致的比较依据，用参数改名、可选片段和结尾斜线检验哪些路径确实等价。被拒候选要指出两个 owner 和冲突路由，已经接纳的路由仍可访问。[路由回归](../../packages/services/tests/services/native-elysia-application.test.ts)
-- **外部挂载与卸载。** 当前 `2.0.0-rc.0` 的 Plugin 实例直接调用 `app.onStart()`、`app.onStop()` 会因缺少外部挂载协议而失败。`app.listen()`、`app.stop()` 操作物理 listener，由宿主拥有。待上游提供公开挂载协议，验证正常挂载、失败回滚、延迟登记的清理、在途请求排空及每次挂载只卸载一次，并明确 `.use()` 间接带入的回调怎样处理。[当前生命周期保护](../../packages/services/src/elysia/ElysiaApplicationDirectory.ts)
+- **等价路由冲突。** 当前拒绝不同 owner 下 kind、method 和声明路径都相同的路由。Elysia `2.0.0-rc.5` 中，`/people/:id` 和 `/people/:slug` 联合注册后由后登者响应，而 `/people` 和 `/people/` 可以分别处理各自的拼法。扩大冲突检查需要能区分两种情况的依据，并保留静态路径与通配路径的合法重叠。被拒候选应指出两个 owner 和冲突路由。[现行匹配与发布](../HOST.md#http-与管理页面)
+- **外部挂载与卸载。** Plugin 实例直接调用 `app.onStart()`、`app.onStop()` 会因缺少外部挂载协议而失败。`app.listen()`、`app.stop()` 操作物理 listener，由宿主拥有。待上游提供公开挂载协议，验证正常挂载、失败回滚、延迟登记的清理、在途请求排空及每次挂载只卸载一次，并明确 `.use()` 间接带入的回调怎样处理。[当前生命周期保护](../../packages/services/src/elysia/ElysiaApplicationDirectory.ts)
 
 新增兼容声明应指明实际使用的 Elysia 插件、版本、carrier 和所需能力，并在对应入口验证。只有实际工作负载显示 dispatch 是瓶颈时，再用相同路由、hook、stream 和 WebSocket 流量比较优化前后的延迟、吞吐与资源占用。

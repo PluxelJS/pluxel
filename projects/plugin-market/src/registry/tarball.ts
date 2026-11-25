@@ -1,4 +1,4 @@
-import { createGzipDecoder, createTarDecoder } from 'modern-tar'
+import { createTarDecoder } from 'modern-tar'
 import semver from 'semver'
 import {
 	MarketError,
@@ -90,7 +90,7 @@ export async function inspectTarball(bytes: Uint8Array<ArrayBuffer>, input: Coor
 	const files = new Set<string>()
 	const paths = new Set<string>()
 	const entries = new Response(bytes)
-		.body!.pipeThrough(createGzipDecoder())
+		.body!.pipeThrough(new DecompressionStream('gzip'))
 		.pipeThrough(
 			new TransformStream<Uint8Array, Uint8Array>({
 				transform(chunk, controller) {

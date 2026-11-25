@@ -259,6 +259,7 @@ export class NodeElysiaApplicationCarrier implements ElysiaApplicationCarrier {
 			send: (value, compress) => sendPeer(peer, value, compress),
 			sendText: (value, compress) => sendPeer(peer, value, compress),
 			sendBinary: (value, compress) => sendPeer(peer, value, compress),
+			getBufferedAmount: () => peer.bufferedAmount,
 			close: (code, reason) => peer.close(code, reason),
 			terminate: () => peer.terminate(),
 			ping: (value) => pingPeer(peer, value),

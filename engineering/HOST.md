@@ -64,9 +64,11 @@ native loader 在本 scope 复用通过 owner/exports/ABI 检查的 namespace，
 
 `ElysiaApp` 是 generation 拥有的真实 Elysia application，Plugin 与 Parts 共用。init 成功后 HTTP lifecycle 完成 finalize、settle、prepare、publish，再原子交换 directory；失败候选不发布路由。
 
-公共 `/elysia` 提供 `ElysiaApp`、`elysia()`、`createElysiaHandler()`，`/elysia/node` 提供 srvx `listenElysia()`；`ElysiaRuntime` 是内部 root-only dispatcher。Node listener 登记到 root effects，公开 close 与 Host close 共用清理；Vite 自己拥有 listener。generation stop 只排空自身请求、stream、WebSocket lease。
+公共 `/elysia` 提供 `ElysiaApp`、`elysia()` 和 `createElysiaHandler()`。Fetch 入口从 `@pluxel/host/application` 取得服务安装能力，`/elysia/node` 单独提供 srvx `listenElysia()`。`ElysiaRuntime` 是内部 root-only dispatcher。Node listener 登记到 root effects，公开 close 与 Host close 共用清理。Vite 自己拥有 listener。generation stop 只排空自身请求、stream、WebSocket lease。
 
-内部 dispatch 保留 Response/undefined，传输边界将未处理请求变为 404。静态文件和 SPA fallback 只处理 undefined，不按 status 或二次路由判断所有权；公开 Fetch handler 始终返回 Response。跨 owner collision 只比较可证明的精确 route inventory。
+每个提交快照用一个原生 Elysia HTTP 匹配器按声明的 method 和路径选出 owner，再交给该代插件的 `app.fetch` 执行 hooks、schema 和业务处理器。WebSocket 升级独立匹配。根服务 `ElysiaDirectory.matchesHttpRoute(pathname, method?)` 查询同一快照，省略 method 时检查已发布的方法。跨 owner 发布冲突按种类、method 和原始声明路径比较。
+
+内部 dispatch 保留 Response/undefined，传输边界将未处理请求变为 404。静态文件和 SPA fallback 只接手 undefined，业务处理器返回的 404 保留原响应。公开 Fetch handler 始终返回 Response。
 
 carrier `url` 保存物理监听地址；显式 `publicOrigin` 用于管理会话同源校验和终端展示。Vite/native launcher 在环境边界用 `resolveHostEnv(input)` 解析 `PLUXEL_PUBLIC_ORIGIN` > `PITCHFORK_URL`、`PLUXEL_HOST_BIND/PORT` > `HOST/PORT`；listener 只接收显式选项。默认 origin 来自物理地址，Forwarded/X-Forwarded-* 不参与信任判断。
 

@@ -6,7 +6,7 @@ import {
 	type CoreGenerationRejection,
 	type CoreGenerationSettlement,
 	type CorePluginLifecycleHooks,
-} from '@pluxel/core/host'
+} from '@pluxel/core/internal'
 import { pluginNodeIndexKey, type Context as PluxelContext, type PluginContext } from '@pluxel/core'
 import { Elysia, type AnyElysia } from 'elysia'
 import { WebStandardAdapter } from 'elysia/adapter/web-standard'
@@ -36,7 +36,8 @@ type ApplicationContribution = Readonly<{
 type ApplicationSnapshot = Readonly<{
 	contributions: readonly ApplicationContribution[]
 	byOwnerKey: ReadonlyMap<string, ApplicationContribution>
-	httpSelectors: ReadonlyMap<string, Elysia>
+	httpMethods: ReadonlySet<string>
+	httpSelector?: Elysia
 	webSocketSelector?: Elysia
 }>
 
@@ -80,11 +81,10 @@ type PreparedApplicationPublication = Readonly<{
 }>
 
 const ROUTE_OWNER_HEADER = 'x-pluxel-route-owner'
-const WILDCARD_METHOD = '*'
 const EMPTY_SNAPSHOT: ApplicationSnapshot = Object.freeze({
 	contributions: Object.freeze([]),
 	byOwnerKey: new Map(),
-	httpSelectors: new Map(),
+	httpMethods: new Set<string>(),
 })
 
 function isReservedPath(path: string): boolean {
@@ -93,14 +93,13 @@ function isReservedPath(path: string): boolean {
 
 function applicationRoutes(app: AnyElysia): readonly ApplicationRoute[] {
 	return Object.freeze(
-		app.routes.map((route) => {
-			const method = String(route.method).toUpperCase()
-			return Object.freeze({
-				kind: method === 'WS' ? ('websocket' as const) : ('http' as const),
+		app.routes.map(({ method, path }): ApplicationRoute =>
+			Object.freeze({
+				kind: method === 'WS' ? 'websocket' : 'http',
 				method,
-				path: route.path,
-			})
-		}),
+				path,
+			}),
+		),
 	)
 }
 
@@ -185,77 +184,47 @@ function buildApplicationSnapshot(
 	contributions: readonly ApplicationContribution[],
 ): ApplicationSnapshot {
 	const byOwnerKey = new Map(contributions.map((entry) => [entry.ownerKey, entry] as const))
-	const httpSelectors = new Map<string, Elysia>()
+	const httpMethods = new Set<string>()
+	let httpSelector: Elysia | undefined
 	let webSocketSelector: Elysia | undefined
 	for (const contribution of contributions) {
+		const selectOwner = () =>
+			new Response(null, {
+				status: 204,
+				headers: { [ROUTE_OWNER_HEADER]: contribution.ownerKey },
+			})
 		for (const route of contribution.routes) {
 			if (route.kind === 'websocket') {
-				webSocketSelector ??= new Elysia({ name: 'pluxel.directory.websocket' })
-				webSocketSelector.get(
-					route.path,
-					() =>
-						new Response(null, {
-							status: 204,
-							headers: { [ROUTE_OWNER_HEADER]: contribution.ownerKey },
-						}),
-				)
-				continue
+				webSocketSelector ??= new Elysia({
+					adapter: WebStandardAdapter,
+					name: 'pluxel.directory.websocket',
+				})
+				webSocketSelector.get(route.path, selectOwner)
+			} else {
+				httpMethods.add(route.method)
+				httpSelector ??= new Elysia({ adapter: WebStandardAdapter, name: 'pluxel.directory.http' })
+				httpSelector.route(route.method, route.path, selectOwner)
 			}
-
-			let selector = httpSelectors.get(route.method)
-			if (!selector) {
-				selector = new Elysia({ name: `pluxel.directory.${route.method}` })
-				httpSelectors.set(route.method, selector)
-			}
-			selector.all(
-				route.path,
-				() =>
-					new Response(null, {
-						status: 204,
-						headers: { [ROUTE_OWNER_HEADER]: contribution.ownerKey },
-					}),
-			)
 		}
 	}
-	for (const selector of httpSelectors.values()) selector.compile()
+	httpSelector?.compile()
 	webSocketSelector?.compile()
-	return Object.freeze({ contributions, byOwnerKey, httpSelectors, webSocketSelector })
+	return Object.freeze({ contributions, byOwnerKey, httpMethods, httpSelector, webSocketSelector })
 }
 
-function selectWithElysia(
+function selectContribution(
 	snapshot: ApplicationSnapshot,
-	selector: Elysia,
+	kind: RouteKind,
 	request: Request,
 ): ApplicationContribution | undefined {
+	const selector = kind === 'http' ? snapshot.httpSelector : snapshot.webSocketSelector
+	if (!selector || isReservedRequest(request)) return undefined
 	const selected = selector.fetch(request)
 	if (selected instanceof Promise) {
 		throw new TypeError('[pluxel/elysia] Compiled Elysia directory selector became asynchronous')
 	}
 	const ownerKey = selected.headers.get(ROUTE_OWNER_HEADER)
 	return ownerKey ? snapshot.byOwnerKey.get(ownerKey) : undefined
-}
-
-function selectHttpContribution(
-	snapshot: ApplicationSnapshot,
-	request: Request,
-): ApplicationContribution | undefined {
-	const method = request.method.toUpperCase()
-	const methods = [method, WILDCARD_METHOD]
-	for (const candidateMethod of methods) {
-		const selector = snapshot.httpSelectors.get(candidateMethod)
-		if (!selector) continue
-		const selected = selectWithElysia(snapshot, selector, request)
-		if (selected) return selected
-	}
-	return undefined
-}
-
-function selectWebSocketContribution(
-	snapshot: ApplicationSnapshot,
-	request: Request,
-): ApplicationContribution | undefined {
-	if (!snapshot.webSocketSelector) return undefined
-	return selectWithElysia(snapshot, snapshot.webSocketSelector, request)
 }
 
 function isWebSocketUpgrade(request: Request): boolean {
@@ -449,34 +418,27 @@ export class ElysiaApplicationDirectory {
 	}
 
 	async dispatch(request: Request): Promise<Response | undefined> {
-		if (isReservedRequest(request)) return undefined
-		const contribution = isWebSocketUpgrade(request)
-			? selectWebSocketContribution(this.snapshot, request)
-			: selectHttpContribution(this.snapshot, request)
-		if (!contribution) return undefined
-		return contribution.app.fetch(request)
+		const kind = isWebSocketUpgrade(request) ? 'websocket' : 'http'
+		const contribution = selectContribution(this.snapshot, kind, request)
+		return contribution?.app.fetch(request)
 	}
 
-	matchesHttpRoute(pathname: string, method?: string): boolean {
-		const url = new URL(pathname, 'http://pluxel.invalid')
+	matchesHttpRoute(request: Request): boolean
+	matchesHttpRoute(pathname: string, method?: string): boolean
+	matchesHttpRoute(input: Request | string, method?: string): boolean {
+		const snapshot = this.snapshot
+		if (typeof input !== 'string') return Boolean(selectContribution(snapshot, 'http', input))
+		const url = new URL(input, 'http://pluxel.invalid')
 		if (isReservedPath(url.pathname)) return false
-		if (method !== undefined) {
-			return Boolean(
-				selectHttpContribution(this.snapshot, new Request(url, { method: method.toUpperCase() })),
-			)
-		}
-		for (const routeMethod of this.snapshot.httpSelectors.keys()) {
-			if (selectHttpContribution(this.snapshot, new Request(url, { method: routeMethod }))) {
-				return true
-			}
+		const methods = method === undefined ? snapshot.httpMethods : [method.toUpperCase()]
+		for (const candidate of methods) {
+			if (selectContribution(snapshot, 'http', new Request(url, { method: candidate }))) return true
 		}
 		return false
 	}
 
 	matchesWebSocketRoute(request: Request): boolean {
-		return (
-			!isReservedRequest(request) && Boolean(selectWebSocketContribution(this.snapshot, request))
-		)
+		return Boolean(selectContribution(this.snapshot, 'websocket', request))
 	}
 
 	private createServerView(
@@ -581,19 +543,19 @@ export class ElysiaApplicationDirectory {
 				`[pluxel/elysia] app.${operation}() controls the shared physical carrier and is unavailable to a Plugin Elysia application`,
 			)
 		}
-		const externalEpochUnavailable = (operation: 'onStart' | 'onStop') => () => {
+		const pluginLifecycleUnavailable = (operation: 'onStart' | 'onStop') => () => {
 			throw new Error(
-				`[pluxel/elysia] app.${operation}() is unsupported because Elysia 2 rc.0 exposes no public external application attach/detach epoch`,
+				`[pluxel/elysia] app.${operation}() is unavailable on a Plugin-owned Elysia application. Use Plugin init() and ctx.effects for setup and cleanup.`,
 			)
 		}
 		Object.defineProperties(app, {
 			onStart: {
-				value: externalEpochUnavailable('onStart'),
+				value: pluginLifecycleUnavailable('onStart'),
 				writable: false,
 				configurable: false,
 			},
 			onStop: {
-				value: externalEpochUnavailable('onStop'),
+				value: pluginLifecycleUnavailable('onStop'),
 				writable: false,
 				configurable: false,
 			},

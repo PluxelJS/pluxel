@@ -106,11 +106,11 @@
 		"node": ">=24"
 	},
 	"pluxel": {
-		"workbenchCapnweb": "0.12.0",
+		"workbenchCapnweb": "0.13.1",
 		"artifactRoot": "dist",
 		"nodeArtifacts": true,
 		"workbenchArtifacts": true,
-		"tinybase": "10.0.1",
+		"tinybase": "10.1.0",
 		"control": "./dist/control/manifest.json"
 	}
 }

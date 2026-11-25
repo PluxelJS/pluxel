@@ -1,5 +1,5 @@
 import { resolveContextService } from '@pluxel/core/internal'
-import { ElysiaApp } from '@pluxel/services/elysia'
+import { ElysiaApp, ElysiaDirectory } from '@pluxel/services/elysia'
 import { ElysiaRuntime, type ElysiaApplicationCarrier } from '@pluxel/services/internal'
 
 import {
@@ -10,6 +10,7 @@ import {
 } from '@pluxel/core/internal/test'
 import { createServiceInternalTestHarness } from '@pluxel/services/internal/test'
 import { Elysia } from 'elysia'
+import { WebStandardAdapter } from 'elysia/adapter/web-standard'
 import { websocket } from 'elysia/websocket'
 
 import { describe, expect, it } from 'vitest'
@@ -62,6 +63,7 @@ class NativeExactRouteSemantics extends BasePlugin {
 			.service(ElysiaApp)
 			.get('/native/exact', () => 'plain')
 			.get('/native/exact/', () => 'trailing')
+			.patch('/native/patch-only', () => 'patched')
 	}
 }
 
@@ -82,15 +84,27 @@ class NativeSlashRoutePath extends BasePlugin {
 @Plugin({ displayName: 'Native wildcard precedence' })
 class NativeWildcardRoute extends BasePlugin {
 	protected override init() {
-		this.ctx.service(ElysiaApp).all('/native/precedence', () => 'wildcard')
+		addWildcardRoutes(this.ctx.service(ElysiaApp))
 	}
+}
+
+function addWildcardRoutes(app: Elysia): void {
+	app
+		.all('/native/precedence', () => 'wildcard')
+		.all('/native/catalog/new', async ({ request }) => 'static:' + (await request.text()))
 }
 
 @Plugin({ displayName: 'Native concrete precedence' })
 class NativeConcreteRoute extends BasePlugin {
 	protected override init() {
-		this.ctx.service(ElysiaApp).get('/native/precedence', () => 'concrete')
+		addConcreteRoutes(this.ctx.service(ElysiaApp))
 	}
+}
+
+function addConcreteRoutes(app: Elysia): void {
+	app
+		.get('/native/precedence', () => 'concrete')
+		.get('/native/catalog/:id', ({ params }) => 'parameter:' + params.id)
 }
 
 @Plugin({ displayName: 'Native wildcard reserved probe' })
@@ -278,6 +292,53 @@ describe('native generation Elysia application', () => {
 		}
 	})
 
+	it('matches native Elysia when a static ALL route and a parameterized GET have different owners', async () => {
+		await using host = await createServiceInternalTestHarness()
+		host.add(NativeWildcardRoute).start(NativeWildcardRoute)
+		host.add(NativeConcreteRoute).start(NativeConcreteRoute)
+		await host.commit()
+		const runtime = resolveContextService(host.ctx, ElysiaRuntime)
+		const native = new Elysia({ adapter: WebStandardAdapter })
+		addWildcardRoutes(native)
+		addConcreteRoutes(native)
+		native.compile()
+
+		for (const [method, path, body] of [
+			['GET', '/native/catalog/new'],
+			['GET', '/native/catalog/existing'],
+			['POST', '/native/catalog/new', 'preserve the request body'],
+		] as const) {
+			const request = new Request(new URL(path, 'http://local.test'), { method, body })
+			const expected = await native.fetch(request.clone())
+			expect(runtime.matchesRequest(request)).toBe(true)
+			expect(request.bodyUsed).toBe(false)
+			const response = await host.fetch(request)
+			expect(response.status).toBe(expected.status)
+			expect(await response.text()).toBe(await expected.text())
+		}
+	})
+
+	it('looks up committed paths with or without a method through the root ElysiaDirectory', async () => {
+		await using host = await createServiceInternalTestHarness()
+		const directory = host.ctx.service(ElysiaDirectory)
+		const path = '/native/patch-only'
+		expect(directory.matchesHttpRoute(path)).toBe(false)
+		host.add(NativeExactRouteSemantics).start(NativeExactRouteSemantics)
+		host.add(NativeWildcardRoute).start(NativeWildcardRoute)
+		await host.commit()
+
+		expect(directory.matchesHttpRoute(path)).toBe(true)
+		expect(directory.matchesHttpRoute(path, 'patch')).toBe(true)
+		expect(directory.matchesHttpRoute(path, 'GET')).toBe(false)
+		expect(directory.matchesHttpRoute('/native/catalog/new')).toBe(true)
+		expect(directory.matchesHttpRoute('/native/catalog/new', 'POST')).toBe(true)
+		expect(directory.matchesHttpRoute('/native/missing')).toBe(false)
+
+		host.remove(NativeExactRouteSemantics)
+		await host.commit()
+		expect(directory.matchesHttpRoute(path)).toBe(false)
+	})
+
 	it('hard-excludes the control namespace from HTTP and WebSocket wildcard owners', async () => {
 		{
 			await using host = await createServiceInternalTestHarness()
@@ -341,10 +402,10 @@ describe('native generation Elysia application', () => {
 			expect(() => app.listen(0)).toThrow('shared physical carrier')
 			expect(() => app.stop()).toThrow('shared physical carrier')
 			expect(() => app.onStart((): undefined => undefined)).toThrow(
-				'public external application attach/detach epoch',
+				'app.onStart() is unavailable on a Plugin-owned Elysia application',
 			)
 			expect(() => app.onStop((): undefined => undefined)).toThrow(
-				'public external application attach/detach epoch',
+				'app.onStop() is unavailable on a Plugin-owned Elysia application',
 			)
 			expect(() => server?.stop()).toThrow('shared physical carrier')
 			expect(app.server).toBe(server)
@@ -389,7 +450,7 @@ describe('native generation Elysia application', () => {
 			const result = await host.commitAllowFail()
 			assertPluginLifecycleIssue(result, NativeUnsupportedLifecycleHook, {
 				kind: 'start-failed',
-				message: 'public external application attach/detach epoch',
+				message: 'Use Plugin init() and ctx.effects for setup and cleanup',
 			})
 			expect(host.isRunning(NativeUnsupportedLifecycleHook)).toBe(false)
 		}

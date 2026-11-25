@@ -10,6 +10,9 @@ import { assertWorkbenchApplicationRuntime } from '../../src/shared-runtime'
 const loader = new URL('src/native-source-loader.ts', hostPackage).href
 const core = fileURLToPath(new URL('../core/', hostPackage))
 const tsx = new URL('../rolldown/node_modules/tsx/dist/loader.mjs', hostPackage).href
+const { version: supported } = JSON.parse(
+	readFileSync(new URL('node_modules/capnweb/package.json', hostPackage), 'utf8'),
+) as { version: string }
 
 it('checks the physical application entry owner even when the workspace provides a resolvable capnweb', () => {
 	const root = mkdtempSync(join(tmpdir(), 'pluxel-application-capnweb-'))
@@ -20,9 +23,6 @@ it('checks the physical application entry owner even when the workspace provides
 		mkdirSync(member, { recursive: true })
 		mkdirSync(join(root, 'node_modules/@pluxel'), { recursive: true })
 		symlinkSync(fileURLToPath(hostPackage), join(root, 'node_modules/@pluxel/host'))
-		const supported = JSON.parse(
-			readFileSync(new URL('node_modules/capnweb/package.json', hostPackage), 'utf8'),
-		).version
 		symlinkSync(
 			fileURLToPath(new URL('node_modules/capnweb/', hostPackage)),
 			join(root, 'node_modules/capnweb'),
@@ -74,7 +74,7 @@ it('checks the physical application entry owner even when the workspace provides
 	}
 })
 
-function fixture(installedVersion: string, markerVersion = '0.12.0') {
+function fixture(installedVersion = supported) {
 	const root = mkdtempSync(join(tmpdir(), 'pluxel-source-capnweb-'))
 	const put = (path: string, value: string) => {
 		const file = join(root, path)
@@ -112,8 +112,8 @@ function fixture(installedVersion: string, markerVersion = '0.12.0') {
 	symlinkSync(core, join(root, 'node_modules/@pluxel/core'))
 	symlinkSync(fileURLToPath(hostPackage), join(root, 'node_modules/@pluxel/host'))
 	put('package.json', JSON.stringify({ name: 'source-probe', type: 'module' }))
-	packageModule('target-plugin', installedVersion, markerVersion, '0.12.0')
-	packageModule('shared-library', '0.12.0', undefined, '0.12.0')
+	packageModule('target-plugin', installedVersion, supported, supported)
+	packageModule('shared-library', supported, undefined, supported)
 	packageModule('private-rpc', '0.13.0')
 	put(
 		'entry.mjs',
@@ -125,7 +125,7 @@ export { RpcTarget as Target } from 'target-plugin'; export { RpcTarget as Base 
 }
 
 it('bridges only declared publishers without Workbench to the host module in a fresh process', () => {
-	const root = fixture('0.12.0')
+	const root = fixture()
 	try {
 		const output = execFileSync(
 			process.execPath,
@@ -175,7 +175,9 @@ const root = ${JSON.stringify(root)}
 const source = await createNativeSourceLoader({ root })
 try {
  await assert.rejects(source.load(root + '/entry.mjs'), error => {
-  assert.match(error.message, /target-plugin.*peerDependencies.capnweb 0\\.12\\.0.*resolved 0\\.13\\.0.*Host capnweb supports 0\\.12\\.0/)
+  assert.match(error.message, /target-plugin.*resolved 0\\.13\\.0/)
+  assert.ok(error.message.includes('peerDependencies.capnweb ${supported}'))
+  assert.ok(error.message.includes('Host capnweb supports ${supported}'))
   return true
  })
  console.log('MISMATCH_DIAGNOSED')

@@ -190,18 +190,21 @@ it('records verified Workbench transport in modules deployments and omits it fro
 			fileURLToPath(new URL('../node_modules/@types/node', import.meta.url)),
 			resolve(root, 'node_modules/@types/node'),
 		)
+		const { version: capnwebVersion } = JSON.parse(
+			await readFile(resolve(root, 'node_modules/capnweb/package.json'), 'utf8'),
+		) as { version: string }
 		const manifest = {
 			name: '@fixture/modules-workbench-peer',
 			type: 'module',
 			exports: { '.': './src/owner.ts' },
 			dependencies: { capnweb: 'catalog:transport' },
-			peerDependencies: { capnweb: '0.12.0' },
-			devDependencies: { capnweb: '0.12.0' },
+			peerDependencies: { capnweb: capnwebVersion },
+			devDependencies: { capnweb: capnwebVersion },
 		}
 		await writeFile(resolve(root, 'package.json'), JSON.stringify(manifest))
 		await writeFile(
 			resolve(root, 'pnpm-workspace.yaml'),
-			'catalogs:\n  transport:\n    capnweb: 0.12.0\n',
+			`catalogs:\n  transport:\n    capnweb: ${capnwebVersion}\n`,
 		)
 		await writeFile(
 			resolve(root, 'tsconfig.json'),
@@ -255,8 +258,8 @@ export class Owner extends BasePlugin {
 			)
 		await build('workbench')
 		const deployed = JSON.parse(await readFile(resolve(root, 'dist/package.json'), 'utf8'))
-		expect(deployed.pluxel.workbenchCapnweb).toBe('0.12.0')
-		expect(deployed.dependencies.capnweb).toBe('0.12.0')
+		expect(deployed.pluxel.workbenchCapnweb).toBe(capnwebVersion)
+		expect(deployed.dependencies.capnweb).toBe(capnwebVersion)
 		expect(deployed.devDependencies).toBeUndefined()
 		expect(JSON.parse(await readFile(resolve(root, 'package.json'), 'utf8'))).toEqual(manifest)
 		await writeFile(

@@ -3,6 +3,9 @@ import { createDiskFixture } from '@pluxel/test/fixtures'
 import { createServer, type RunnableDevEnvironment } from 'vite'
 import { expect, it } from 'vitest'
 import { serviceSingletons } from '../../src/vite'
+import servicesManifest from '../../package.json' with { type: 'json' }
+
+const supported = servicesManifest.pluxel.workbenchCapnweb
 
 function capnweb(version: string) {
 	return {
@@ -24,13 +27,13 @@ async function runFixture(
 			'import { defineHostApplication } from "@pluxel/host"; export default defineHostApplication(() => ({ plugins: [] }))',
 		'package.json': JSON.stringify({
 			type: 'module',
-			peerDependencies: { capnweb: '0.12.0' },
-			devDependencies: { capnweb: '0.12.0' },
+			peerDependencies: { capnweb: supported },
+			devDependencies: { capnweb: supported },
 		}),
 		'platform-kit/package.json': JSON.stringify({
 			name: 'platform-kit',
-			peerDependencies: { capnweb: '0.12.0' },
-			devDependencies: { capnweb: '0.12.0' },
+			peerDependencies: { capnweb: supported },
+			devDependencies: { capnweb: supported },
 		}),
 		'platform-kit/target.ts':
 			'import { RpcTarget } from "capnweb"; export class PlatformTarget extends RpcTarget {}',
@@ -38,11 +41,11 @@ async function runFixture(
 			name: 'publisher',
 			peerDependencies:
 				options.publisherPeer === undefined
-					? { capnweb: '0.12.0' }
+					? { capnweb: supported }
 					: options.publisherPeer
 						? { capnweb: options.publisherPeer }
 						: {},
-			devDependencies: { capnweb: '0.12.0' },
+			devDependencies: { capnweb: supported },
 			...(options.marker ? { pluxel: { workbenchCapnweb: options.marker } } : {}),
 		}),
 		'publisher/target.ts':
@@ -55,7 +58,7 @@ async function runFixture(
 		'entry.ts':
 			'import { RpcTarget as Host } from "capnweb"; import { Target, ownShared } from "./publisher/target"; import { RpcTarget as Private } from "./private-rpc/target"; export const matches = new Target() instanceof Host && ownShared; export const privateIndependent = Private !== Host',
 	}
-	for (const [path, content] of Object.entries(capnweb('0.12.0'))) {
+	for (const [path, content] of Object.entries(capnweb(supported))) {
 		files[`node_modules/capnweb/${path}`] = content
 		files[`platform-kit/node_modules/capnweb/${path}`] = content
 		files[`publisher/node_modules/capnweb/${path}`] =
@@ -92,13 +95,13 @@ it('shares source publisher and base-library RpcTarget through Host without Work
 })
 
 it('rejects a source publisher installation before replacing its incompatible constructor', async () => {
-	await expect(runFixture({ publisherVersion: '0.13.0' })).rejects.toThrow(
-		/publisher.*resolved 0\.13\.0.*Host capnweb supports 0\.12\.0/,
-	)
+	const result = runFixture({ publisherVersion: '0.13.0' })
+	await expect(result).rejects.toThrow(/publisher.*resolved 0\.13\.0/)
+	await expect(result).rejects.toThrow(`Host capnweb supports ${supported}`)
 })
 
 it('rejects a marked publisher with no declared peer', async () => {
-	await expect(runFixture({ publisherPeer: '', marker: '0.12.0' })).rejects.toThrow(
+	await expect(runFixture({ publisherPeer: '', marker: supported })).rejects.toThrow(
 		/publisher.*peerDependencies\.capnweb <missing>/,
 	)
 })

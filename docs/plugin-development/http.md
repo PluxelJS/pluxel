@@ -150,7 +150,7 @@ export class OrdersPlugin extends BasePlugin {
 
 ## 错误边界
 
-- 不同插件节点声明相同种类、method 和路径的路由时，冲突候选的生命周期报告会记录启动失败，已接纳的节点继续处理请求。
+- 不同插件节点声明相同种类、method 和路径时，冲突候选的生命周期报告会记录启动失败，已接纳的节点继续处理请求。不同声明可以匹配同一个 URL，HTTP 按 Elysia 原生规则选择路由。例如两个插件分别声明 `ALL /catalog/new` 和 `GET /catalog/:id` 时，`GET /catalog/new` 命中静态路径。参数名不同的声明可能匹配同一批请求，请给这些路由明确的归属。
 - **业务异常与状态码**：对于业务预期的参数或权限错误，应直接返回标准的 HTTP 状态码（如 400、401、404），避免直接将内部未处理的原始数据库报错暴露给客户端。
 
 ## 测试
@@ -179,4 +179,6 @@ it('能够正确响应 HTTP 请求', async () => {
 
 ## 当前 Elysia 2 与 carrier 边界
 
-Pluxel 当前使用 Elysia `2.0.0-rc.0`。在 Vite 开发模式下，Vite 拥有 listener，保留自身的 HMR 接线。生产 Node 应用通过 `listenElysia()` 启动 srvx listener。在插件的 Elysia 实例上直接调用 `app.listen()` 或 `app.stop()` 会因物理 listener 属于宿主而报错。直接注册 `app.onStart()` 或 `app.onStop()` 也会报错，当前 Elysia 版本缺少外部挂载与卸载协议。插件初始化与资源释放使用 `init()` 和当前 Context 的 effects。
+Pluxel 使用 Elysia `2.0.0-rc.5`。已有 Host 安装 `elysia()` 后，调用 `@pluxel/services/elysia` 的 `createElysiaHandler(host)` 可得到标准的 `(request: Request) => Promise<Response>`，用作应用的 `fetch` 导出。外层应用负责传输和关闭 Host。Node 需要监听端口和处理 WebSocket 时，通过 `@pluxel/services/elysia/node` 的 `listenElysia()` 启动 srvx。开发模式复用 Vite 的 listener，并优先处理 Vite HMR 的升级请求。
+
+插件在 `init()` 注册路由和模块，用当前 Context 的 effects 释放资源。物理 listener 归宿主持有，在插件实例调用 `app.listen()`、`app.stop()` 会报错。当前版本缺少外部挂载与卸载协议，直接注册 `app.onStart()`、`app.onStop()` 也会报错。

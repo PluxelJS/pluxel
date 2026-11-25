@@ -57,6 +57,8 @@ caller 等待自己的文件操作，并释放 FileHandle、watcher、任务；�
 
 ZenFS 修复集中于固定版本依赖补丁。Core 构建内联 backend 闭包及原 notices/manifest/补丁，独立 tarball 必须从 `/fs`、`/fs/browser` 验证，不依赖消费者另装未补丁 ZenFS。
 
+当前固定 `@zenfs/core@2.8.3`。用上游 2.9.0 打开旧 StoreFS 时，`ready()` 会将目录原地改写为二进制，2.8.3 随后无法重开。同一份损坏根记录在当前补丁下返回 `EIO`，上游 2.9.0 则接纳了该存储。升级前需要显式迁移旧目录，并保留损坏根的失败语义。[上游 StoreFS 实现](https://github.com/zen-fs/core/blob/v2.9.0/src/backends/store/fs.ts#L795-L873)
+
 原生日志 file sink、数据库、源码/制品 loader、Typst CAS 保持各自路径与 IO 模型。浏览器 backend 的同步/持久能力按实际环境验证。
 
 ## 实现与验证入口

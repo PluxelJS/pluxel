@@ -1,5 +1,5 @@
 import type { RootContext } from '@pluxel/core'
-import { enterOwnerInvocation } from '@pluxel/core/host'
+import { enterOwnerInvocation } from '@pluxel/core/internal'
 import type { ElysiaApplicationDirectory } from './ElysiaApplicationDirectory'
 import type { ElysiaApplicationCarrier } from './elysia-application-carrier'
 import { requestWithSignal } from './request'
@@ -96,7 +96,7 @@ export class HostElysiaRuntime implements ElysiaRuntimeApi {
 		if (this.closed) return false
 		return (
 			!!this.select(request) ||
-			this.directory.matchesHttpRoute(new URL(request.url).pathname, request.method) ||
+			this.directory.matchesHttpRoute(request) ||
 			!!this.fallback?.matchesRequest(request)
 		)
 	}

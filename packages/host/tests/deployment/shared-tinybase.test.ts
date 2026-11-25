@@ -6,10 +6,12 @@ import { fileURLToPath } from 'node:url'
 import { expect, it } from 'vitest'
 import { hostPackage } from '../support/workspace'
 import { hostSharedPackages } from '../../src/shared-packages'
+import coreManifest from '../../../core/package.json' with { type: 'json' }
 
 const loader = new URL('src/native-source-loader.ts', hostPackage).href
 const coreTinybase = new URL('../core/node_modules/tinybase/index.js', hostPackage).href
 const tsx = new URL('../rolldown/node_modules/tsx/dist/loader.mjs', hostPackage).href
+const supported = coreManifest.pluxel.tinybase
 
 it.each(['tinybase', 'capnweb'])(
 	'rejects global %s sharing that would bypass capability ownership and rewrite private dependencies',
@@ -21,9 +23,9 @@ it.each(['tinybase', 'capnweb'])(
 )
 
 function fixture(
-	installed = '10.0.1',
-	peer: string | undefined = '10.0.1',
-	hostDependency = '10.0.1',
+	installed = supported,
+	peer: string | undefined = supported,
+	hostDependency = supported,
 ) {
 	const root = mkdtempSync(join(tmpdir(), 'pluxel-source-tinybase-'))
 	const put = (path: string, value: unknown) => {
@@ -53,10 +55,10 @@ function fixture(
 		join(root, 'node_modules/@pluxel/core'),
 		'dir',
 	)
-	tinybase('node_modules/tinybase', '10.0.1')
+	tinybase('node_modules/tinybase', supported)
 	for (const [name, version, shared] of [
 		['consumer', installed, true],
-		['library', '10.0.1', true],
+		['library', supported, true],
 		['private-store', '9.9.0', false],
 	] as const) {
 		put(`node_modules/${name}/package.json`, {
@@ -67,7 +69,7 @@ function fixture(
 			...(shared
 				? {
 						peerDependencies: peer ? { tinybase: peer } : {},
-						...(name === 'consumer' ? { pluxel: { tinybase: '10.0.1' } } : {}),
+						...(name === 'consumer' ? { pluxel: { tinybase: supported } } : {}),
 					}
 				: { dependencies: { tinybase: version } }),
 		})
@@ -135,7 +137,7 @@ it('interoperates with real independently installed upstream Store and Queries m
 	try {
 		const upstream = new URL('../core/node_modules/tinybase/', hostPackage)
 		expect(JSON.parse(readFileSync(new URL('package.json', upstream), 'utf8')).version).toBe(
-			'10.0.1',
+			supported,
 		)
 		for (const path of [
 			'node_modules/tinybase',
@@ -173,8 +175,8 @@ export default () => {
 }, 30_000)
 
 it.each([
-	['10.1.0', '10.0.1', '10.0.1', /consumer.*resolved 10\.1\.0.*Host Core supports 10\.0\.1/],
-	['10.0.1', undefined, '10.0.1', /consumer.*peerDependencies.tinybase <missing>/],
+	['0.0.1', supported, supported, /consumer.*resolved 0\.0\.1/],
+	[supported, undefined, supported, /consumer.*peerDependencies.tinybase <missing>/],
 ] as const)(
 	'rejects unsupported native shared TinyBase declarations or installations (%s, %s, %s)',
 	(version, peer, hostDependency, diagnostic) => {
@@ -189,14 +191,14 @@ it.each([
 					version: '1.0.0',
 					type: 'module',
 					exports: './index.mjs',
-					pluxel: { tinybase: '10.0.1' },
+					pluxel: { tinybase: supported },
 				}),
 			)
 		}
 		try {
 			const output = run(
 				root,
-				`await assert.rejects(source.loadApplication(root + '/entry.mjs'), error => { assert.match(error.message, ${diagnostic.toString()}); return true }); console.log('REJECTED')`,
+				`await assert.rejects(source.loadApplication(root + '/entry.mjs'), error => { assert.match(error.message, ${diagnostic.toString()}); assert.ok(error.message.includes('Host Core supports ${supported}')); return true }); console.log('REJECTED')`,
 			)
 			expect(output).toContain('REJECTED')
 		} finally {

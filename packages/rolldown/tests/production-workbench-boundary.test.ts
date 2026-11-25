@@ -24,12 +24,18 @@ it('bridges an installed target through a relocated Workbench application and di
 				'dir',
 			)
 		}
+		const { version: capnwebVersion } = JSON.parse(
+			await readFile(
+				new URL('../../host/node_modules/capnweb/package.json', import.meta.url),
+				'utf8',
+			),
+		) as { version: string }
 		await put(
 			'package.json',
 			JSON.stringify({
 				name: 'workbench-deployment-probe',
 				type: 'module',
-				dependencies: { capnweb: '0.12.0' },
+				dependencies: { capnweb: capnwebVersion },
 			}),
 		)
 		await symlink(
@@ -43,8 +49,8 @@ it('bridges an installed target through a relocated Workbench application and di
 				name: 'installed-target',
 				type: 'module',
 				exports: './index.mjs',
-				pluxel: { workbenchCapnweb: '0.12.0' },
-				peerDependencies: { capnweb: '0.12.0' },
+				pluxel: { workbenchCapnweb: capnwebVersion },
+				peerDependencies: { capnweb: capnwebVersion },
 			}),
 		)
 		await put(
@@ -69,7 +75,7 @@ export { Dynamic }
 			`${capnwebDirectory}/package.json`,
 			JSON.stringify({
 				name: 'capnweb',
-				version: '0.12.0',
+				version: capnwebVersion,
 				type: 'module',
 				exports: './index.mjs',
 			}),
@@ -155,9 +161,10 @@ try {
 				exports: './index.mjs',
 			}),
 		)
-		await expect(run()).rejects.toThrow(
-			/installed-target.*peerDependencies\.capnweb 0\.12\.0.*resolved 0\.13\.0.*Host capnweb supports 0\.12\.0/,
-		)
+		const rejected = run()
+		await expect(rejected).rejects.toThrow(/installed-target.*resolved 0\.13\.0/)
+		await expect(rejected).rejects.toThrow(`peerDependencies.capnweb ${capnwebVersion}`)
+		await expect(rejected).rejects.toThrow(`Host capnweb supports ${capnwebVersion}`)
 	} finally {
 		await rm(root, { recursive: true, force: true })
 	}

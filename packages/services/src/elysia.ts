@@ -1,8 +1,13 @@
 import { resolveContextService } from '@pluxel/core/internal'
 import { ElysiaRuntime, HostElysiaRuntime } from './elysia/runtime'
 import type { Elysia } from 'elysia'
-import { installRootService, installScopeService } from '@pluxel/core/host'
-import { defineHostService, type PluginHost, type HostService } from '@pluxel/host'
+import type { PluginHost } from '@pluxel/host'
+import {
+	defineHostService,
+	installRootService,
+	installScopeService,
+	type HostService,
+} from '@pluxel/host/application'
 import { ElysiaApplicationDirectory } from './elysia/ElysiaApplicationDirectory'
 
 /** Native Elysia application owned by one Plugin generation and shared with its Parts. */
