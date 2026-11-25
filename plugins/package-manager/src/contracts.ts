@@ -116,7 +116,7 @@ export type PackageInstallPlan = Readonly<{
 	id: string
 	/** Changed source entries only. Null when the store runs independently of a Host. */
 	hostImpact: readonly PackageHostImpact[] | null
-	/** Predicted policy changes for the full batch under current intents. */
+	/** Projects declared plugin dependencies for the batch under current Host policy. Plugins resolve Host services at runtime. */
 	dependencyReview: PluginSourceDependencyReview | null
 	/** Previously removed packages whose remaining wrappers will be withdrawn during confirmation. */
 	pendingRemovals: readonly string[]

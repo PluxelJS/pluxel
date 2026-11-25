@@ -354,8 +354,9 @@ it('shows reviewed export changes, fork state and the consumers of a removed pro
 		},
 	}
 	await render()
-	const rows = container.querySelectorAll('[aria-label="Host impact"] li')
-	expect(container.textContent).toContain(
+	const impact = container.querySelector('[aria-label="Host impact"]')!
+	const rows = impact.querySelectorAll('li')
+	expect(impact.textContent).toContain(
 		required + ' requires ' + provider + ': ' + provider + ' → unbound',
 	)
 	expect(rows).toHaveLength(3)
@@ -365,6 +366,7 @@ it('shows reviewed export changes, fork state and the consumers of a removed pro
 	expect(rows[0]?.textContent).toContain(`Used optionally by ${optional}`)
 	expect(rows[1]?.textContent).toContain('Add package:alpha::Orders')
 	expect(rows[2]?.textContent).toContain('Unverified change for package:external::Shared')
+	expect(impact.textContent).toContain('open the node in Installed')
 	expect(button('Confirm installation').disabled).toBe(false)
 })
 
@@ -372,12 +374,21 @@ it('identifies a missing candidate export list and an unavailable Host in the re
 	const plan = preparedPlan()
 	state.preparation.data = {
 		ok: true,
-		plan: { ...plan, hostImpact: [{ name: 'alpha', definitionsKnown: false, definitions: [] }] },
+		plan: {
+			...plan,
+			hostImpact: [{ name: 'alpha', definitionsKnown: false, definitions: [] }],
+			dependencyReview: {
+				status: 'incomplete',
+				missing: [{ packageName: 'alpha', reason: 'exports' }],
+			},
+		},
 	}
 	await render()
 	const impact = () => container.querySelector('[aria-label="Host impact"]')!.textContent
 	expect(impact()).toContain('alpha')
 	expect(impact()).toContain('export changes are unknown')
+	expect(impact()).toContain('missing root export list')
+	expect(impact()).toContain('missing Host service')
 	expect(button('Confirm installation').disabled).toBe(false)
 	state.preparation.data = { ok: true, plan: { ...plan, hostImpact: null } }
 	await render()

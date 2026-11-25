@@ -43,6 +43,17 @@ class Consumer extends BasePlugin {
 afterEach(() => vi.unstubAllEnvs())
 
 describe('OtelPlugin', () => {
+	it('starts OTLP tracing without Elysia when Prometheus is disabled', async () => {
+		await using host = await createTestHost({ services: [] })
+		const node = OtelPlugin.nodeAddress()
+		const otel = await host.start(node, {
+			initialConfig: { otlp: ['traces'], prometheus: false },
+		})
+
+		expect(host.isRunning(node)).toBe(true)
+		expect(otel.tracer.startSpan).toBeTypeOf('function')
+	})
+
 	it('exposes native caller-scoped OTel instruments through Prometheus pull', async () => {
 		vi.stubEnv('OTEL_EXPORTER_OTLP_METRICS_PROTOCOL', 'grpc')
 		{

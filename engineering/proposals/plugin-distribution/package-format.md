@@ -15,7 +15,7 @@
 ## 需要用实际插件回答的问题
 
 - **市场详情。** 对同时导出多个 Plugin 和普通库的包，现有控制材料能否在不加载代码时列出已声明的 Plugin 及其公开入口？遇到没有控制清单的旧包或归属不明的重导出，详情应显示已知范围。
-- **Host 预检。** 选择一个确实依赖共享运行时或宿主服务的 Plugin，比较候选的声明与目标 Host 的实际装配。Workbench 已有 `pluxel.workbenchCapnweb` 的构建和准入检查。其他能力先列出缺失哪个声明、谁能产生它、谁能确认它已装配。[共享运行时准入](../../WORKBENCH.md#definition-与-publication) · [安装预检](installation.md#安装与升级的预检)
+- **Host 预检。** Workbench 已有 `pluxel.workbenchCapnweb` 的构建和准入检查。遇到另一项能改变安装决定的固定服务或版本要求时，再核对已有声明、声明所有者和目标 Host 的装配事实。[共享运行时准入](../../WORKBENCH.md#definition-与-publication) · [安装预检](installation.md#安装与升级的预检)
 
 选用具有上述导出或宿主要求的真实发行，先记录现有字段能支持哪些判断。如果某项材料同时服务于项目依赖和长驻 Host，让两者消费同一 tarball。只有现有材料仍无法回答具体消费者的问题时，再决定扩展原有字段或单独发布 manifest，并确定谁生成、谁读取。
 

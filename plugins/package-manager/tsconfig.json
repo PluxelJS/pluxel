@@ -6,6 +6,6 @@
 		"jsx": "react-jsx",
 		"lib": ["ES2024", "DOM", "DOM.Iterable"],
 		"types": ["node", "vite/client"],
-		"customConditions": ["@pluxel/hmr"]
+		"customConditions": ["@pluxel/hmr", "@pluxel/source"]
 	}
 }

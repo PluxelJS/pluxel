@@ -51,7 +51,15 @@ export function InstallHostImpact({
 					</Stack>
 				))
 			)}
-			{review && <DependencyReview review={review} />}
+			{review && (
+				<>
+					<DependencyReview review={review} />
+					<Text size="sm">
+						If startup fails because the configuration requires a missing Host service, open the
+						node in Installed for details.
+					</Text>
+				</>
+			)}
 		</Stack>
 	)
 }

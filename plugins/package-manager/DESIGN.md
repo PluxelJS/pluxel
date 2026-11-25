@@ -10,7 +10,9 @@
 
 控制清单的可选文件 `dependencies.json` 由编译器从本代 lowering 生成，每个可判定的具体定义记录包含 Part 的 required/optional 引用、提供的抽象 token 及可判定的 fork 能力。安装器按清单核对该文件的长度与摘要。缺文件或摘要错误会拒绝声明了该文件的制品；早期清单和未能静态判定的定义允许正常审阅，明确报告缺失项。
 
-Host 将整批候选根声明与保留的来源合并，在同一已提交快照上运行与接纳共用的策略求解。它保留当前 auto-start、会话意图、fork、provider default 和 consumer override。`dependencyReview` 比较策略选中节点的 required 绑定及新增、解除的协调问题，能定位间接受阻的消费者。对尚未启用的候选也列出预计目录中没有 provider 的 required 和 optional 引用。来源归属、依赖或当前 fork 的支持情况不确定时，返回 `incomplete` 和原因；角色冲突返回 `invalid`。`liveRejections` 使用在线接纳的同一判据。若列表非空，按这些声明在线替换会保留原 catalog。候选包首次重导出的外部定义不在自有根清单中，可能改变预测中的缺项、绑定或拒绝原因，只有加载入口时才能发现。制品执行、宿主服务、生命周期和实际接纳由目标 Host 报告。
+Host 将整批候选根声明与保留的来源合并，在同一已提交快照上运行与接纳共用的策略求解。它保留当前 auto-start、会话意图、fork、provider default 和 consumer override。`dependencyReview` 比较策略选中节点的 required 绑定及新增、解除的协调问题，能定位间接受阻的消费者。对尚未启用的候选也列出预计目录中没有 provider 的 required 和 optional 引用。来源归属、依赖或当前 fork 的支持情况不确定时，返回 `incomplete` 和原因；角色冲突返回 `invalid`。`liveRejections` 使用在线接纳的同一判据。若列表非空，按这些声明在线替换会保留原 catalog。候选包首次重导出的外部定义不在自有根清单中，可能改变预测中的缺项、绑定或拒绝原因，只有加载入口时才能发现。
+
+目标 Host 接纳制品并执行节点生命周期。同一份插件依赖声明可以对应不同的启动结果。例如 Otel 根据节点配置决定是否向 `ElysiaApp` 注册 Prometheus 路由。启动时缺少所需服务会进入该节点的生命周期报告，Workbench 在安装审阅中指出查询位置。[Otel 预览与启动对照](../../engineering/records/host-deployment.md#otel-安装预览与启动2026-11-25)
 
 确认先复核候选字节，在原子保存安装选择的 rename 提交前，同步复核 catalog/policy revision 和相关节点、依赖、来源。过期或事实改变返回 `INVALID_PLAN`。Host 正在处理或已排队的图变更返回 `HOST_GRAPH_BUSY`，本次候选释放。若另一个入口在审阅期间损坏，修复需要扩大原范围，此时返回 `INVALID_PLAN`。保存成功后只操作审阅过的入口，回执按包核对实际发布或撤回结果。保存之后的来源接纳、节点启动或阻塞继续由 Host 报告。[Host 来源事实](../../engineering/HOST.md)
 

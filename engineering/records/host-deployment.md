@@ -212,3 +212,18 @@ WeakMap 以稳定 `HostStateSnapshot` 为 key；新 state 冷索引仍扫描 aut
 ## 控制 SDK 交付观察（2026-11-15）
 
 嵌套缓存 fixture 在 Vite+ CLI native run 等待时超时，尚未进入构建；当时未定位根因。默认环境完整门禁通过，未增加自动重试或放宽断言。此前的 Typst 首次启动及一次 HMR 结果缺失也没有根因修复证据。当前控制机制与验证入口由 [Plugin Control](../PLUGIN_CONTROL.md)维护。
+
+## Otel 安装预览与启动（2026-11-25）
+
+在两个只装配 Commands 的隔离 Host 上预先为 Otel 默认节点设置 `autoStart: true` 和 `otlp: ['traces']`，分别关闭、启用 Prometheus。通过 Package Manager 的 `prepareInstall(['@pluxel/plugin-otel@0.0.0'])` 读取本地候选。pnpm 获取由离线测试替身提供，两份预览都停在确认之前。
+
+- 用工作区已有的 v3 控制清单，两份预览都识别出新增的 `OtelPlugin`，因清单未声明 `dependencies.json` 返回 `incomplete`，原因为 `dependencies`。
+- 用当前编译器从同一插件源码生成的控制材料，两份预览均为 `projected`。候选提供 `Otel`，required 和 optional 插件引用均为空。新增定义解除了原来的 `consumer_unavailable`，两份预览的 `liveRejections` 均为空。[Host 投影回归](../../packages/host/tests/graph/catalog-provenance.test.ts)
+
+另在隔离 Host 上按同一个默认节点地址启动实际的 `OtelPlugin`，保持 OTLP traces 启用。抓取请求通过 Host 的 HTTP handler 发出。[Otel 启动与指标回归](../../plugins/otel/tests/plugin.test.ts) · [缺服务时的失败报告](../../plugins/otel/tests/native-providers.test.ts)
+
+| Prometheus 配置                | Host 装配  | 节点启动结果                                                            |
+| ------------------------------ | ---------- | ----------------------------------------------------------------------- |
+| `false`                        | 无 Elysia  | 节点运行，可取得 tracer。                                               |
+| `{ path: '/proposal-scrape' }` | 无 Elysia  | 节点未运行，`start-failed` 指出缺少 `ElysiaApp`。                       |
+| `{ path: '/proposal-scrape' }` | `elysia()` | 节点运行，抓取路径返回 HTTP 200 和含 `target_info` 的 Prometheus 指标。 |

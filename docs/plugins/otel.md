@@ -31,8 +31,10 @@ envBinding({
 ```ts no-twoslash
 import { defineHostApplication } from '@pluxel/host'
 import { OtelPlugin } from '@pluxel/plugin-otel'
+import { elysia } from '@pluxel/services/elysia'
 
 export default defineHostApplication(() => ({
+	services: [elysia()],
 	plugins: [
 		{
 			plugin: OtelPlugin,
@@ -43,7 +45,7 @@ export default defineHostApplication(() => ({
 }))
 ```
 
-- Prometheus 抓取端点默认挂载在宿主 Elysia 实例的 `GET /metrics` 路由上，复用现有 HTTP 端口。
+- 启用 Prometheus 时，插件在宿主 Elysia 实例上注册抓取路由，默认是 `GET /metrics`。使用 `servicesPreset()` 的应用已装配 Elysia，自选服务的应用按上例加入 `elysia()`。只使用 OTLP 时可省略它。对外监听由宿主负责。[应用入口与 HTTP 监听](../host/configuration.md#应用入口)
 - 未启用的信号不会初始化对应的 Exporter，如果在业务插件中访问未启用的 Getter（如未开启 traces 时访问 `otel.tracer`），将抛出明确的异常。
 
 ## 记录 Metrics、Trace 与 Log
