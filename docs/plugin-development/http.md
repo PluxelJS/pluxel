@@ -51,7 +51,7 @@ export class OrdersPlugin extends BasePlugin {
 
 ## 直接使用 Elysia 能力
 
-`this.ctx.service(ElysiaApp)` 返回的是标准的 Elysia 实例，所有 Elysia 2 的原生特性均可直接使用：
+`this.ctx.service(ElysiaApp)` 返回当前插件与它的 Parts 共享的 Elysia 实例，可以直接声明路由、schema 和请求钩子。
 
 ### 强类型输入校验与文档（TypeBox）
 
@@ -146,12 +146,11 @@ export class OrdersPlugin extends BasePlugin {
 
 ## finalization 与生命周期
 
-- **注册窗口**：所有路由必须在插件的 `init()` 阶段同步完成注册。当所有插件的 `init()` 完成后，宿主会触发 Elysia 的编译优化（Compile）。
-- **自动卸载**：当插件由于热更新、配置变更或手动停止而卸载时，其挂载的路由会立即从宿主路由表中剔除。
+在插件的 `init()` 中注册路由和模块。该代插件初始化成功后，宿主等待该 Elysia 实例的异步模块就绪，编译路由，检查冲突，然后随本次提交发布已接纳的路由。停止或替换该代插件时，宿主撤回它的路由并结算在途请求、stream 与 WebSocket。
 
 ## 错误边界
 
-- **路由冲突处理**：如果两个不同的插件尝试在同一个 HTTP Method 上注册完全相同的路径，宿主启动时会抛出冲突异常并拒绝服务。
+- 不同插件节点声明相同种类、method 和路径的路由时，冲突候选的生命周期报告会记录启动失败，已接纳的节点继续处理请求。
 - **业务异常与状态码**：对于业务预期的参数或权限错误，应直接返回标准的 HTTP 状态码（如 400、401、404），避免直接将内部未处理的原始数据库报错暴露给客户端。
 
 ## 测试
@@ -180,4 +179,4 @@ it('能够正确响应 HTTP 请求', async () => {
 
 ## 当前 Elysia 2 与 carrier 边界
 
-Pluxel 当前深度集成 Elysia 2（`2.0.0-rc.0`）。在开发模式下（Vite），Elysia 会接入 Vite 开发服务器作为底层 Carrier，并完整保留 Vite 自带的 HMR 链路；在生产模式下，Elysia 直接绑定高性能 Node 原生 Listener 监听外部流量。
+Pluxel 当前使用 Elysia `2.0.0-rc.0`。在 Vite 开发模式下，Vite 拥有 listener，保留自身的 HMR 接线。生产 Node 应用通过 `listenElysia()` 启动 srvx listener。在插件的 Elysia 实例上直接调用 `app.listen()` 或 `app.stop()` 会因物理 listener 属于宿主而报错。直接注册 `app.onStart()` 或 `app.onStop()` 也会报错，当前 Elysia 版本缺少外部挂载与卸载协议。插件初始化与资源释放使用 `init()` 和当前 Context 的 effects。

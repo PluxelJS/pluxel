@@ -110,4 +110,5 @@ script sync/dev sync 共用客户端实现；packageName/完整 definition 互�
 
 - Elysia 2.0.0-rc.0 在独立 TypeScript 7.0.2 严格 library checking 下可复现 TS2536/TS2344，Services 可选安装检查有该上游声明失败。
 - 既往交付检查中的嵌套 fixture 超时和 Typst 观察缺口见[验收记录](records/host-deployment.md#控制-sdk-交付观察2026-11-15)。
-- 模型 token/成功率对照尚未开展，见[独立研究](proposals/AGENT_WORKFLOW_EVALUATION.md#要回答的问题)。跨 isolate 业务投影、持久任务和离线 validator 各需独立后端。
+- 控制索引的首轮对照覆盖动态发现、HMR 恢复和按字段名定位配置，每项每组各有一个样本。[观测值与复核范围](records/agent-control-evaluation/README.md)
+- 跨 isolate 的业务调用、持久任务和离线配置校验见 [Agent 执行与控制提案](proposals/AGENT_WORKFLOW.md)。

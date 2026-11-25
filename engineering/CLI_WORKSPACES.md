@@ -70,6 +70,8 @@ docs 从当前 owning checkout（Git）或 dist/resources（npm）读取，拒�
 
 workspace sync 显式写，check/doctor 只读；source install 在锁内复用同步，重读后再 overlay/install。只更新已有 catalog 版本，裸声明迁移归 pncat；peer-only catalog 保留，共享 peer 引用变更报冲突，不暗改 manifest。CLI fingerprint/build inputs 包括权威 catalog 和 pncat 源码。
 
+若同一种清单错误反复需要人工修复，先用实际样本确认 inventory 或编译结果能给出正确值，再扩展显式维护工具。预览列出字段、原值、期望值、依据和冲突。写入前复核文件快照，完成后重查并报告部分失败。安装树无法确定作者期望的 peer 角色或范围，这些字段继续由作者决定。
+
 pluxel pncat 在 launcher 来源校验后委托内联 CAC parser，临时恢复 upstream argv；原生命令保持 writer/选项/输出，embedding context 只给 init import 和提示。`@pluxel/cli/pncat` 发布 runtime/自包含声明，根声明构建覆盖 CLI/vendor 两处源码，产物不写 vendor。packed CLI 不需另装 pncat/源码。回归验证 sync 不改 `package.json` bytes，覆盖 migrate→sync、peer 冲突及 Git/npm 来源。
 
 ### 工作区任务图

@@ -1,55 +1,19 @@
 # 自动收录与目录复核
 
-状态：人工观测、精确发行校验和通知机制已实现；自动 provenance 收录与补漏扫描尚未实现。上级：[提案总览](README.md)。
-
-现有多 registry 配置、`observe` / `refresh`、tarball 校验、不可变摘要和通知限制见 [Worker 项目](../../../projects/plugin-market/README.md)。[定时收录](../../../projects/plugin-market/src/indexing/jobs.ts)会为明确启用 `unsigned` 的私有来源拉包并提交结果。要求 provenance 的通知返回 `provenance-runtime-unsupported`。
+明确启用 `unsigned` 的私有来源已经可以自动收录无证明发行。Worker 领取通知、拉取并审核精确版本，在同一 D1 事务中核对有效租约和发行摘要，写入目录、审计和成功回执。声明了 attestations 的发行目前返回 `provenance-runtime-unsupported`。[通知处理](../../../projects/plugin-market/src/indexing/jobs.ts) · [条件提交](../../../projects/plugin-market/src/indexing/commit.ts) · [Worker 的证明边界](../../../projects/plugin-market/README.md#provenance-边界)
 
 ## CI 发布通知与 npm provenance
 
-现有通知提交获准 registry、包名和精确版本，持久接收后返回回执。带证明的自动收录需要接入以下处理路径。
+1. 部署方先用真实有效的 npm provenance 在目标 workerd 验证原生 Sigstore，分别篡改包名、版本、tarball 和签名 payload 时应拒绝。目标部署还需确定 TUF 信任根的来源、刷新和失效策略，包括网络不可用时的处理。[当前阻塞与复现](../../spikes/plugin-market-worker/README.md#provenance-阻塞与最小复现)
+2. 将通过验证的证明绑定到本次审核的发行坐标和 tarball 摘要，从证明中取得可展示的仓库、commit 和构建信息。沿用现有租约与目录提交事务，只有证明记录和发行一起保存后才完成通知。已人工收录的相同字节也需补验，已存在的摘要与新字节冲突时拒绝。
+3. 用真实 Plugin 验证通知响应丢失、证明稍后才可读和提交时租约已过期。暂时读取失败可在同一通知预算内重试，证明无效时结束该次处理并保留已提交目录。CI 发行成功、通知已接收与目录已收录各有自己的结果。
 
-1. 持有效租约，从指定 registry 读取元数据、实际 tarball 和该发行的 npm provenance。
-2. 使用原生验证链校验证明，并核对包名、版本和 tarball 摘要，取得关联仓库、commit 与构建信息。
-3. 验证插件制品，在同一条件提交中保存发行、验证结果与完成回执；旧租约不能发布结果。
+## 发现与复核
 
-Sigstore 在锁定 workerd 组合中的正例失败与最小复现见[实验记录](../../spikes/plugin-market-worker/README.md#provenance-阻塞与最小复现)。下一步先解决原生接入，再验证篡改包名、版本、tarball 和签名 payload 的负例。不能以打包成功替代这条运行证据。
+补漏从已登记的完整包名、通知、已有目录或 registry 支持的关键词查询获取候选。包名前缀和 `pluxel-plugin` keyword 只用于发现。通知与扫描复用精确发行的拉取、审核和按来源选定的证明策略。公开目录读取只查询已提交结果。
 
-可信材料由部署与维护流程拥有，复用上游 TUF bootstrap 和更新机制。仍需确定信任根获取、刷新、失效与网络失败策略；通知调用方不提供信任根。
-
-验证成功之后，CI 发布、通知接收和市场收录仍分别报告。发行已被人工收录，也要补验同一字节的证明才能使 provenance 通知成功。证明无效不降级为无证明；版本或证明暂不可读时有界重试，重复通知不重置预算。
-
-## 输入与发现
-
-自动发现与已知包复核尚未实现。候选可来自已有通知、完整包名登记、registry 支持的关键词查询及已知包；名称前缀和 `pluxel-plugin` keyword 只作为发现线索。
-
-不同 registry 的搜索、枚举和增量能力不同。不支持搜索时从登记包开始；搜索结果减少不能推断发行撤回。通知和扫描复用同一拉取、校验与提交路径，公开 `GET` 仍只读取已提交目录。
-
-## 一条生产路径
-
-```text
-读取来源配置、通知和持久进度
-  → 领取有期限的任务，或发现/复核一批候选
-  → 拉取精确发行、校验制品与原生 provenance
-  → 在有效租约条件下提交发行、观测与完成进度
-  → HTTP 读取已提交结果
-```
-
-现有单个 tarball 限制继续由正式项目文档维护。新增自动调度另需包数、并发和时间预算，并给通知和复核各自保留处理机会。超过预算的制品得到明确结果，不能每轮从头耗尽调度资源。
-
-## 增量与校验
-
-新 [Plugin manifest](package-format.md) 尚未生成。它落地后需接入实际 tarball 校验，核对公开入口、依赖、能力要求和资源摘要。当前 `pluxel.pluginPackages`、peer 与 exports 检查不能直接当作新 manifest 已完成。
-
-已知包按 registry 能力使用 ETag/Last-Modified 和已知摘要，避免重复下载。扫描保存观测时间与进度；未变事实可复用，过期结果不能覆盖较新 tag 或人工编辑。
+持续扫描需要限制每轮包数、并发和时间，为通知与复核各自保留处理机会。按来源能力使用 ETag、Last-Modified 和已知摘要，第二轮可复用未变的观测。过期观测不能覆盖更新的 tag 或人工编辑，单包超限不能阻塞下一包。按批保存进度，恢复后从已提交的批次继续。[现有通知预算](../../../projects/plugin-market/README.md#制品容量与迁移)
 
 ## 版本覆盖与来源可用性
 
-现有目录准确保留上游 tag 和已收录版本，`coverage: "indexed-only"` 表示已检查范围。后续扫描优先通知指定发行、tag 目标和有界历史补录；不为展示一个包预先下载全部历史。
-
-还需表达候选处理状态与来源当前可用性。超时只表示这次观测失败；确切观察到撤回时保存时间和状态，保留发行摘要及验证历史。上游撤回不改写已安装 Host 的运行状态。读取协议的待补内容见[目录消费](index-protocol.md#版本选择与新鲜度)。
-
-## 提交与恢复
-
-自动生产按[增量提交边界](foundation.md#目录如何增量提交)约束租约、发行与进度。网络及制品校验失败保留已提交目录；任务过期后禁止提交，下一处理者从持久状态继续。
-
-验收需使用真实 Plugin 制品，覆盖通知响应丢失、证明稍后可读、过期任务提交、同名同版不同字节、第二轮复核与单包超限。普通 npm provenance 正例只验证证明能力；完整产品路径还需要 [manifest 与目标 Host 消费验证](delivery-plan.md#分阶段验证)。
+现有目录保留真实上游 tag，`coverage: "indexed-only"` 表示实际检查过的版本。扫描优先处理通知指定的发行和 tag 目标，再按预算回填历史。请求超时、候选待处理和确认撤回需由生产端分别记录。确认撤回须有 registry 的直接观测，保留既有发行摘要和验证历史。已安装 Plugin 的运行状态由 Host 报告。[目录消费](index-protocol.md#版本选择与新鲜度)

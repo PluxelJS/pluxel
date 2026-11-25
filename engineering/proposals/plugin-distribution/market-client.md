@@ -16,7 +16,7 @@ registry/auth/proxy 的安装配置继续沿用 pnpm 原生入口。现有安装
 
 现有目录支持多个配置连接及来源选择。以下交互取决于相应服务先提供结果：
 
-- [自动收录](index-production.md)完成后，显示所选发行的已验证仓库、commit 与构建信息。
+- 带证明的发行通过验证后，显示该份证明关联的仓库、commit 与构建信息。[npm provenance](index-production.md#ci-发布通知与-npm-provenance)
 - [目录状态](index-protocol.md#版本选择与新鲜度)补齐后，区分未验证候选、来源失败与确认撤回。
 - 在现有候选依赖、provider 变化及间接阻塞预览上补充[共享服务版本与宿主能力缺口](installation.md#安装与升级的预检)。
 - 若需要断线或进程重启后跟踪安装，读取同一持久操作回执。当前候选仅在 store 内存中保留，不能把它当作跨进程任务。

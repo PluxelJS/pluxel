@@ -1,45 +1,23 @@
 # Host 安装预检与结果跟踪
 
-状态：pnpm 获取、不可变安装、根定义与消费者审阅、候选依赖与 Host 策略投影、提交前复核已实现。本页保留服务与能力预检、持久结果及制品清理的设计。上级：[提案总览](README.md)。
-
-来源核对和必需插件的版本解析见[插件市场设计](../../PLUGIN_MARKET.md)。候选失效、部分发布和离线维护见[包管理器安装与恢复](../../../plugins/package-manager/DESIGN.md)。调用方式见 [Package Manager 用法](../../../docs/plugins/package-manager.md)。
-
-## 发行身份与 Host 身份
-
-升级预检必须遵守现有 [Plugin identity](../../PLUGIN_IDENTITY.md)：registry、版本、摘要和安装路径不参与运行身份。安装同名包的新发行替换实现，不能通过目录或 fork 让同一公开身份的两个实现并存。
-
-一次包升级可能改变多个 Plugin 导出。影响检查应覆盖同包全部 definition、default/fork、被移除的导出与相关依赖。应用固定 import 已拥有同名包时，报告装配来源冲突并定位项目依赖，不用托管安装暗中替代。
+Package Manager 已能用 pnpm 物化不可变候选，审阅整批导出、依赖与消费者变化，并在发布 wrapper 前复核。当前预测范围和失效条件见[包管理器安装与恢复](../../../plugins/package-manager/DESIGN.md#准备与确认)。[安装用法](../../../docs/plugins/package-manager.md) · [市场来源与版本解析](../../PLUGIN_MARKET.md#两条安装路径)
 
 ## 插件依赖与普通 npm 依赖
 
-现有获取引擎已经选择 pnpm，来源、认证和普通依赖求解继续沿用它的原生行为。编译器随控制材料提供候选的静态 Plugin 引用，Host 以当前策略预检整批 provider 变化。后续的[发布格式](package-format.md)还需表达共享模块与能力。
-
-required Plugin、optional integration、宿主共享服务和普通实现依赖分别处理。安装服务的 npm 包不代表服务已装配；optional provider 不因市场存在就自动安装或启用。预检不能自行扩大固定 Context。
-
-代表验证仍需覆盖公共/受保护来源、传递依赖和 peer context。当前 pnpm 来源一致性检查是已有能力；受保护市场读取所需的消费者权限由[客户端设计](market-client.md)拥有。
-
-## 两种消费方式
-
-新的发布 manifest 应由同一真实 tarball 在项目依赖与长驻 Host 两条路径消费。项目依赖和锁文件变更由项目构建部署负责；Host 安装记录和 wrapper 发布由 Package Manager 负责，运行接纳由 Host/Core 负责。
-
-现有 source 已区分 live 与 next-start，见[动态来源](../../../docs/host/configuration.md#动态来源)。后续操作结果应继续保留这项差别；保存安装选择不能提前表示目标 Plugin 已启用。
+发行坐标包含 registry、包名和精确版本。Plugin 运行身份来自公开定义，同包升级可能改变多个定义、默认节点或 fork。包来源与冲突按既有 [Plugin identity](../../PLUGIN_IDENTITY.md) 处理。普通依赖、下载认证和 peer context 由 pnpm 解析。项目依赖由应用构建和锁文件管理，托管安装由 Package Manager 记录选择和发布入口。
 
 ## 安装与升级的预检
 
-当前根导出预测、来源冲突、节点和直接消费者审阅及过期计划拒绝见[安装与恢复](../../../plugins/package-manager/DESIGN.md#准备与确认)。
+Host 已根据候选根定义的 required/optional 引用和当前策略预测 provider 重新绑定及传递阻塞。早期制品、未知重导出及多来源定义会留下预测缺口。固定 import 冲突和审阅过期按现有安装协议报告。[依赖预览](../../../plugins/package-manager/DESIGN.md#准备与确认)
 
-已校验的候选根定义可以参与同批 Host 策略预检，覆盖 required/optional 声明、必需 provider 的重新绑定及传递阻塞。早期制品和归属不明的重导出会报告预测缺口。剩余工作是将共享 provider 版本和宿主能力要求与目标装配比对，覆盖缺少服务和版本不兼容，并将预测与实际接纳报告对照。
+剩余问题是哪些共享运行时版本或宿主服务要求能在发布入口前核对。用真实 Plugin 分别对照已装配服务、缺服务和版本不兼容的 Host，将预检与实际接纳报告对比。作者的 npm peer 表达包版本要求，目标 Host 拥有共享实例和实际服务装配。预检须区分缺少必需服务、可选集成未启用和制品声明不足。需要补充发布信息时，先明确候选包中究竟缺少哪个事实。[发布材料](package-format.md)
 
 ## 运行与结果所有权
 
-当前安装返回 wrapper 的实际发布结果，候选保存在内存中。若要求跨断线或重启跟踪，需要设计独立、持久的操作回执，将固定发行、保存结果、Host 接纳结果与诊断连接起来；这项能力尚未实现。
+当前确认回执逐包返回 wrapper 的实际发布或撤回结果。Vite 的 live 接纳、原生 Host 的 next-start 及具体节点的启动结果仍由 Host/Core 报告。[动态来源](../../../docs/host/configuration.md#动态来源)
 
-准备失败、部分 wrapper 发布、已保存待应用、旧代停止后新代启动失败分别表达。回执查询沿用原操作身份，不能通过重新安装推测前一次是否完成。生命周期由 [Core](../../CORE_LIFECYCLE_SEMANTICS.md)拥有，不能承诺跨脚本、文件和外部副作用的原子回滚。
+若调用方需要断线或重启后查询同一次安装，须确定操作标识、回执保存期，以及如何关联固定发行、写入和特定 Host 的接纳结果。验收区分准备失败、部分入口发布、已保存待应用和新代启动失败。重试查询沿用原操作标识，十分钟的内存候选只用于本次确认。[安装与恢复](../../../plugins/package-manager/DESIGN.md) · [生命周期](../../CORE_LIFECYCLE_SEMANTICS.md)
 
 ## 卸载、降级与旧制品
 
-现有卸载撤回公开 wrapper，保留业务数据与旧 revisions/slots。进一步提供完整卸载预检时，需由 Host/Core 判断同包节点、required 阻塞与 optional 变化；保存移除选择、定义撤回、节点停止和制品删除分别报告。
-
-当前没有自动 GC。若需要清理旧制品，必须先取得安装选择、进行中操作和执行器引用的释放证据；无法确认时保留。业务配置和数据清理由其所有者提供独立操作。
-
-降级仍是一次固定发行的安装与接纳。旧 tarball 可用不证明数据库迁移或外部写入可恢复。验收至少覆盖旧实现仍被引用、只能下次启动生效，以及新代 init 失败的情况。
+Workbench 卸载按已审阅的 revision 撤回 wrapper，保留业务数据与旧 revisions/slots。完整的卸载预检仍需 Host/Core 判断同包节点、required 阻塞与 optional 变化。若需要清理旧制品，先证明安装选择、进行中的操作和执行器都已释放引用。降级按固定发行重新接纳，业务数据与外部副作用的恢复由其所有者负责。

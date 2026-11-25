@@ -12,7 +12,7 @@
 - 检查默认只读；codemod、清单修正与数据转换通过显式操作写入，提供可审查 diff，报告冲突和部分失败。修复只使用确定依据，执行仍校验输入。
 - 默认、标准化、重试、HMR 保留旧实例与共享模块绑定各有明确条件和结果。不得靠换依赖、猜入口、跳过坏配置或重置数据掩盖失败。
 
-工具集成沿用上游配置、环境变量语义与优先级；确需差异时在所属文档解释原因。框架变量共用解析器。API 取舍见 [API 设计规则](../.agents/rules/library-api-design.md)，尚待修复的缺口见[严格契约提案](proposals/STRICT_CONTRACT_REVIEW.md)。
+工具集成沿用上游配置、环境变量语义与优先级。确需差异时在所属文档解释原因。框架变量共用解析器。API 取舍、依赖清单的写入依据和包解析失败的诊断分别由对应文档维护。[API 设计规则](../.agents/rules/library-api-design.md) · [工作区依赖](CLI_WORKSPACES.md#外部依赖政策) · [包来源解析](TOOLCHAIN.md#package-source-inference)
 
 ## 一个事实，一个所有者
 

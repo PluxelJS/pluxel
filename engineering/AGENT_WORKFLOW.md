@@ -129,4 +129,4 @@ Vite owner 随开发实例存活，私有 socket 认证独立于 Management read
 
 portability 测试从真实 `/host` export 按 browser 条件生成 ESM，检查闭包没有 Node/Vite/Services/编译器。真实 Miniflare/workerd 通过 Dynamic Worker 的静态模块文本加载 compileScript 工厂；共享 Core Result，使用 WorkerEntrypoint RPC 的受控桥访问原 Host。两次运行验证 await/计算、实际配置采用、模块计数重置及 scope/workerd 关闭。
 
-桥只公开发现、配置读取和条件写入，使用 `globalOutbound: null`，run signal 在 Worker 本地创建。机制参见 [Dynamic Worker Loader](https://developers.cloudflare.com/dynamic-workers/api-reference/) 与 [Workers RPC](https://developers.cloudflare.com/workers/runtime-apis/context/#exports)。正式 CF 后端尚未交付：部署、取消传播、在途排空、桥释放、receipt owner、错误映射及 D1/KV/DO 持久任务仍需完整后端验证。存储证据见 [FS](FS.md)。
+桥只公开发现、配置读取和条件写入，使用 `globalOutbound: null`，run signal 在 Worker 本地创建。机制参见 [Dynamic Worker Loader](https://developers.cloudflare.com/dynamic-workers/api-reference/) 与 [Workers RPC](https://developers.cloudflare.com/workers/runtime-apis/context/#exports)。正式后端尚待部署验证，单次执行的寿命及跨请求回执的归属见 [Agent 执行提案](proposals/AGENT_WORKFLOW.md#cloudflare-执行后端)，存储证据见 [FS](FS.md)。

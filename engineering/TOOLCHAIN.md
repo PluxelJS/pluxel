@@ -35,6 +35,8 @@ package provenance 来自显式 exports 和唯一根 named export。推断 packa
 
 OXC 对未安装包/相对文件返回正常未命中；已发现物理包时，坏 manifest、exports 拒绝、缺入口附 importer/specifier/conditions/清单路径/cause 报错，最近损坏清单也不会被父包替代。OXC 的部分失败没有稳定错误码，无物理目录时 alias/tsconfig 失败仍可能与未命中混淆，空值不能直接推断为缺安装。
 
+细分 alias/tsconfig 失败需要稳定的上游错误类型，或能用输入事实区分两种结果的回归样本。诊断保留原始 cause，错误文案的措辞不能作为分类依据。
+
 ## Database migrations
 
 `pluxel database generate` 对当前包唯一 defineDatabase schema 调 Drizzle Kit，生成 PostgreSQL SQL/meta 与带 immutable lineage 的 checksum manifest。check 验证 history、manifest rewrite，并在临时副本重新 generate 检测 schema drift。migrations 默认仅追加；显式放弃旧 lineage 使用 rebase --lineage，在 staging 验证后原子替换整个 drizzle 目录。
