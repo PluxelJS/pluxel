@@ -30,6 +30,7 @@ export default defineConfig({
 						'packages/host/src/native-import.ts',
 						'packages/workbench/src/workbench/shared-transport.ts',
 						'packages/workbench/src/workbench/definition.ts',
+						'packages/workbench/src/workbench/client-protocol.ts',
 						'!packages/rolldown/dist/**',
 					].map((pattern) => ({ pattern, base: 'workspace' as const })),
 					output: ['dist/**'],

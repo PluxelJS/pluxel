@@ -3,7 +3,10 @@
 	"include": [
 		"packages/rolldown/src",
 		"packages/workbench/src/workbench/shared-transport.ts",
-		"packages/host/src/shared-runtime.ts"
+		"packages/workbench/src/workbench/definition.ts",
+		"packages/workbench/src/workbench/client-protocol.ts",
+		"packages/host/src/shared-runtime.ts",
+		"packages/host/src/native-import.ts"
 	],
 	"exclude": ["packages/rolldown/src/service-build.ts"]
 }
