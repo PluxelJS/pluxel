@@ -1,7 +1,9 @@
 export {
+	admitOwnerInvocation,
 	assertOwnerInvocationOpen,
 	closeOwnerInvocations,
 	enterOwnerInvocation,
+	releaseOwnerInvocation,
 	type OwnerInvocationLease,
 } from './internal/owner-invocations'
 

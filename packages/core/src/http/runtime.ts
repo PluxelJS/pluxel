@@ -1,7 +1,7 @@
 import wretch, { type Wretch } from 'wretch'
 import type { Dispatcher } from 'undici'
 import type { Context, RootContext } from '../context/Context'
-import { enterOwnerInvocation } from '../internal/owner-invocations'
+import { admitOwnerInvocation, releaseOwnerInvocation } from '../internal/owner-invocations'
 import { requireHostDocuments } from '../internal/storage'
 import { OUTBOUND_HTTP_LOG_STREAM_ID } from '../logging/protocol'
 import { RuntimeLogStore } from '../logging/store'
@@ -36,6 +36,7 @@ import type {
 const policyKey = 'policy.json'
 const emptySettings = Object.freeze({})
 const redirectStatuses = new Set([301, 302, 303, 307, 308])
+const attemptSettled = 'Outbound HTTP attempt settled'
 type NodeRequestInit = RequestInit & { dispatcher?: Dispatcher }
 type ProxyResource = { dispatcher: Dispatcher; active: number; notifyIdle?: () => void }
 type Dispatchers = ReadonlyMap<string, ProxyResource>
@@ -442,9 +443,14 @@ class ManagedOutboundHttpRuntime {
 		if (url.protocol !== 'http:' && url.protocol !== 'https:')
 			throw new TypeError('[core.http] requests require an absolute HTTP(S) URL')
 		const callerSignal = initSignal === undefined ? original?.signal : initSignal
-		const signal = callerSignal == null ? lifetime : AbortSignal.any([lifetime, callerSignal])
+		const attempt = new AbortController()
+		const signal = AbortSignal.any(
+			callerSignal == null ? [lifetime, attempt.signal] : [lifetime, callerSignal, attempt.signal],
+		)
 		const startedAt = this.logs ? performance.now() : undefined
 		const { key } = caller
+		let dispatched = false
+		let response: Response | undefined
 		try {
 			const initiallyApplied = this.applied ?? (await this.current(signal))
 			const initial = initiallyApplied.nodes.get(key) ?? initiallyApplied.host
@@ -452,13 +458,23 @@ class ManagedOutboundHttpRuntime {
 			enforce(initial.origins, url.origin, redirect, init?.dispatcher)
 			const slot = this.admission.acquire(signal)
 			const release = typeof slot === 'function' ? slot : await slot
+			let timeout: ReturnType<typeof setTimeout> | undefined
 			try {
 				signal.throwIfAborted()
 				const applied = this.applied!
 				const policy =
 					applied === initiallyApplied ? initial : (applied.nodes.get(key) ?? applied.host)
 				if (policy !== initial) enforce(policy.origins, url.origin, redirect, init?.dispatcher)
-				const response = await this.dispatch(
+				const timeoutMs = policy.effective.timeoutMs
+				if (timeoutMs > 0) {
+					timeout = setTimeout(
+						() =>
+							attempt.abort(new DOMException('Outbound HTTP attempt timed out', 'TimeoutError')),
+						timeoutMs,
+					)
+				}
+				dispatched = true
+				response = await this.dispatch(
 					request,
 					signal,
 					redirect ?? (policy.origins === undefined ? undefined : 'error'),
@@ -477,13 +493,15 @@ class ManagedOutboundHttpRuntime {
 					)
 				return response
 			} finally {
+				if (timeout !== undefined) clearTimeout(timeout)
 				release()
 			}
 		} catch (error) {
 			const denied = error instanceof OutboundHttpError
 			const code = denied
 				? error.code
-				: signal.aborted
+				: lifetime.aborted ||
+					  (callerSignal != null && Reflect.get(AbortSignal.prototype, 'aborted', callerSignal))
 					? 'aborted'
 					: error instanceof DOMException && error.name === 'TimeoutError'
 						? 'timeout'
@@ -500,12 +518,15 @@ class ManagedOutboundHttpRuntime {
 					code,
 				)
 			throw error
+		} finally {
+			if (!dispatched || (!this.options.fetch && nativeFetchFinished(response)))
+				attempt.abort(attemptSettled)
 		}
 	}
 
 	private async dispatch(
 		request: Request,
-		lifetime: AbortSignal,
+		signal: AbortSignal,
 		redirect: RequestInit['redirect'],
 		{ effective: settings, defaultHeaders }: Applied['host'],
 		dispatchers: Dispatchers,
@@ -514,15 +535,7 @@ class ManagedOutboundHttpRuntime {
 		for (const [name, value] of defaultHeaders) {
 			if (!request.headers.has(name)) (headers ??= new Headers(request.headers)).set(name, value)
 		}
-		const deadline = settings.timeoutMs > 0 ? new AbortController() : undefined
-		const signal = deadline ? AbortSignal.any([lifetime, deadline.signal]) : lifetime
 		const proxy = settings.proxyUrl === null ? undefined : dispatchers.get(settings.proxyUrl)
-		const timeout = deadline
-			? setTimeout(
-					() => deadline.abort(new DOMException('Outbound HTTP attempt timed out', 'TimeoutError')),
-					settings.timeoutMs,
-				)
-			: undefined
 		if (proxy) proxy.active++
 		try {
 			const requestInit: RequestInit = {
@@ -549,7 +562,6 @@ class ManagedOutboundHttpRuntime {
 				proxy.active--
 				if (proxy.active === 0) proxy.notifyIdle?.()
 			}
-			if (timeout !== undefined) clearTimeout(timeout)
 		}
 	}
 
@@ -606,6 +618,14 @@ class ManagedOutboundHttpRuntime {
 	}
 }
 
+function nativeFetchFinished(response: Response | undefined): boolean {
+	// Opaque responses can hide a body. A 101 can carry a socket after the HTTP exchange.
+	return (
+		response === undefined ||
+		(response.body === null && response.status !== 0 && response.status !== 101)
+	)
+}
+
 function bindOwnerFetch(
 	owner: Context,
 	send: (
@@ -617,20 +637,20 @@ function bindOwnerFetch(
 ): OutboundFetch {
 	let lifetime: AbortSignal | undefined
 	return async (input, init) => {
-		const root = enterOwnerInvocation(owner.root)
+		const root = admitOwnerInvocation(owner.root)
 		try {
-			const lease = enterOwnerInvocation(owner)
+			const generation = admitOwnerInvocation(owner)
 			try {
 				lifetime ??= AbortSignal.any(
-					shutdown ? [root.signal, lease.signal, shutdown] : [root.signal, lease.signal],
+					shutdown ? [root.signal, generation.signal, shutdown] : [root.signal, generation.signal],
 				)
 				lifetime.throwIfAborted()
 				return await send(input, init, lifetime)
 			} finally {
-				lease.dispose()
+				releaseOwnerInvocation(generation)
 			}
 		} finally {
-			root.dispose()
+			releaseOwnerInvocation(root)
 		}
 	}
 }
@@ -650,9 +670,28 @@ function bindUnmanagedFetch(owner: Context, transport?: OutboundFetch): Outbound
 			return send(input, (defaults ??= Object.freeze({ signal: lifetime })))
 		const caller =
 			init?.signal === undefined && input instanceof Request ? input.signal : init?.signal
-		const signal = caller ? AbortSignal.any([lifetime, caller]) : lifetime
-		return send(input, requestInitWith(init, 'signal', signal))
+		if (!caller) return send(input, requestInitWith(init, 'signal', lifetime))
+		if (transport)
+			return send(input, requestInitWith(init, 'signal', AbortSignal.any([lifetime, caller])))
+		return sendNative(input, init, lifetime, caller)
 	})
+}
+
+async function sendNative(
+	input: Parameters<OutboundFetch>[0],
+	init: RequestInit | undefined,
+	lifetime: AbortSignal,
+	caller: AbortSignal,
+): Promise<Response> {
+	const attempt = new AbortController()
+	const signal = AbortSignal.any([lifetime, caller, attempt.signal])
+	let response: Response | undefined
+	try {
+		response = await globalThis.fetch(input, requestInitWith(init, 'signal', signal))
+		return response
+	} finally {
+		if (nativeFetchFinished(response)) attempt.abort(attemptSettled)
+	}
 }
 
 function requestInitWith<K extends 'signal' | 'redirect'>(

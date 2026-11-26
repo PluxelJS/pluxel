@@ -76,11 +76,25 @@ describe('PluginHostCoordinator committed reads', () => {
 			running: view.runningNodes.map(pluginNodeIndexKey),
 		}))
 		const read = coordinator.readCommitted(callback)
+		const stateCallback = vi.fn()
+		const readState = coordinator.readCommittedState(({ catalog, runtimeState }) => {
+			stateCallback()
+			return { catalogRevision: catalog.revision, stateRevision: runtimeState.revision }
+		})
+		const controller = new AbortController()
+		const reason = new Error('cancelled state read')
+		const cancelledCallback = vi.fn()
+		const cancelled = coordinator
+			.readCommittedState(cancelledCallback, { signal: controller.signal })
+			.catch((error: unknown) => error)
+		controller.abort(reason)
 		expect(callback).not.toHaveBeenCalled()
+		expect(stateCallback).not.toHaveBeenCalled()
 
 		releasePersistence.resolve()
 		await graphPublished.promise
 		expect(callback).not.toHaveBeenCalled()
+		expect(stateCallback).not.toHaveBeenCalled()
 		expect(coordinator.readCommittedIfIdle(() => 'available')).toBeUndefined()
 
 		releaseLifecycle.resolve()
@@ -96,10 +110,17 @@ describe('PluginHostCoordinator committed reads', () => {
 			running: [pluginNodeIndexKey(provider)],
 		})
 		expect(callback).toHaveBeenCalledTimes(1)
+		await expect(readState).resolves.toEqual({ catalogRevision: 1, stateRevision: 1 })
+		expect(stateCallback).toHaveBeenCalledTimes(1)
+		expect(await cancelled).toBe(reason)
+		expect(cancelledCallback).not.toHaveBeenCalled()
 		expect(coordinator.readCommittedIfIdle(() => 'available')).toBe('available')
 
 		await expect(
 			coordinator.readCommitted(async () => Promise.resolve('not synchronous')),
+		).rejects.toThrow(/must return synchronously/)
+		await expect(
+			coordinator.readCommittedState(() => Promise.reject(new Error('not synchronous'))),
 		).rejects.toThrow(/must return synchronously/)
 		await coordinator.dispose()
 	})

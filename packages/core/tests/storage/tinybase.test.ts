@@ -11,6 +11,7 @@ import { describe, expect, it } from 'vitest'
 import { InMemory, Passthrough } from '../../src/fs'
 import { requireHostDocuments, requireTinyBaseHost } from '../../src/internal/storage'
 import { pluginNodePhysicalKey } from '../../src/internal/plugin-address'
+import { assertDocumentBudget } from '../../src/storage/documents'
 import { encodeSnapshot, decodeSnapshot } from '../../src/tinybase/codec'
 
 class StatePart extends PluginPart<StateOwner> {
@@ -233,6 +234,51 @@ describe('Core-managed native TinyBase', () => {
 		expect(JSON.parse(await readFile(nodeFile(prefix), 'utf8')).content[1].partial).toBe(true)
 	})
 
+	it('advances the revision only for net native Content changes', async () => {
+		await using disk = await createDiskFixture()
+		await using host = await createCoreTestHost({ zenfs: storage(disk.path) })
+		const owner = await host.add(StateOwner.nodeAddress())
+		const store = owner.store
+		const runtime = requireTinyBaseHost(getCoreTestHostContext(host))
+		const file = nodeFile(disk.path)
+		const identity = { kind: 'plugin', node: StateOwner.nodeAddress() } as const
+		store.setCell('items', 'existing', 'score', 0)
+		await owner.state.flush()
+		const revision = runtime.status()[0]!.revision
+		const saved = await readFile(file, 'utf8')
+
+		store.setCell('items', 'existing', 'score', -0)
+		store.transaction(() => {
+			store.setCell('items', 'existing', 'score', 2).setCell('items', 'existing', 'score', 0)
+			store.setRow('items', 'temporary', { score: 1 }).delRow('items', 'temporary')
+		})
+		store.transaction(
+			() => store.delTable('items').setValue('rolledBack', true),
+			() => true,
+		)
+		expect(runtime.status()[0]).toMatchObject({ revision, savedRevision: revision })
+		await owner.state.flush()
+		expect(await readFile(file, 'utf8')).toBe(saved)
+
+		store.addValueListener('ready', () => store.setValue('__proto__', 'from listener'), true)
+		store.transaction(() => {
+			store.delTable('items')
+			store.setRow('items', 'constructor', { score: 3 })
+			store.setTablesSchema({
+				items: { score: { type: 'number' }, enabled: { type: 'boolean', default: true } },
+			})
+			store.setValue('ready', true)
+		})
+		expect(runtime.status()[0]).toMatchObject({ revision: revision + 1 })
+		await owner.state.flush()
+		const after = await readFile(file, 'utf8')
+		expect(after).toBe(encodeSnapshot(identity, store.getContent(), 8192))
+		expect(decodeSnapshot(after, identity, 8192)).toEqual([
+			{ items: { constructor: { score: 3, enabled: true } } },
+			{ seed: 'first', ready: true, ['__proto__']: 'from listener' },
+		])
+	})
+
 	it('captures a ready flush before a transaction starts later in the same tick', async () => {
 		await using disk = await createDiskFixture()
 		const prefix = disk.path
@@ -429,6 +475,15 @@ describe('Core-managed native TinyBase', () => {
 			{},
 		])
 		expect(() => decodeSnapshot(text, identity, 10)).toThrow('Snapshot exceeds 10 UTF-8 bytes')
+	})
+
+	it('checks exact document byte limits for ASCII, multibyte text and surrogate code units', () => {
+		expect(() => assertDocumentBudget('', 1)).not.toThrow()
+		for (const text of ['hello', 'é', '漢字', '😀', '\uD800', '\uDFFF', 'a\uD800😀\uDFFF']) {
+			const bytes = new TextEncoder().encode(text).byteLength
+			expect(() => assertDocumentBudget(text, bytes)).not.toThrow()
+			expect(() => assertDocumentBudget(text, bytes - 1)).toThrow(`${bytes - 1} UTF-8 bytes`)
+		}
 	})
 
 	it('uses the fixed InMemory default and allocates no Store for plugins that never open', async () => {

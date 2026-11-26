@@ -1,25 +1,20 @@
 import { ChannelListenerScope, type EvtChannelPosition, type EvtChannelScope } from './channelScope'
 import {
-	appendListenerCopy,
 	copyWithoutIndex,
 	createWrapHelper,
 	insertListenerCopy,
 	ORIGFUNC,
 	onSyncError,
-	prependListenerCopy,
 } from './core/listener'
 import {
-	attachDispose,
 	encodeListenerPosition,
 	normalizeMaxListeners,
 	noopSubscription,
 	POS_BACK,
 	POS_FRONT,
-	POS_INDEX,
-	POS_RESOLVE,
 	type PositionKind,
 	resolveInsertIndex,
-	withAbortSignal,
+	Subscription,
 } from './core/registration'
 import { emitAllFromListeners, emitSettledFromListeners } from './ext/emitShared'
 import {
@@ -69,6 +64,7 @@ export type { EvtChannelPosition, EvtChannelScope } from './channelScope'
 
 export class EvtChannel<D extends EventDescriptor = EventDescriptor> {
 	protected _listeners: EventListener<D>[] = []
+	private subscriptions: Subscription[] = []
 
 	protected _maxListeners = 10
 	get maxListeners(): number {
@@ -108,55 +104,45 @@ export class EvtChannel<D extends EventDescriptor = EventDescriptor> {
 		signal?: AbortSignal,
 	): Unsubscribe {
 		if (posKind === POS_BACK) return this._append(fn, signal)
-		if (signal !== undefined && signal.aborted) return noopSubscription
-
-		const prev = this._listeners
-		const count = prev.length
-		let next: EventListener<D>[]
-		switch (posKind) {
-			case POS_FRONT:
-				next = prependListenerCopy(prev, fn)
-				break
-			case POS_INDEX:
-				next = insertListenerCopy(prev, resolveInsertIndex(count, posValue as number), fn)
-				break
-			case POS_RESOLVE:
-				next = insertListenerCopy(
-					prev,
-					resolveInsertIndex(count, posValue as (ctx: { count: number }) => number, { count }),
-					fn,
-				)
-				break
-		}
-		this._listeners = next
-
-		const maxListeners = this._maxListeners
-		if (maxListeners !== 0 && next.length > maxListeners) {
-			this._logger.warn(
-				`MaxListenersExceededWarning(remind memory leak): channel has ${next.length} listeners that exceed ${this._maxListeners}`,
-			)
-		}
-
-		const sub = this._makeSubscription(fn)
-
-		return signal === undefined ? sub : withAbortSignal(signal, sub)
+		if (signal?.aborted) return noopSubscription
+		const count = this._listeners.length
+		const position = posKind === POS_FRONT ? 0 : resolveInsertIndex(count, posValue, { count })
+		return this.registerListener(fn, position, signal)
 	}
 
 	protected _append(fn: EventListener<D>, signal?: AbortSignal): Unsubscribe {
-		if (signal !== undefined && signal.aborted) return noopSubscription
+		return this.registerListener(fn, undefined, signal)
+	}
 
-		const next = appendListenerCopy(this._listeners, fn)
+	private registerListener(
+		fn: EventListener<D>,
+		position: number | undefined,
+		signal?: AbortSignal,
+	): Unsubscribe {
+		if (signal?.aborted) return noopSubscription
+		const count = this._listeners.length
+		const index = position === undefined ? count : Math.min(position, count)
+		const subscription = new Subscription((registration) => {
+			const currentIndex = this.subscriptions.indexOf(registration)
+			if (currentIndex >= 0) this.removeListener(currentIndex)
+		}, signal)
+		this.subscriptions.splice(index, 0, subscription)
+		const next = insertListenerCopy(this._listeners, index, fn)
 		this._listeners = next
 
 		const maxListeners = this._maxListeners
 		if (maxListeners !== 0 && next.length > maxListeners) {
-			this._logger.warn(
-				`MaxListenersExceededWarning(remind memory leak): channel has ${next.length} listeners that exceed ${this._maxListeners}`,
-			)
+			try {
+				this._logger.warn(
+					`MaxListenersExceededWarning(remind memory leak): channel has ${next.length} listeners that exceed ${this._maxListeners}`,
+				)
+			} catch (error) {
+				subscription.unsubscribe()
+				throw error
+			}
 		}
 
-		const sub = this._makeSubscription(fn)
-		return signal === undefined ? sub : withAbortSignal(signal, sub)
+		return subscription.unsubscribe
 	}
 
 	protected _add(
@@ -176,26 +162,14 @@ export class EvtChannel<D extends EventDescriptor = EventDescriptor> {
 				: this._insert(wrapped, posKind, posValue, signal)
 		}
 
-		let offRef: Unsubscribe | null = null
-		const unsubscribe = attachDispose((() => {
-			const off = offRef
-			if (off !== null) {
-				offRef = null
-				off()
-			}
-		}) as Unsubscribe)
-
-		const fn = createLimitedListener(wrapped, times, predicate, unsubscribe)
+		// A warning can emit before the registration method hands back its unsubscribe handle.
+		let unsubscribe: Unsubscribe = () => {
+			this._offRegistered(fn)
+		}
+		const fn = createLimitedListener(wrapped, times, predicate, () => unsubscribe())
 		Object.defineProperty(fn, ORIGFUNC, { value: listener, writable: false })
-		offRef = this._insert(fn, posKind, posValue, signal)
+		unsubscribe = this._insert(fn, posKind, posValue, signal)
 		return unsubscribe
-	}
-
-	protected _makeSubscription(registered: EventListener<D>): Unsubscribe {
-		const unsub: Unsubscribe = (() => {
-			this._offRegistered(registered)
-		}) as Unsubscribe
-		return attachDispose(unsub)
 	}
 
 	public on(listener: EventListener<D>, options?: SubscriptionOptions): Unsubscribe {
@@ -212,26 +186,26 @@ export class EvtChannel<D extends EventDescriptor = EventDescriptor> {
 
 	protected _offBy(listener: EventListener<D>, exact: boolean): boolean {
 		const prev = this._listeners
-		if (prev.length === 0) return false
-		let idx = -1
 		for (let i = 0; i < prev.length; i++) {
 			const fn = prev[i] as any
 			if (fn === listener || (!exact && fn[ORIGFUNC] === listener)) {
-				idx = i
-				break
+				this.removeListener(i)
+				return true
 			}
 		}
-		if (idx < 0) return false
-		if (prev.length === 1) {
-			this._listeners = []
-		} else {
-			this._listeners = copyWithoutIndex(prev, idx)
-		}
-		return true
+		return false
+	}
+
+	private removeListener(index: number): void {
+		this._listeners = copyWithoutIndex(this._listeners, index)
+		this.subscriptions.splice(index, 1)[0]?.end()
 	}
 
 	public clear(): void {
+		const subscriptions = this.subscriptions
 		this._listeners = []
+		this.subscriptions = []
+		for (const subscription of subscriptions) subscription.end()
 	}
 
 	public emit(...args: EventArgs<D>): number {

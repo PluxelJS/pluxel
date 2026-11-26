@@ -369,6 +369,79 @@ it('withdraws a cached client, blocked work and response streams with the owning
 	expect(inFlight).toBe(1)
 })
 
+it.each([true, false])(
+	'keeps native responses and settles empty attempts (managed: %s)',
+	async (managed) => {
+		await using upstream = createServer((request, response) => {
+			response.setHeader('x-upstream', 'native')
+			if (request.url === '/no-content') response.writeHead(204).end()
+			else if (request.method === 'HEAD') response.writeHead(200).end()
+			else response.write('first chunk')
+		})
+		const origin = 'http://127.0.0.1:' + (await listen(upstream))
+		await using host = await createTestHost({ coreConfig: { http: { managed } } })
+		const plugin = await host.start(OutboundClient.nodeAddress())
+		const fetch = plugin.client().fetch
+		using transport = vi.spyOn(globalThis, 'fetch')
+		const caller = new AbortController()
+		try {
+			const empty = await fetch(origin + '/no-content', { signal: caller.signal })
+			expect(empty).toMatchObject({ status: 204, url: origin + '/no-content', body: null })
+			expect(empty.headers.get('x-upstream')).toBe('native')
+			expect(transport.mock.lastCall?.[1]?.signal?.aborted).toBe(true)
+			expect(caller.signal.aborted).toBe(false)
+			await expect(empty.text()).resolves.toBe('')
+
+			const head = await fetch(origin + '/stream', { method: 'HEAD', signal: caller.signal })
+			expect(head).toMatchObject({ status: 200, url: origin + '/stream', body: null })
+			expect(transport.mock.lastCall?.[1]?.signal?.aborted).toBe(true)
+
+			const response = await fetch(origin + '/stream', { signal: caller.signal })
+			const copy = response.clone()
+			expect(copy.url).toBe(origin + '/stream')
+			expect(transport.mock.lastCall?.[1]?.signal?.aborted).toBe(false)
+			const reading = copy.text().catch((error: unknown) => error)
+			caller.abort(new Error('caller cancelled stream'))
+			await expect(reading).resolves.toMatchObject({ message: 'caller cancelled stream' })
+		} finally {
+			upstream.closeAllConnections()
+		}
+	},
+)
+
+it('expires the attempt while waiting for headers and preserves its timeout record', async () => {
+	const entered = Promise.withResolvers<void>()
+	await using host = await createTestHost({
+		coreConfig: {
+			http: {
+				timeoutMs: 50,
+				fetch: async (input) => {
+					const { signal } = input as Request
+					return await new Promise<Response>((_resolve, reject) => {
+						signal.addEventListener('abort', () => reject(signal.reason), { once: true })
+						entered.resolve()
+					})
+				},
+			},
+		},
+	})
+	const node = OutboundClient.nodeAddress()
+	const plugin = await host.start(node)
+	const { fetch, root } = plugin.client()
+	vi.useFakeTimers()
+	try {
+		const outcome = fetch('https://service.test').catch((error: unknown) => error)
+		await entered.promise
+		await vi.advanceTimersByTimeAsync(50)
+		await expect(outcome).resolves.toMatchObject({ name: 'TimeoutError' })
+		await expect(requireOutboundHttp(root).snapshot(node)).resolves.toMatchObject({
+			activity: [{ lastOutcome: 'failed', lastCode: 'timeout' }],
+		})
+	} finally {
+		vi.useRealTimers()
+	}
+})
+
 it('withdraws a request waiting for the shared policy restore without stopping the restore', async () => {
 	const restoreStarted = Promise.withResolvers<void>()
 	const restore = Promise.withResolvers<undefined>()

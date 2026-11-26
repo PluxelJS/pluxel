@@ -1221,9 +1221,10 @@ export class VaultService {
 				)
 				const pending = new Map<string, VaultRecordSnapshot>()
 				const observers = entry.watchers.get(namespace) ?? new Set()
-				entry.watchers.set(namespace, observers)
 				const dispose = () => {
+					if (closed) return
 					closed = true
+					snapshots.clear()
 					pending.clear()
 					observers.delete(observer)
 					if (observers.size === 0) entry.watchers.delete(namespace)
@@ -1261,9 +1262,12 @@ export class VaultService {
 						schedule()
 					},
 				}
+				const registration = ctx.effects.defer(dispose, { tag: 'VaultWatch' })
 				observers.add(observer)
-				ctx.effects.defer(dispose, { tag: 'VaultWatch' })
-				return dispose
+				entry.watchers.set(namespace, observers)
+				return (): void => {
+					void registration.dispose()
+				}
 			}
 
 			return {

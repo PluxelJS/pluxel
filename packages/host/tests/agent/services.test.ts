@@ -1,6 +1,12 @@
 import { expect, it, vi } from 'vitest'
 import type { VaultKvTransaction } from '@pluxel/core/vault'
-import { BasePlugin, Plugin, parsePluginNodeAddress, type Context } from '@pluxel/core'
+import {
+	BasePlugin,
+	Plugin,
+	parsePluginNodeAddress,
+	type Context,
+	type EffectsScope,
+} from '@pluxel/core'
 import {
 	createServiceRef,
 	createServiceReference,
@@ -379,6 +385,11 @@ it('withdraws retained Vault KV, namespace, blob and subscription capabilities w
 	await host.startNode(ServiceOwner.nodeAddress())
 	const scope = createScriptScope({ ctx: host.ctx })
 	const context = await scope.sdk.plugin(ServiceOwner.nodeAddress()).context()
+	const native = requirePluginService(host.ctx).getInstance(ServiceOwner.nodeAddress())!
+	using createChild = vi.spyOn(native.ctx.effects, 'scope')
+	expect(context.effects).toBeDefined()
+	expect(createChild).toHaveBeenCalledOnce()
+	using subscriptions = vi.spyOn(createChild.mock.results[0]!.value as EffectsScope, 'defer')
 	const vault = context.vault
 	expect(vault).toBe(context.vault)
 	const kv = vault.kv()
@@ -398,7 +409,15 @@ it('withdraws retained Vault KV, namespace, blob and subscription capabilities w
 	expect(blob.describe().path).toContain('certificate.blob')
 	const get = scopedKv.get
 	const dispose = watched.dispose
+	const watch = subscriptions.mock.results[0]!.value
+	const prefixWatch = subscriptions.mock.results[1]!.value
+	expect(watch.active).toBe(true)
+	dispose()
+	dispose()
+	expect(watch.active).toBe(false)
+	expect(prefixWatch.active).toBe(true)
 	await scope.dispose()
+	expect(prefixWatch.active).toBe(false)
 	for (const access of [
 		() => vault.kv(),
 		() => vault.flush(),
@@ -414,7 +433,6 @@ it('withdraws retained Vault KV, namespace, blob and subscription capabilities w
 	]) {
 		expect(access).toThrow(expect.objectContaining({ code: 'scope_closed' }))
 	}
-	const native = requirePluginService(host.ctx).getInstance(ServiceOwner.nodeAddress())!
 	expect(await native.ctx.vault.kv().get('credential')).toMatchObject({
 		value: { token: 'saved' },
 	})

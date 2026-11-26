@@ -144,9 +144,13 @@ describe('TinyBase retained writer recovery', () => {
 		await replacement.state.flush()
 	})
 
-	it.each(['snapshot', 'transaction'] as const)(
+	it.each([
+		['oversized snapshot', 'BUDGET_EXCEEDED'],
+		['invalid snapshot', 'SNAPSHOT_INVALID'],
+		['unfinished transaction', 'TRANSACTION_ACTIVE'],
+	] as const)(
 		'drains a previous save before reporting a %s fault and closing the Host',
-		async (fault) => {
+		async (fault, code) => {
 			await using temporary = await createDiskFixture()
 			const disk = backing(temporary.path)
 			const host = await createCoreTestHost({
@@ -168,11 +172,10 @@ describe('TinyBase retained writer recovery', () => {
 				})
 				owner.store.setValue('progress', 'in flight')
 				await entered.promise
-				if (fault === 'snapshot') owner.store.setValue('oversized', 'x'.repeat(2048))
+				if (fault === 'oversized snapshot') owner.store.setValue('oversized', 'x'.repeat(2048))
+				else if (fault === 'invalid snapshot') owner.store.setValue('invalid', { native: true })
 				else owner.store.startTransaction().setValue('partial', true)
-				await expect(owner.state.flush()).rejects.toMatchObject({
-					code: fault === 'snapshot' ? 'BUDGET_EXCEEDED' : 'TRANSACTION_ACTIVE',
-				})
+				await expect(owner.state.flush()).rejects.toMatchObject({ code })
 				let settled = false
 				disposal = host.dispose()
 				void disposal.then(

@@ -143,6 +143,10 @@ export class CorePluginGraphVerificationError extends Error {
 
 export class PluginService {
 	private readonly definitions: PluginDefinitions
+	private readonly committedAdjacency = new WeakMap<
+		PluginGraph,
+		CommittedPluginDependencyAdjacency
+	>()
 	private _commitLock: Promise<unknown> = Promise.resolve()
 	private _lastCommit?: CommitSummary
 	private _activeGraph?: PluginGraph
@@ -264,46 +268,49 @@ export class PluginService {
 	 *
 	 * This deliberately has no address input: iteration starts from existing graph slots and only
 	 * projects their canonical addresses, so an observation cannot intern or materialize an absent
-	 * Plugin. The returned node set includes committed nodes without dependencies.
+	 * Plugin. The node set includes isolated nodes, and each edge list is collected on first read.
 	 */
 	readCommittedDependencyAdjacency(): CommittedPluginDependencyAdjacency {
 		const graph = this.graph
-		const nodes: PluginNodeAddress[] = []
-		const required: CommittedPluginDependencyEdge[] = []
-		const optional: CommittedPluginDependencyEdge[] = []
-		for (const key of graph.keys()) {
-			if (!isPluginNodeSlot(key)) {
+		const cached = this.committedAdjacency.get(graph)
+		if (cached) return cached
+		const addresses = new Map<number, PluginNodeAddress>()
+		for (let slot = 0; slot < graph.slotCount(); slot++) {
+			const declaration = graph.declarationAtSlot(slot)
+			if (!declaration) continue
+			if (!isPluginNodeSlot(declaration.key) || !declaration.meta)
 				throw new Error('[pluxel/core] Committed Plugin graph contains a non-Plugin node')
-			}
-			const slot = graph.slotOf(key)
-			if (slot === undefined) {
-				throw new Error('[pluxel/core] Committed Plugin graph node has no active slot')
-			}
-			const consumer = this.nodeAddressOf(key)
-			nodes.push(consumer)
-			for (const dependencySlot of graph.depSlotsOf(slot)) {
-				const provider = graph.keyOf(dependencySlot)
-				if (!isPluginNodeSlot(provider)) {
-					throw new Error('[pluxel/core] Committed required Plugin dependency has no provider node')
-				}
-				required.push(Object.freeze({ consumer, provider: this.nodeAddressOf(provider) }))
-			}
-			for (const dependencySlot of graph.optionalDepSlotsOf(slot)) {
-				const provider = graph.keyOf(dependencySlot)
-				if (!isPluginNodeSlot(provider)) {
-					throw new Error('[pluxel/core] Committed optional Plugin dependency has no provider node')
-				}
-				optional.push(Object.freeze({ consumer, provider: this.nodeAddressOf(provider) }))
-			}
+			addresses.set(slot, declaration.meta.address)
 		}
-		nodes.sort(comparePluginNodeAddress)
-		required.sort(compareCommittedDependencyEdges)
-		optional.sort(compareCommittedDependencyEdges)
-		return Object.freeze({
-			nodes: Object.freeze(nodes),
-			required: Object.freeze(required),
-			optional: Object.freeze(optional),
+		const projectEdges = (kind: 'required' | 'optional') => {
+			const edges: CommittedPluginDependencyEdge[] = []
+			for (const [slot, consumer] of addresses) {
+				const dependencies =
+					kind === 'required' ? graph.depSlotsOf(slot) : graph.optionalDepSlotsOf(slot)
+				for (const dependency of dependencies) {
+					const provider = addresses.get(dependency)
+					if (!provider)
+						throw new Error(
+							`[pluxel/core] Committed ${kind} Plugin dependency has no provider node`,
+						)
+					edges.push(Object.freeze({ consumer, provider }))
+				}
+			}
+			return Object.freeze(edges.sort(compareCommittedDependencyEdges))
+		}
+		let required: readonly CommittedPluginDependencyEdge[] | undefined
+		let optional: readonly CommittedPluginDependencyEdge[] | undefined
+		const adjacency = Object.freeze({
+			nodes: Object.freeze([...addresses.values()].sort(comparePluginNodeAddress)),
+			get required() {
+				return (required ??= projectEdges('required'))
+			},
+			get optional() {
+				return (optional ??= projectEdges('optional'))
+			},
 		})
+		this.committedAdjacency.set(graph, adjacency)
+		return adjacency
 	}
 
 	resolvePluginNode(

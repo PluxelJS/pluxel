@@ -1,5 +1,5 @@
 import { formatPluginNodeReference, type Context } from '@pluxel/core'
-import { enterOwnerInvocation } from '@pluxel/core/internal'
+import { admitOwnerInvocation, releaseOwnerInvocation } from '@pluxel/core/internal'
 import {
 	readDatabaseDefinition,
 	type DatabaseArtifact,
@@ -38,15 +38,15 @@ export async function runDatabaseOperation<T>(
 	ctx: Context,
 	run: () => T | PromiseLike<T>,
 ): Promise<T> {
-	const rootLease = enterOwnerInvocation(ctx.root)
+	const root = admitOwnerInvocation(ctx.root)
 	try {
-		const ownerLease = ctx === ctx.root ? undefined : enterOwnerInvocation(ctx)
+		const owner = ctx === ctx.root ? undefined : admitOwnerInvocation(ctx)
 		try {
 			return await run()
 		} finally {
-			ownerLease?.dispose()
+			if (owner) releaseOwnerInvocation(owner)
 		}
 	} finally {
-		rootLease.dispose()
+		releaseOwnerInvocation(root)
 	}
 }

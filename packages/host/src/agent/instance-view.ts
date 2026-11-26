@@ -1,5 +1,5 @@
 import type { Context } from '@pluxel/core'
-import { enterOwnerInvocation } from '@pluxel/core/internal'
+import { admitOwnerInvocation, releaseOwnerInvocation } from '@pluxel/core/internal'
 
 // A conforming Promise intrinsic can also recognize promises from another realm.
 // Some embedded implementations accept an ordinary object and never run the reactions.
@@ -17,7 +17,6 @@ export function createBorrowedValueView(
 	raw: object,
 	owner: Context,
 	options: Readonly<{
-		signal: AbortSignal
 		assertOpen(): void
 		begin(): void
 		end(): void
@@ -32,13 +31,13 @@ export function createBorrowedValueView(
 	let view: object
 	const invoke = (work: () => unknown): unknown => {
 		options.assertOpen()
-		const lease = enterOwnerInvocation(owner, options.signal)
+		const admission = admitOwnerInvocation(owner)
 		options.begin()
 		let released = false
 		const release = () => {
 			if (released) return
 			released = true
-			lease.dispose()
+			releaseOwnerInvocation(admission)
 			options.end()
 		}
 		try {

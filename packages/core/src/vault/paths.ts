@@ -4,6 +4,8 @@ import { basename, join } from 'pathe'
 import { VaultError } from './error'
 import type { VaultNamespaceOptions } from './types'
 
+const ownerNamespaces = new WeakMap<PluxelContext, string>()
+
 function normalizeSegment(input: string): string {
 	const trimmed = input || 'default'
 	return basename(trimmed).replaceAll(/[^A-Za-z0-9._-]/g, '_')
@@ -22,10 +24,15 @@ export function validateKey(key: string): void {
 
 export function namespaceFrom(ctx: PluxelContext, options?: VaultNamespaceOptions): string {
 	const address = ctx.pluginInfo?.nodeAddress
-	const base = address ? `plugin-${pluginNodePhysicalKey(address)}` : 'default'
-	if (options?.namespace === undefined) return base
-	validateKey(options.namespace)
-	return address ? `${base}~${encodeURIComponent(options.namespace)}` : options.namespace
+	const name = options?.namespace
+	if (name !== undefined) validateKey(name)
+	if (!address) return name ?? 'default'
+	let base = ownerNamespaces.get(ctx)
+	if (base === undefined) {
+		base = `plugin-${pluginNodePhysicalKey(address)}`
+		ownerNamespaces.set(ctx, base)
+	}
+	return name === undefined ? base : `${base}~${encodeURIComponent(name)}`
 }
 
 export function blobPath(runtime: { blobsDir: string }, namespace: string, name: string): string {

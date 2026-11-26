@@ -1,6 +1,10 @@
 import type { Context, PluginContext } from '../context/Context'
 import { assertCoreConfigObject } from '../context/core-config-object'
-import { enterOwnerInvocation } from '../internal/owner-invocations'
+import {
+	admitOwnerInvocation,
+	releaseOwnerInvocation,
+	type OwnerInvocationAdmission,
+} from '../internal/owner-invocations'
 import type { CoreStorage, CoreDocumentStorage } from '../storage/documents'
 import {
 	createStore,
@@ -10,7 +14,7 @@ import {
 	type ValuesSchema,
 } from 'tinybase'
 import type { OptionalSchemas, Store as SchemaStore } from 'tinybase/with-schemas'
-import { decodeSnapshot, encodeSnapshot, sameContent } from './codec'
+import { decodeSnapshot, encodeStoreSnapshot, sameContent } from './codec'
 import { TinyBaseError } from './error'
 import type {
 	TinyBaseIdentity,
@@ -19,15 +23,15 @@ import type {
 	TinyBaseSuppliedStore,
 } from './types'
 
-type Snapshot = { revision: number; content: Content; text: string }
+type Snapshot = { revision: number; text: string }
 // Retired instances remain marked: a stale generation's Store must never become another writer.
-const storeOwners = new WeakMap<object, object>()
+const usedStores = new WeakSet<object>()
 const openFields = new Set(['durable', 'store'])
 
 export class StoreWriter implements TinyBaseService {
 	readonly identity: TinyBaseIdentity
 	private store?: Store
-	private opening?: Promise<Store>
+	private opening?: { result: Promise<Store>; signal: AbortSignal }
 	private listenerIds: string[] = []
 	private transaction = false
 	private published = false
@@ -71,7 +75,7 @@ export class StoreWriter implements TinyBaseService {
 		input: TinyBaseSuppliedStore<SchemaStore<TSchemas>>,
 	): Promise<SchemaStore<TSchemas>>
 	open(input?: unknown): Promise<unknown> {
-		return this.run(async (signal) => {
+		return runOperation(this.ctx, async (root, owner) => {
 			this.assertUsable()
 			if (input && typeof input === 'object' && 'durable' in input && !('getContent' in input)) {
 				assertCoreConfigObject(input, '[core.tinybase] open options', openFields)
@@ -92,32 +96,34 @@ export class StoreWriter implements TinyBaseService {
 					)
 			} else {
 				const store = input === undefined ? createStore() : input
-				if (typeof store === 'object' && store !== null && storeOwners.has(store))
+				if (typeof store === 'object' && store !== null && usedStores.has(store))
 					throw this.error(
 						'STORE_IN_USE',
 						'The Store already belongs to a current or retired generation.',
 					)
 				assertFreshStore(store, this.identity)
+				const signal = owner ? AbortSignal.any([root.signal, owner.signal]) : root.signal
 				this.claim()
-				storeOwners.set(store, this)
+				usedStores.add(store)
 				this.store = store
-				this.opening = this.restore(store, signal)
+				this.opening = { result: this.restore(store, signal), signal }
 			}
-			const store = await this.opening
-			signal.throwIfAborted()
+			const opening = this.opening
+			const store = await opening.result
+			opening.signal.throwIfAborted()
 			this.assertUsable()
 			return store
 		})
 	}
 
 	flush(): Promise<void> {
-		return this.run(async () => {
+		return runOperation(this.ctx, async () => {
 			this.assertUsable()
 			if (!this.opening) throw this.error('NOT_OPEN', 'Call open() before flush().')
 			// A ready Store must capture synchronously: an already-resolved Promise still yields.
 			let snapshot = this.last
 			if (!snapshot) {
-				await this.opening
+				await this.opening.result
 				this.assertUsable()
 				snapshot = this.last!
 			}
@@ -239,10 +245,11 @@ export class StoreWriter implements TinyBaseService {
 					this.transaction = false
 					if (this.closing || this.fault || this.loading) return
 					try {
-						const content = store.getContent()
-						if (sameContent(content, this.last!.content)) return
+						const [changedTables, changedValues] = store.getTransactionChanges()
+						if (Object.keys(changedTables).length === 0 && Object.keys(changedValues).length === 0)
+							return
 						this.revision++
-						this.last = this.snapshot(content)
+						this.last = this.snapshot()
 						if (this.published) {
 							this.enqueue(this.last)
 							this.schedule()
@@ -271,11 +278,10 @@ export class StoreWriter implements TinyBaseService {
 		}
 	}
 
-	private snapshot(content = this.store!.getContent()): Snapshot {
+	private snapshot(): Snapshot {
 		return {
 			revision: this.revision,
-			content,
-			text: encodeSnapshot(this.identity, content, this.maxBytes),
+			text: encodeStoreSnapshot(this.identity, this.store!, this.maxBytes),
 		}
 	}
 
@@ -469,7 +475,7 @@ export class StoreWriter implements TinyBaseService {
 	private async drain(): Promise<void> {
 		try {
 			await this.reloading
-			await this.opening?.catch((): undefined => undefined)
+			await this.opening?.result.catch((): undefined => undefined)
 			for (const id of this.listenerIds.splice(0)) this.store!.delListener(id)
 			await this.inFlight?.catch((): undefined => undefined)
 			if (this.fault) throw this.fault
@@ -525,26 +531,22 @@ export class StoreWriter implements TinyBaseService {
 			cause === undefined ? undefined : { cause },
 		)
 	}
-
-	private async run<T>(run: (signal: AbortSignal) => Promise<T>): Promise<T> {
-		return runOperation(this.ctx, run)
-	}
 }
 
 export async function runOperation<T>(
 	ctx: Context,
-	run: (signal: AbortSignal) => Promise<T>,
+	run: (root: OwnerInvocationAdmission, owner?: OwnerInvocationAdmission) => Promise<T>,
 ): Promise<T> {
-	const root = enterOwnerInvocation(ctx.root)
+	const root = admitOwnerInvocation(ctx.root)
 	try {
-		const owner = ctx === ctx.root ? undefined : enterOwnerInvocation(ctx, root.signal)
+		const owner = ctx === ctx.root ? undefined : admitOwnerInvocation(ctx)
 		try {
-			return await run(owner?.signal ?? root.signal)
+			return await run(root, owner)
 		} finally {
-			owner?.dispose()
+			if (owner) releaseOwnerInvocation(owner)
 		}
 	} finally {
-		root.dispose()
+		releaseOwnerInvocation(root)
 	}
 }
 
@@ -587,6 +589,9 @@ function nativeStore(input: unknown): input is Store {
 		[
 			'getContent',
 			'setContent',
+			'forEachTable',
+			'forEachValue',
+			'getTransactionChanges',
 			'isMergeable',
 			'getListenerStats',
 			'transaction',

@@ -7,10 +7,12 @@ import {
 	type EvtChannelOptions,
 	type EvtChannelPosition,
 	type EvtChannelScope,
+	type EvtChannelWaitForOptions,
+	type EvtChannelWaitForPromise,
 	type SubscriptionOptions,
 	type Unsubscribe,
 } from 'eventure'
-import { deferEventCleanup, withEventLogger } from './event-support'
+import { deferEventCleanup, ownEventWaiter, withEventLogger } from './event-support'
 
 const REGISTRATION_METHODS = new Set<PropertyKey>([
 	'on',
@@ -96,6 +98,10 @@ export class EvtChannel<D extends EventDescriptor> extends BaseEvtChannel<D> {
 		return this.ownedScope(super.at(position))
 	}
 
+	override waitFor(options?: EvtChannelWaitForOptions<D>): EvtChannelWaitForPromise<D> {
+		return ownEventWaiter(this.subscriptionOwner(), super.waitFor(options))
+	}
+
 	onFront(listener: EventListener<D>, options?: SubscriptionOptions): Unsubscribe {
 		return this.at('front').on(listener, options)
 	}
@@ -136,9 +142,13 @@ export class EvtChannel<D extends EventDescriptor> extends BaseEvtChannel<D> {
 	}
 
 	private ownSubscription(unsubscribe: Unsubscribe): Unsubscribe {
-		const ctx = this.ctx
-		deferEventCleanup(this.registrationOwner ?? ctx.caller ?? ctx, unsubscribe)
+		deferEventCleanup(this.subscriptionOwner(), unsubscribe)
 		return unsubscribe
+	}
+
+	private subscriptionOwner(): PluxelContext {
+		const ctx = this.ctx
+		return this.registrationOwner ?? ctx.caller ?? ctx
 	}
 
 	private ownedScope(scope: EvtChannelScope<D>): EvtChannelScope<D> {

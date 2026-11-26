@@ -315,7 +315,9 @@ describe('TinyBase native Store admission and generation lifetime', () => {
 			const owner = await host.add(HandleOwner.nodeAddress())
 			const store: Store = createStore().setValue('seed', 'unpublished candidate')
 			const opening = owner.state.open(store)
+			const sharing = owner.state.open()
 			void opening.catch(() => {})
+			void sharing.catch(() => {})
 			let stopping: Promise<void> | undefined
 			const admission =
 				target === 'Plugin' ? owner.admission() : enterOwnerInvocation(getCoreTestHostContext(host))
@@ -342,6 +344,7 @@ describe('TinyBase native Store admission and generation lifetime', () => {
 				expect(stopped).toBe(false)
 				release.resolve()
 				await expect(opening).rejects.toThrow('Plugin owner stopped')
+				await expect(sharing).rejects.toThrow('Plugin owner stopped')
 				await stopping
 				expect(Object.values(store.getListenerStats()).every((count) => count === 0)).toBe(true)
 				store.setValue('stale', 'must not save')

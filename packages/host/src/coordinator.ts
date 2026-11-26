@@ -378,6 +378,34 @@ export class PluginHostCoordinator<TSummary = unknown> {
 		read: (view: HostPluginGraphCommittedView) => T,
 		options?: HostOperationOptions,
 	): Promise<T> {
+		return this.enqueueRead(() => read(this.currentView()), options)
+	}
+
+	/** Read the committed catalog and runtime state on the same coordinator queue. */
+	readCommittedState<T>(
+		read: (view: Pick<HostPluginGraphCommittedView, 'catalog' | 'runtimeState'>) => T,
+		options?: HostOperationOptions,
+	): Promise<T> {
+		return this.enqueueRead(
+			() =>
+				read(
+					Object.freeze({
+						catalog: this.catalog,
+						runtimeState: this.runtimeState.versionedSnapshot(),
+					}),
+				),
+			options,
+		)
+	}
+
+	/** A borrowed generation must never wait behind a mutation which may be draining it. */
+	readCommittedIfIdle<T>(read: (view: HostPluginGraphCommittedView) => T): T | undefined {
+		if (this.disposed) throw new Error('[host:reconciliation] coordinator is disposed')
+		if (this.pendingMutations > 0) return undefined
+		return requireSynchronousRead(read(this.currentView()))
+	}
+
+	private enqueueRead<T>(read: () => T, options?: HostOperationOptions): Promise<T> {
 		if (this.disposed) {
 			return Promise.reject(new Error('[host:reconciliation] coordinator is disposed'))
 		}
@@ -385,7 +413,7 @@ export class PluginHostCoordinator<TSummary = unknown> {
 		const execute = this.tail.then(async () => {
 			await this.runtimeState.ready
 			signal?.throwIfAborted()
-			return this.readCurrentView(read)
+			return requireSynchronousRead(read())
 		})
 		this.tail = execute.then(
 			(): void => undefined,
@@ -394,37 +422,23 @@ export class PluginHostCoordinator<TSummary = unknown> {
 		return execute
 	}
 
-	/** A borrowed generation must never wait behind a mutation which may be draining it. */
-	readCommittedIfIdle<T>(read: (view: HostPluginGraphCommittedView) => T): T | undefined {
-		if (this.disposed) throw new Error('[host:reconciliation] coordinator is disposed')
-		if (this.pendingMutations > 0) return undefined
-		return this.readCurrentView(read)
-	}
-
-	private readCurrentView<T>(read: (view: HostPluginGraphCommittedView) => T): T {
+	private currentView(): HostPluginGraphCommittedView {
 		const coreAdjacency = this.core.readCommittedDependencyAdjacency()
 		const runningNodes = Object.freeze(
 			coreAdjacency.nodes.filter((address) => this.core.isRunning(address)),
 		)
-		const value = read(
-			Object.freeze({
-				catalog: this.catalog,
-				definitionRoles: this.definitionRoles,
-				declaredNodes: this.runtimeState.declaredNodes,
-				runtimeState: this.runtimeState.versionedSnapshot(),
-				reconciliation: this.reconciliation,
-				sessionIntents: this.sessionIntents,
-				desiredControl: this.desiredControl,
-				applied: this.applied,
-				coreAdjacency,
-				runningNodes,
-			}),
-		)
-		if (isPromiseLike(value)) {
-			void Promise.resolve(value).catch((): undefined => undefined)
-			throw new TypeError('[host:reconciliation] readCommitted callback must return synchronously')
-		}
-		return value
+		return Object.freeze({
+			catalog: this.catalog,
+			definitionRoles: this.definitionRoles,
+			declaredNodes: this.runtimeState.declaredNodes,
+			runtimeState: this.runtimeState.versionedSnapshot(),
+			reconciliation: this.reconciliation,
+			sessionIntents: this.sessionIntents,
+			desiredControl: this.desiredControl,
+			applied: this.applied,
+			coreAdjacency,
+			runningNodes,
+		})
 	}
 
 	/** @internal Bounded multi-resource sequence on this host's graph mutation queue. */
@@ -443,7 +457,7 @@ export class PluginHostCoordinator<TSummary = unknown> {
 			const session: HostPluginGraphExclusiveSession<TSummary> = Object.freeze({
 				runtimeStateSnapshot: () => this.runtimeState.versionedSnapshot().state,
 				readCommitted: <TRead>(read: (view: HostPluginGraphCommittedView) => TRead) =>
-					this.readCurrentView(read),
+					requireSynchronousRead(read(this.currentView())),
 				validateRuntimeStatePatch: (patch: HostStatePatch, expectedManagedRevision?: string) => {
 					this.runtimeState.assertManagedRevision(expectedManagedRevision)
 					validateHostStateMutation(
@@ -932,12 +946,16 @@ function cleanupRemovedSessionIntents(
 	return next
 }
 
-function isPromiseLike(value: unknown): value is PromiseLike<unknown> {
-	return (
+function requireSynchronousRead<T>(value: T): T {
+	if (
 		value !== null &&
 		(typeof value === 'object' || typeof value === 'function') &&
 		typeof (value as { then?: unknown }).then === 'function'
-	)
+	) {
+		void Promise.resolve(value).catch((): undefined => undefined)
+		throw new TypeError('[host:reconciliation] readCommitted callback must return synchronously')
+	}
+	return value
 }
 
 function applyCoreOperation<TSummary>(

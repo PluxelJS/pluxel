@@ -101,34 +101,44 @@ export class VaultRuntime {
 		if (cached) return cached
 		if (owner.root !== this.root)
 			throw new TypeError('[core.vault] Context belongs to another root')
+		let ownerVault: VaultService | undefined
 		const run = <T>(action: (vault: VaultService) => Promise<T>) =>
 			runVaultOperation(owner, async () => {
-				const vault = await this.prepare()
-				return action(vault.forOwner(owner))
+				if (!ownerVault) {
+					const vault = await this.prepare()
+					ownerVault ??= vault.forOwner(owner)
+				}
+				return action(ownerVault)
 			})
+		let defaultKv: VaultKvHandle | undefined
 		const kv = (options?: VaultNamespaceOptions): VaultKvHandle => {
+			if (options === undefined && defaultKv) return defaultKv
 			const selected = options ? { ...options } : undefined
 			namespaceFrom(owner, selected)
-			return Object.freeze({
-				get: <T = unknown>(key: string) => run((vault) => vault.kv(selected).get<T>(key)),
+			let handle: VaultKvHandle | undefined
+			const use = <T>(action: (storage: VaultKvHandle) => Promise<T>): Promise<T> =>
+				run((vault) => action((handle ??= vault.kv(selected))))
+			const view = Object.freeze({
+				get: <T = unknown>(key: string) => use((storage) => storage.get<T>(key)),
 				set: async (key, value, writeOptions) => {
 					const snapshot = cloneJson(value)
 					const expected = writeOptions ? { ...writeOptions } : undefined
-					return run((vault) => vault.kv(selected).set(key, snapshot, expected))
+					return use((storage) => storage.set(key, snapshot, expected))
 				},
 				delete: (key, writeOptions) => {
 					const expected = writeOptions ? { ...writeOptions } : undefined
-					return run((vault) => vault.kv(selected).delete(key, expected))
+					return use((storage) => storage.delete(key, expected))
 				},
 				keys: (listOptions) => {
 					const snapshot = listOptions ? { ...listOptions } : undefined
-					return run((vault) => vault.kv(selected).keys(snapshot))
+					return use((storage) => storage.keys(snapshot))
 				},
-				batch: (action) => run((vault) => vault.kv(selected).batch(action)),
-				watch: (key, listener) => run((vault) => vault.kv(selected).watch(key, listener)),
-				watchPrefix: (prefix, listener) =>
-					run((vault) => vault.kv(selected).watchPrefix(prefix, listener)),
+				batch: (action) => use((storage) => storage.batch(action)),
+				watch: (key, listener) => use((storage) => storage.watch(key, listener)),
+				watchPrefix: (prefix, listener) => use((storage) => storage.watchPrefix(prefix, listener)),
 			} satisfies VaultKvHandle)
+			if (options === undefined) defaultKv = view
+			return view
 		}
 		const blobs = (options?: VaultNamespaceOptions): VaultBlobsHandle => {
 			const selected = options ? { ...options } : undefined

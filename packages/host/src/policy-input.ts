@@ -128,7 +128,7 @@ export function sortChoices<T>(input: readonly T[], key: (choice: T) => string):
 	return Object.freeze(
 		input
 			.map((choice) => ({ choice, key: key(choice) }))
-			.sort((left, right) => left.key.localeCompare(right.key))
+			.sort((left, right) => (left.key === right.key ? 0 : left.key < right.key ? -1 : 1))
 			.map(({ choice }) => choice),
 	)
 }

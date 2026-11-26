@@ -332,7 +332,6 @@ export function createScriptScope(
 		const cached = owned.get(value)
 		if (cached) return cached as T
 		const borrowed = createBorrowedValueView(value, owner, {
-			signal: controller.signal,
 			assertOpen: () => assertContextOpen(owner),
 			track,
 			unwrap,
@@ -537,7 +536,7 @@ export function createScriptScope(
 			descriptor || implementation
 				? () =>
 						queued(() => {
-							return coordinator.readCommitted(({ catalog }) => {
+							return coordinator.readCommittedState(({ catalog }) => {
 								assertOpen()
 								assertImplementation(catalog)
 								const entry = pluginCatalogEntry(catalog, node.definition)
@@ -651,7 +650,7 @@ export function createScriptScope(
 			context: () =>
 				queued(
 					() =>
-						coordinator.readCommitted(({ catalog }) => {
+						coordinator.readCommittedState(({ catalog }) => {
 							assertImplementation(catalog)
 							const entry = pluginCatalogEntry(catalog, node.definition)
 							if (!entry)
@@ -849,7 +848,7 @@ export function createScriptScope(
 		assertOpen,
 		abort,
 		snapshot: () =>
-			coordinator.readCommitted((view): ScriptRevisions => ({
+			coordinator.readCommittedState((view): ScriptRevisions => ({
 				catalogRevision: view.catalog.revision,
 				runtimeStateRevision: view.runtimeState.revision,
 				configManagedRevision: (requireConfigService(ctx) as HostConfigStore).managedRevision,

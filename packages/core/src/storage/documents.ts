@@ -53,6 +53,13 @@ export function assertDocumentKey(key: string): void {
 export function assertDocumentBudget(text: string, maxBytes: number): void {
 	if (typeof text !== 'string')
 		throw new TypeError('[core.storage] document content must be a string')
-	if (new TextEncoder().encode(text).byteLength > maxBytes)
+	if (exceedsUtf8Budget(text, maxBytes))
 		throw new RangeError(`[core.storage] document exceeds ${maxBytes} UTF-8 bytes`)
+}
+
+export function exceedsUtf8Budget(text: string, maxBytes: number): boolean {
+	// UTF-8 uses one to three bytes per code unit, averaged across surrogate pairs.
+	if (text.length > maxBytes) return true
+	if (text.length * 3 <= maxBytes) return false
+	return new TextEncoder().encode(text).byteLength > maxBytes
 }

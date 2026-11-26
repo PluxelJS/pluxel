@@ -129,6 +129,22 @@ it('keeps JSON identities dynamic and refuses copied typed address evidence', as
 	})
 })
 
+it('borrows a plugin and captures script revisions without projecting the Core graph', async () => {
+	await using fixture = await setup()
+	const { host, scope } = fixture
+	using projectGraph = vi.spyOn(requirePluginService(host.ctx), 'readCommittedDependencyAdjacency')
+	const selected = scope.sdk.plugin(CounterDescriptor.nodeAddress())
+	const before = await scope.snapshot()
+	const { instance } = await selected.instance()
+	const context = await selected.context()
+	expect(instance.privateValue()).toBe(7)
+	expect(context).toBe(instance.ctx)
+
+	await scope.dispose()
+	await expect(scope.snapshot()).resolves.toEqual(before)
+	expect(projectGraph).not.toHaveBeenCalled()
+})
+
 it('captures immutable targets and applies extracted operations to one deployed fork', async () => {
 	await using fixture = await setup()
 	const { host, scope } = fixture
@@ -632,14 +648,12 @@ it('preserves unknown backend exceptions instead of classifying a matching code 
 	const failure = Object.assign(new Error('Unexpected backend defect'), {
 		code: 'control_contract_mismatch',
 	})
-	const read = vi
-		.spyOn(requirePluginHostCoordinator(host.ctx), 'readCommitted')
-		.mockRejectedValueOnce(failure)
-	try {
-		await expect(scope.sdk.plugin(CounterDescriptor.nodeAddress()).instance()).rejects.toBe(failure)
-	} finally {
-		read.mockRestore()
-	}
+	using _getInstance = vi
+		.spyOn(requirePluginService(host.ctx), 'getInstance')
+		.mockImplementationOnce(() => {
+			throw failure
+		})
+	await expect(scope.sdk.plugin(CounterDescriptor.nodeAddress()).instance()).rejects.toBe(failure)
 })
 
 it('rejects member admission behind an already queued Host read instead of deadlocking a waiting restart', async () => {

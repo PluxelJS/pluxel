@@ -15,6 +15,8 @@
 
 Entry 使用 `ACTIVE → RUNNING → DONE`。Guard 保存 id 与 token，复用 id 不会让旧 Guard 操作新资源；结束后清空资源引用并回收 id。并行数组存 entry，三个栈保存带 token 的 handle。
 
+子 scope 提前成功释放后撤销父登记。清理进行中，父级仍等待结算。提前释放失败的子 scope 仍由父级汇总失败。phase 栈按当前登记数量定期清理失效 handle，保留在途清理和相对顺序。事务栈同样回收失效 handle。
+
 Service 使用 `LIVE → DISPOSING → DISPOSED`。释放中允许登记，释放后登记抛 `EffectsDisposedError`。按 `shutdown → runtime → final` drain，各 phase 内 LIFO；cleanup 新登记的更早 phase 提升到当前 phase，确保同次 drain 处理。单项失败不阻断其余清理，最终抛 `AggregateError`；`critical` 只参与诊断。
 
 ## 事务

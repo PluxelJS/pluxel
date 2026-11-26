@@ -14,7 +14,7 @@ TinyBase 在装配时从文档适配器读取快照目录 `services/tinybase/nod
 
 ## 原生实例与恢复
 
-`open()` 创建 Store，`open(store)` 保留传入实例和类型。并发/重复 open 共用恢复任务，同 generation 换实例报 OPEN_CONFLICT。实例须全新、未绑定其他 Host/generation，无 listener、Persister、Synchronizer 或未完成 transaction，且不能是 MergeableStore。Core 以 listener 统计检查可见资源，dormant persister 仍靠 caller 遵守约定。
+`open()` 创建 Store，`open(store)` 保留传入实例和类型。并发/重复 open 共用恢复任务与取消信号，同 generation 换实例报 OPEN_CONFLICT。实例须全新、未绑定其他 Host/generation，无 listener、Persister、Synchronizer 或未完成 transaction，且不能是 MergeableStore。Core 以 listener 统计检查可见资源，dormant persister 仍靠 caller 遵守约定。
 
 首次 await 前登记 writer/cleanup，防止晚到恢复逃逸。只有缺失 backing 才保留调用方初值；既有快照完整替换 Tables/Values，合法空内容也替换。恢复先校验格式/身份，再 setContent 并比较原始内容；schema 丢字段或补默认造成变化即失败，原文件保留。恢复期间 caller 不读写或公开 Store，成功后才安装 Queries/listener 并登记 effects。原生 API 不代理。
 
@@ -22,7 +22,7 @@ TinyBase 在装配时从文档适配器读取快照目录 `services/tinybase/nod
 
 恢复只读。init mutation 修改候选，prepareCommit 检查完整快照/transaction，publishCommit 同步开启 autosave，IO 在 microtask 调度。publication 成功后保存缺失文件的初值；失败/撤回丢弃候选。publication 后 lazy open 同样开启 autosave。
 
-原生 transaction listeners 捕获完整 Content，仅内容变化推进内部 revision，保存状态独立于 Store。setRow/setValue/transaction 同步返回只表示内存变化。队列最多一个 in-flight 和一个 latest pending，允许合并中间 revision。
+原生 transaction listener 用 TinyBase 的净变化推进内部 revision。有变化时同步遍历 Store、校验并编码完整 Content，writer 按 revision 保留编码后的快照。setRow/setValue/transaction 同步返回只表示内存变化。队列最多一个 in-flight 和一个 latest pending，允许合并中间 revision。
 
 flush 捕获调用时最后完整 transaction revision，等待它或更新快照确认，不被持续更新无限推迟。未 open、transaction 未结束、故障或撤回均拒绝。init 内显式 flush 可提交已验证候选，不等待自身 publication；此副作用不会因后续 init 失败回滚，也不提前开启 autosave。
 

@@ -1,3 +1,4 @@
+import type { Effects } from '@pluxel/core'
 import type {
 	VaultBlobsHandle,
 	VaultKvHandle,
@@ -10,18 +11,26 @@ export function createBorrowedVaultView(
 	vault: VaultStorageApi,
 	options: Readonly<{
 		borrow<T>(value: T): T
-		defer(cleanup: () => void): void
+		defer(cleanup: () => void): ReturnType<Effects['defer']>
 	}>,
 ): VaultStorageApi {
 	const { borrow, defer } = options
 	const subscription = <T extends { dispose(): void }>(value: T): T => {
+		let registration: ReturnType<typeof defer>
 		try {
-			defer(() => value.dispose())
+			registration = defer(() => value.dispose())
 		} catch (error) {
 			value.dispose()
 			throw error
 		}
-		return borrow(value)
+		return borrow(
+			Object.freeze({
+				...value,
+				dispose(): void {
+					void registration.dispose()
+				},
+			}),
+		)
 	}
 	const kv = (handle: VaultKvHandle): VaultKvHandle =>
 		borrow(

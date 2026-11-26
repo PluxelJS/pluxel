@@ -167,7 +167,9 @@ function overrideIndexKey(
 function sortByKey<T>(values: T[], keyOf: (value: T) => string): T[] {
 	return values
 		.map((value, order) => ({ value, key: keyOf(value), order }))
-		.sort((left, right) => left.key.localeCompare(right.key) || left.order - right.order)
+		.sort((left, right) =>
+			left.key === right.key ? left.order - right.order : left.key < right.key ? -1 : 1,
+		)
 		.map(({ value }) => value)
 }
 

@@ -47,7 +47,7 @@ export class CatalogObserverPlugin extends BasePlugin {
 this.ctx.events.emit('catalog:invalidated', 'cat_123')
 ```
 
-通过 `this.ctx.events.on()` 注册的监听器会自动登记到当前插件的作用域中，当插件停止或热重载时，监听器会自动注销。
+通过 `this.ctx.events.on()` 注册的监听器会自动登记到当前插件的作用域。调用返回的退订函数会立即释放这次订阅。插件停止或热重载时，仍然登记的监听器会自动注销。
 
 ## 提供方通道（`EvtChannel`）
 
@@ -86,6 +86,8 @@ export class InvoiceProjectionPlugin extends BasePlugin {
 ```
 
 ## 异步派发与结果等待
+
+通过依赖订阅 `EvtChannel` 时，订阅归消费方。`ctx.events` 和 `EvtChannel` 的有限次监听达到次数后都会释放订阅。`waitFor()` 在结算时释放，订阅方停止时取消未结算的等待。
 
 无论使用 `ctx.events` 还是 `EvtChannel`，都提供了以下三种派发方式：
 

@@ -58,6 +58,21 @@ it.each(['root', 'owner'] as const)(
 	},
 )
 
+it('releases the owner cleanup when a Vault watch is disposed', async () => {
+	await using host = await createHost({
+		plugins: [{ plugin: VaultOwner }],
+		coreConfig: { vault: { backend: 'bindings' } },
+	})
+	await host.startNode(VaultOwner.nodeAddress())
+	using defer = vi.spyOn(ownerContext.effects, 'defer')
+	const watched = await ownerVault.kv().watch('record', () => {})
+	const registered = defer.mock.results[0]?.value
+	expect(registered?.active).toBe(true)
+	watched.dispose()
+	watched.dispose()
+	expect(registered?.active).toBe(false)
+})
+
 it('drains an accepted transaction before generation stop and rejects retained KV and blob handles', async () => {
 	const host = await createHost({
 		plugins: [{ plugin: VaultOwner }],

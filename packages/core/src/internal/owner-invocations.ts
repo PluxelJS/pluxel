@@ -19,6 +19,11 @@ class OwnerInvocationGate {
 	private active = 0
 	private idle?: Deferred<void>
 
+	/** The owner lifetime signal is shared by every admission on this gate. */
+	get signal(): AbortSignal {
+		return this.lifetime.signal
+	}
+
 	assertOpen(callSignal?: AbortSignal): void {
 		if (this.lifetime.signal.aborted) throw abortReason(this.lifetime.signal)
 		if (callSignal?.aborted) throw abortReason(callSignal)

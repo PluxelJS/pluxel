@@ -80,13 +80,17 @@ Management 拥有认证、状态投影和 RPC session；Workbench 拥有 publica
 
 `status.ts` 分开枚举节点和投影单节点。列表包括已接纳 default、配置 forks，以及仍被 policy/运行状态引用的节点；精确查询和控制回执共用存在性/control 投影。运行状态、诊断和 recent update 每次读取当前 committed view。
 
+实例和 Context 借用、脚本修订号通过 `readCommittedState()` 读取 catalog 与运行策略状态。该读取与 `readCommitted()` 共用协调器队列和同步回调约束。状态和依赖诊断通过 `readCommitted()` 投影 Core 邻接表和运行节点。
+
+构造 Host 时接纳初始 catalog 声明，启动时在同一份声明上捕获准备阶段提交的 provenance。Core 按已提交图的身份复用节点地址，依赖边在首次读取时投影。每次读取重新判定运行节点，生命周期诊断通过相关地址确认运行状态。
+
 生命周期操作的存在性检查、`session.update(pluginLifecycleUpdate(...))` 与回执投影位于同一次 `runExclusive`，避免后排操作污染回执。批量逐项排队，取消阻止下一项，已接纳项继续结算；auto-start 批量保留整批 CAS 边界。
 
-Services label 缓存属于 root，按 catalog、state、sessionIntents、desiredControl、applied.nodes identity 失效。命中时按 address 查表，不扫描目录或分配比较数组。Core adjacency 每次创建新数组，不能作缓存证据；applied.nodes 与 Core membership 的同集关系由依赖图回归保护。fork 增删、改名 replacement、session 引用、有效图变化会失效；普通读取、配置保存和仅 restart 可复用 label。
+Services label 缓存属于 root，按 catalog、state、sessionIntents、desiredControl、applied.nodes identity 失效。命中时按 address 查表。applied.nodes 与 Core membership 的同集关系由依赖图回归保护。fork 增删、改名 replacement、session 引用、有效图变化会失效。普通读取、配置保存和仅 restart 可复用 label。
 
 ### 状态投影测量
 
-精确查询用稳定 `HostStateSnapshot` 的 WeakMap 索引。新 state 仍枚举 auto-start/forks 并创建集合；完整 SDK readCommitted 也读取 Core adjacency。热索引命中与完整调用成本分别测量。
+精确查询用稳定 `HostStateSnapshot` 的 WeakMap 索引。新 state 枚举 auto-start/forks 并创建集合。完整 SDK readCommitted 还读取所提交图的节点和当前运行状态。热索引命中与完整调用成本分别测量。
 
 Host 的 `bench/status.bench.mjs` 比较 overview/find 与精确投影；Services 的 `bench/management-status.bench.mjs` 测实际 Management DTO。构建所属包后用 `vp exec node <path>` 执行，历史数值与范围见[测量记录](records/host-deployment.md#状态投影测量2026-11-15)。
 
@@ -125,5 +129,7 @@ Vault 是 Core 固定能力，Plugin 通过 `ctx.vault` 取得 owner 存储视�
 创建 Host、读取凭据能力、创建 KV/blob 句柄或管理 describe 不生成密钥；首次数据操作按需初始化新加密库，也可由管理员显式 unlock 初始化。已有库缺少匹配密钥或解密失败时保留错误，不阻止未使用凭据的 Host 启动。能力存在不代表密钥已配置、存储已解锁或记录存在，具体操作报告实际状态；管理面通过 `requireVaultHost(root).admin` 借用根管理接口，所有后端准备、观察和最终释放仍归 Core。
 
 KV mutation 在本实例 backend lock 内 clone、检查 revision、加密、原子提交，再交换 snapshot 并通知。失败不推进 revision，删除保留 tombstone。watch/watchPrefix 在同一 lock 读取初值并注册，通知在锁外、owner invocation 内运行。env/file 整记录只读且不落盘，所有写路径检查 overlay。`vault.namespace` 的命名子空间与 default/fork owner 隔离，root 保留管理权限。
+
+同一 owner 复用默认 KV 句柄，显式 namespace 句柄复用自己的后端视图。watch 的 `dispose()` 释放 owner 登记、脚本借用登记和通知快照，已经接纳的回调仍按运行代协议结算。
 
 外部加密快照由 Vault 解密校验，在 lock 内交换有效 view、锁外通知；无效更新保留最后有效值和原文件。外部 revision 可重复或回退，本地检查不是跨实例 CAS。格式只接受 version 2 的 KV/revision；加密、轮换和恢复见 [Vault](../docs/plugin-development/vault.md)。后端与原子文件规则见 [FS](FS.md)。

@@ -8,6 +8,8 @@ Core 通过 `PluginContext.wretch` 提供原生 Wretch，通过 `PluginContext.f
 
 受管传输先校验绝对 HTTP(S) URL，再按已应用策略判定。排队期间策略可能变化，出队时按变化后的策略重新判定。并发占位与单次超时从接纳开始，到 Fetch 返回响应头或失败结束。两入口共用同一阈值，Wretch 的每次重试重新接纳。部署可通过 `coreConfig.http.fetch` 注入最终传输。受管模式的注入传输接收已应用策略的 `Request`，遵守它的取消信号，并转交 Node 代理使用的每请求 Dispatcher。测试宿主使用同一契约。 [接纳与传输](../packages/core/src/http/runtime.ts)
 
+每次受管尝试共享一个原生组合信号。排队撤回、传输超时和响应体取消沿这个信号传播。进入传输前失败，或平台 Fetch 以失败或无响应体的普通 HTTP 响应结算时，释放框架的私有取消源。响应流、不透明响应、升级连接和注入传输保留原生取消关联，调用方以其请求 scope 表达可观测的寿命。 [信号的归属](../packages/core/src/http/runtime.ts)
+
 部署、宿主管理默认和节点规则的 origin 约束取交集。省略该层即继承，显式空数组拒绝该范围的受管请求。启用任何 origin 限制时，URL 或字符串输入省略 `redirect` 采用 `error`。已有 `Request` 按 `init` 覆盖其原有值。最终为 `follow` 的请求在传输前被拒绝，`manual` 采用平台原生响应。`error` 在传输层用 `manual` 发一跳，遇到重定向即取消响应体并以 `TypeError` 失败，兼容只接纳 `follow` 和 `manual` 的 workerd。调用方通过受管 Fetch 显式发下一跳时再次进入同一判定。 [Fetch 重定向](https://fetch.spec.whatwg.org/#http-fetch) · [Workers Request](https://developers.cloudflare.com/workers/runtime-apis/request/)
 
 可用配额走同步接纳路径。并发配额用满时，占用最后一个配额的调用发布容量变化的 Promise，后续调用按先进先出等待前序事件的完成。取消从队列移除当前调用并唤醒其后继。在 workerd 中由仍持有 I/O 的事件创建等待信号，等待方可在自己的事件上下文继续发送。 [出站接纳](../packages/core/src/http/admission.ts) · [跨事件回归](../packages/host/tests/cloudflare/runtime.test.ts)

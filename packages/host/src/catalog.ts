@@ -155,6 +155,29 @@ export type PluginCatalogEntryInput = Readonly<{
 	provenance?: PluginCatalogProvenance
 }>
 
+const EMPTY_PROVENANCE: PluginCatalogProvenance = Object.freeze({})
+
+function snapshotProvenance(
+	address: PluginDefinitionAddress,
+	provenance: PluginCatalogProvenance,
+): PluginCatalogProvenance {
+	return Object.freeze({
+		...provenance,
+		...(provenance.sourceFiles ? { sourceFiles: Object.freeze([...provenance.sourceFiles]) } : {}),
+		...(provenance.control === undefined
+			? {}
+			: { control: snapshotPluginControl(provenance.control) }),
+		...(provenance.execution === undefined
+			? {}
+			: {
+					execution: clonePluginExecutionSnapshot(
+						provenance.execution,
+						`Plugin catalog execution for ${formatPluginDefinitionReference(address)}`,
+					),
+				}),
+	})
+}
+
 export function createPluginCatalogSnapshot(
 	revision: number,
 	inputs: Iterable<PluginCatalogEntryInput>,
@@ -188,28 +211,13 @@ export function createPluginCatalogSnapshot(
 			abstractRoles.set(tokenKey, provides)
 		}
 
-		const provenance = input.provenance
 		const entry = Object.freeze({
 			address,
 			indexKey,
 			candidate: input.candidate,
-			provenance: Object.freeze({
-				...provenance,
-				...(provenance?.sourceFiles
-					? { sourceFiles: Object.freeze([...provenance.sourceFiles]) }
-					: {}),
-				...(provenance?.control === undefined
-					? {}
-					: { control: snapshotPluginControl(provenance.control) }),
-				...(provenance?.execution === undefined
-					? {}
-					: {
-							execution: clonePluginExecutionSnapshot(
-								provenance.execution,
-								`Plugin catalog execution for ${formatPluginDefinitionReference(address)}`,
-							),
-						}),
-			}),
+			provenance: input.provenance
+				? snapshotProvenance(address, input.provenance)
+				: EMPTY_PROVENANCE,
 		})
 		concreteRoles.add(indexKey)
 		entries.push(entry)
@@ -225,7 +233,7 @@ export function createPluginCatalogSnapshot(
 		}
 	}
 
-	entries.sort((left, right) => left.indexKey.localeCompare(right.indexKey))
+	entries.sort((left, right) => (left.indexKey < right.indexKey ? -1 : 1))
 	return Object.freeze({
 		revision,
 		entries: Object.freeze(entries),
@@ -233,6 +241,33 @@ export function createPluginCatalogSnapshot(
 		declarations: new Map(
 			entries.map(({ indexKey, candidate }) => [indexKey, candidate.declaration]),
 		),
+	})
+}
+
+/** Capture route facts supplied during Host preparation, reusing the validated declarations. */
+export function attachPluginCatalogProvenance(
+	snapshot: PluginCatalogSnapshot,
+	read: (candidate: ConcretePluginDefinitionCandidate) => PluginCatalogProvenance | undefined,
+): PluginCatalogSnapshot {
+	let byDefinition: Map<string, PluginCatalogEntry> | undefined
+	for (const entry of snapshot.entries) {
+		const provenance = read(entry.candidate)
+		if (provenance === undefined) continue
+		byDefinition ??= new Map(snapshot.byDefinition)
+		byDefinition.set(
+			entry.indexKey,
+			Object.freeze({
+				...entry,
+				provenance: snapshotProvenance(entry.address, provenance),
+			}),
+		)
+	}
+	if (!byDefinition) return snapshot
+	const resolved = byDefinition
+	return Object.freeze({
+		...snapshot,
+		entries: Object.freeze(snapshot.entries.map(({ indexKey }) => resolved.get(indexKey)!)),
+		byDefinition: resolved,
 	})
 }
 

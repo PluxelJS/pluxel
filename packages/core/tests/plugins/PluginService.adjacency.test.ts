@@ -63,4 +63,25 @@ describe('PluginService committed dependency adjacency', () => {
 			expect(Object.isFrozen(adjacency.optional[0])).toBe(true)
 		})
 	})
+
+	it('reuses the committed projection and resolves its edges against that publication', async () => {
+		await withCoreInternalTestHost(async (host) => {
+			const registry = requirePluginService(host.ctx)
+			host.add([AdjacencyProvider, AdjacencyOptionalConsumer])
+			await host.commit()
+			const before = registry.readCommittedDependencyAdjacency()
+			expect(registry.readCommittedDependencyAdjacency()).toBe(before)
+			const consumer = parsePluginNodeAddress(AdjacencyOptionalConsumer.nodeAddress())
+			const provider = parsePluginNodeAddress(AdjacencyProvider.nodeAddress())
+			expect(before.nodes).toContainEqual(consumer)
+
+			host.remove(AdjacencyOptionalConsumer)
+			await host.commit()
+			const after = registry.readCommittedDependencyAdjacency()
+			expect(after.nodes).toEqual([provider])
+			expect(after.optional).toEqual([])
+			expect(before.optional).toEqual([{ consumer, provider }])
+			expect(before.optional).toBe(before.optional)
+		})
+	})
 })

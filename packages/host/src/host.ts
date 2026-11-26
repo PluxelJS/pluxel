@@ -35,6 +35,7 @@ import {
 } from '@pluxel/core/internal'
 import { planHostServices, prepareHostServices, createHostServiceLifecycle } from './services'
 import {
+	attachPluginCatalogProvenance,
 	createPluginCatalogSnapshot,
 	pluginCatalogEntry,
 	type PluginCatalogSnapshot,
@@ -147,7 +148,8 @@ export async function createResolvedHost(
 	applicationEntry?: string,
 ): Promise<PluginHost> {
 	const fixed = [...options.plugins]
-	assertDeclaredForks(catalog(1, fixed), options.declaredNodes)
+	const initialCatalog = catalog(1, fixed)
+	assertDeclaredForks(initialCatalog, options.declaredNodes)
 	const services = planHostServices(options.services ?? [])
 	const executionBinding = createCorePluginExecutionBinding(options.nodeStartTimeoutMs)
 	let configStorageOptions: ConstructorParameters<typeof HostConfigStore>[2] | undefined
@@ -192,7 +194,7 @@ export async function createResolvedHost(
 				return current.revision === 0 ? catalog(0, fixed, ctx) : current
 			}),
 		)
-		return createPreparedHost(options, fixed, ctx) as PluginHost
+		return createPreparedHost(options, initialCatalog, ctx)
 	} catch (error) {
 		const failures: unknown[] = [error]
 		try {
@@ -214,36 +216,42 @@ export async function createResolvedHost(
 
 function createPreparedHost(
 	options: ResolvedHostOptions,
-	fixed: readonly PluginConstructor[],
+	initialCatalog: PluginCatalogSnapshot,
 	ctx: RootContext,
 ): PluginHost {
 	const coordinator = requirePluginHostCoordinator(ctx)
 	const policy = createHostPolicy(ctx, requireHostStateStore(ctx))
 	let start: Promise<PluginApplyReport> | undefined
 	let closing: Promise<void> | undefined
-	let revision = 0
-	let fixedPlugins: readonly PluginConstructor[] = fixed
+	let revision = initialCatalog.revision
+	let startupCatalog: PluginCatalogSnapshot | undefined = initialCatalog
 	let catalogTail = Promise.resolve()
 	const assertOpen = (): void => {
 		if (closing) throw new Error('[host] host is closed')
 	}
 	const startHost = (): Promise<PluginApplyReport> => {
 		assertOpen()
-		return (start ??= (async () => {
-			assertOpen()
-			// Initial binding candidates were validated before prepare. Catalog replacement awaits start.
-			return coordinator.reconcileStartup(catalog(++revision, fixedPlugins, ctx))
-		})())
+		if (start) return start
+		const ready = Promise.withResolvers<PluginApplyReport>()
+		start = ready.promise
+		// The declarations were validated before prepare. Release the startup catalog after capture.
+		const snapshot = startupCatalog!
+		startupCatalog = undefined
+		try {
+			const accepted = attachPluginCatalogProvenance(snapshot, ({ implementation }) =>
+				readHostCatalogProvenance(ctx, implementation),
+			)
+			void coordinator.reconcileStartup(accepted).then(ready.resolve, ready.reject)
+		} catch (error) {
+			ready.reject(error)
+		}
+		return start
 	}
 	const updateCatalog: PluginHost['updateCatalog'] = async (plugins, { onGraphCommitted } = {}) => {
 		assertOpen()
 		const next = [...plugins]
 		await startHost()
 		assertOpen()
-		const committed = () => {
-			fixedPlugins = next
-			onGraphCommitted?.()
-		}
 		const operation = async () => {
 			assertOpen()
 			await validateInputBindingCandidates(next, options)
@@ -252,7 +260,7 @@ function createPreparedHost(
 			const report = await coordinator.update({
 				catalog: nextCatalog,
 				reason: 'catalog-update',
-				onGraphCommitted: committed,
+				onGraphCommitted,
 			})
 			return report
 		}
