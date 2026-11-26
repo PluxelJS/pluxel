@@ -116,6 +116,9 @@ const pluginProperties: PropertyDescriptorMap = {
 	},
 }
 
+const rootFields = Object.entries(properties)
+const pluginFields = [...rootFields, ...Object.entries(pluginProperties)]
+
 /** Construction-only binding of the fixed Core fields, before a Context is published. */
 export function initializeCoreContext(
 	ctx: Context,
@@ -125,8 +128,9 @@ export function initializeCoreContext(
 ): Context {
 	if (contexts.has(ctx)) throw new TypeError('[core] Context is already initialized')
 	contexts.set(ctx, { scope, owner, ...values })
-	Object.defineProperties(ctx, properties)
-	if (ctx !== ctx.root) Object.defineProperties(ctx, pluginProperties)
+	for (const [key, descriptor] of ctx === ctx.root ? rootFields : pluginFields) {
+		Object.defineProperty(ctx, key, descriptor)
+	}
 	return ctx
 }
 

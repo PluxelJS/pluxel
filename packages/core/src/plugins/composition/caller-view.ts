@@ -42,7 +42,7 @@ type StableFacadeState<T extends BasePlugin> = {
 	readonly consumer: Context
 	readonly descriptors: PropertyDescriptorResolver
 	readonly methods: Map<PropertyKey, MethodCacheEntry>
-	readonly callPrototype: object
+	callPrototype?: object
 }
 
 type CallFacadeState<T extends BasePlugin> = {
@@ -280,18 +280,13 @@ function compileFacadeShape<T extends BasePlugin>(
 	target: T,
 	descriptors: PropertyDescriptorResolver,
 	properties: readonly PropertyKey[],
-): { readonly facade: T; readonly callPrototype: object } {
-	const providerPrototype = Object.getPrototypeOf(target) as object
-	const callPrototype = Object.create(providerPrototype) as object
-	const facade = Object.create(providerPrototype) as T
+): T {
+	const facade = Object.create(Object.getPrototypeOf(target)) as T
 	for (const property of properties) {
 		const enumerable = descriptors.find(property)?.descriptor.enumerable ?? false
-		const descriptor = projectedDescriptor<T>(property, enumerable)
-		Object.defineProperty(callPrototype, property, descriptor)
-		Object.defineProperty(facade, property, descriptor)
+		Object.defineProperty(facade, property, projectedDescriptor<T>(property, enumerable))
 	}
-	Object.preventExtensions(callPrototype)
-	return { facade, callPrototype }
+	return Object.preventExtensions(facade)
 }
 
 function finishCall<T extends BasePlugin>(state: CallFacadeState<T>): void {
@@ -330,7 +325,14 @@ function invokeProviderMethod<T extends BasePlugin>(
 		releaseConsumerInvocation(consumerAdmission)
 		throw error
 	}
-	const facade = Object.create(stable.callPrototype) as T
+	// Only method calls need a receiver prototype. Reuse the stable view's captured descriptors.
+	const prototype = (stable.callPrototype ??= Object.preventExtensions(
+		Object.create(
+			Object.getPrototypeOf(stable.facade),
+			Object.getOwnPropertyDescriptors(stable.facade),
+		),
+	))
+	const facade = Object.create(prototype) as T
 	const state: CallFacadeState<T> = {
 		kind: 'call',
 		stable,
@@ -379,7 +381,7 @@ export function createCallerGenerationView<T extends BasePlugin>(
 
 	const providerContext = getPluginGenerationContext(provider)
 	const descriptors = new PropertyDescriptorResolver(provider)
-	const shape = compileFacadeShape(
+	const facade = compileFacadeShape(
 		provider,
 		descriptors,
 		getPluginGenerationCallerSurface(provider),
@@ -387,16 +389,14 @@ export function createCallerGenerationView<T extends BasePlugin>(
 	const state: StableFacadeState<T> = {
 		kind: 'stable',
 		target: provider,
-		facade: shape.facade,
+		facade,
 		providerContext,
 		consumer,
 		descriptors,
 		methods: new Map(),
-		callPrototype: shape.callPrototype,
 	}
-	facadeStates.set(shape.facade, state)
-	registerPluginGenerationFacade(shape.facade, provider)
-	Object.preventExtensions(shape.facade)
-	byProvider.set(provider, shape.facade)
-	return shape.facade
+	facadeStates.set(facade, state)
+	registerPluginGenerationFacade(facade, provider)
+	byProvider.set(provider, facade)
+	return facade
 }
