@@ -1,12 +1,6 @@
-import { asc } from 'drizzle-orm'
+import { and, asc, eq } from 'drizzle-orm'
 import * as v from 'valibot'
-import {
-	packageDetailFields,
-	releaseFields,
-	releasePackage,
-	visiblePackages,
-	type CatalogDatabase,
-} from './queries'
+import { packageDetailFields, releaseFields, releasePackage, visiblePackages } from './queries'
 import {
 	exactVersion,
 	object,
@@ -15,19 +9,33 @@ import {
 	taxonomySlug,
 	type Release,
 } from '../protocol'
-import { packages, releases } from '../db/schema'
+import type { Database } from '../db/d1'
+import { packages, releases, snapshotState } from '../db/schema'
+import { json, notModified } from '../http'
 
 export const snapshotByteLimit = 16 * 1024 * 1024
+const snapshotVersion = 2
 
 export type CatalogSnapshot = v.InferOutput<ReturnType<typeof snapshotSchema>>
 
-export async function exportCatalogSnapshot(
-	db: CatalogDatabase,
+export async function catalogSnapshotResponse(
+	request: Request,
+	db: Database,
 	registries: string[],
-): Promise<CatalogSnapshot> {
+): Promise<Response> {
+	const scope = JSON.stringify([snapshotVersion, registries])
+	const selectState = db.select().from(snapshotState).where(eq(snapshotState.id, 1))
+	if (request.headers.has('If-None-Match')) {
+		const state = await selectState.get()
+		if (state?.scope === scope && state.etag) {
+			const cached = notModified(request, state.etag)
+			if (cached) return cached
+		}
+	}
 	const visible = visiblePackages(registries)
-	// These reads share one D1 transaction, including the visibility of joined releases.
-	const [packageRows, releaseRows] = await db.batch([
+	// The revision, visible packages and joined releases must describe the same D1 transaction.
+	const [[state], packageRows, releaseRows] = await db.batch([
+		selectState,
 		db
 			.select({ ...packageDetailFields, repositoryAvatarUrl: packages.repositoryAvatarUrl })
 			.from(packages)
@@ -40,12 +48,23 @@ export async function exportCatalogSnapshot(
 			.where(visible)
 			.orderBy(asc(releases.registry), asc(releases.name), asc(releases.version)),
 	])
-	return {
-		version: 2,
+	const snapshot: CatalogSnapshot = {
+		version: snapshotVersion,
 		registries,
 		packages: packageRows,
 		releases: releaseRows,
 	}
+	if (!state) throw new Error('Missing catalog snapshot state')
+	const knownEtag = state.scope === scope ? (state.etag ?? undefined) : undefined
+	const response = await json(request, snapshot, { snapshotByteLimit, knownEtag })
+	if (!knownEtag) {
+		// A concurrent catalog change must never acquire the ETag of the previous revision.
+		await db
+			.update(snapshotState)
+			.set({ scope, etag: response.headers.get('ETag')! })
+			.where(and(eq(snapshotState.id, 1), eq(snapshotState.revision, state.revision)))
+	}
+	return response
 }
 
 function snapshotSchema() {
@@ -78,7 +97,7 @@ function snapshotSchema() {
 		(value) => object(value) && Object.values(value).every((item) => typeof item === 'string'),
 	)
 	return v.strictObject({
-		version: v.literal(2),
+		version: v.literal(snapshotVersion),
 		registries: v.pipe(v.array(registry), v.maxLength(20)),
 		packages: v.array(
 			v.strictObject({

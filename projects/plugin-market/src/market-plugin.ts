@@ -4,8 +4,8 @@ import { MarketAdmin } from './admin'
 import type { MarketResources } from './bindings'
 import { MarketDeployment } from './deployment'
 import { readCatalog } from './catalog/http'
-import { exportCatalogSnapshot, snapshotByteLimit } from './catalog/snapshot'
-import { json, marketResponse } from './http'
+import { catalogSnapshotResponse } from './catalog/snapshot'
+import { marketResponse } from './http'
 import { notificationResponse } from './indexing/http'
 import { processNotifications } from './indexing/jobs'
 import { MarketError, readBytes } from './protocol'
@@ -55,7 +55,7 @@ export class MarketPlugin extends BasePlugin {
 				const registries = sources
 					.filter((source) => source.access === 'public')
 					.map((source) => source.registry)
-				return json(request, await exportCatalogSnapshot(db, registries), { snapshotByteLimit })
+				return catalogSnapshotResponse(request, db, registries)
 			}
 			const notification = notificationResponse(request, pathname, {
 				db,

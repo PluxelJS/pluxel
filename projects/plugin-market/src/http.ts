@@ -19,13 +19,36 @@ function problem(error: MarketError): Response {
 	)
 }
 
+function jsonHeaders(etag: string, authenticated: boolean) {
+	return {
+		ETag: etag,
+		'Cache-Control': authenticated ? 'no-store' : 'public, max-age=30',
+		Vary: 'Authorization',
+		'Content-Type': 'application/json',
+	}
+}
+
+export function notModified(request: Request, etag: string, authenticated = false) {
+	const matches = request.headers
+		.get('If-None-Match')
+		?.split(',')
+		.some((part) => {
+			const tag = part.trim().replace(/^W\//, '')
+			return tag === '*' || tag === etag
+		})
+	return matches
+		? new Response(null, { status: 304, headers: jsonHeaders(etag, authenticated) })
+		: undefined
+}
+
 export async function json(
 	request: Request,
 	value: unknown,
 	{
 		authenticated = false,
 		snapshotByteLimit,
-	}: { authenticated?: boolean; snapshotByteLimit?: number } = {},
+		knownEtag,
+	}: { authenticated?: boolean; snapshotByteLimit?: number; knownEtag?: string } = {},
 ): Promise<Response> {
 	const body = new TextEncoder().encode(JSON.stringify(value))
 	if (snapshotByteLimit !== undefined && body.byteLength > snapshotByteLimit)
@@ -34,21 +57,15 @@ export async function json(
 			'The public catalog exceeds the snapshot size limit',
 			503,
 		)
-	const digest = new Uint8Array(await crypto.subtle.digest('SHA-256', body))
-	const etag = `"${btoa(String.fromCharCode(...digest))}"`
-	const headers = {
-		ETag: etag,
-		'Cache-Control': authenticated ? 'no-store' : 'public, max-age=30',
-		Vary: 'Authorization',
-		'Content-Type': 'application/json',
+	let etag = knownEtag
+	if (etag === undefined) {
+		const digest = new Uint8Array(await crypto.subtle.digest('SHA-256', body))
+		etag = `"${btoa(String.fromCharCode(...digest))}"`
 	}
-	const conditions = request.headers
-		.get('If-None-Match')
-		?.split(',')
-		.map((entry) => entry.trim().replace(/^W\//, ''))
-	return conditions?.some((entry) => entry === '*' || entry === etag)
-		? new Response(null, { status: 304, headers })
-		: new Response(body, { headers })
+	return (
+		notModified(request, etag, authenticated) ??
+		new Response(body, { headers: jsonHeaders(etag, authenticated) })
+	)
 }
 
 export async function marketResponse(

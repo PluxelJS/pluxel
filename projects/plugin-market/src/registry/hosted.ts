@@ -55,7 +55,7 @@ function publishInput(input: unknown, name: string) {
 		return badPublish()
 	let bytes: Uint8Array<ArrayBuffer>
 	try {
-		bytes = Uint8Array.from(atob(attachment.data), (letter) => letter.charCodeAt(0))
+		bytes = Uint8Array.fromBase64(attachment.data)
 	} catch {
 		return badPublish()
 	}

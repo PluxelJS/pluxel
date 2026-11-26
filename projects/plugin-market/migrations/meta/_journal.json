@@ -64,6 +64,13 @@
 			"when": 1795421973254,
 			"tag": "0008_repository_owners",
 			"breakpoints": true
+		},
+		{
+			"idx": 9,
+			"version": "6",
+			"when": 1795707938641,
+			"tag": "0009_snapshot_validator",
+			"breakpoints": true
 		}
 	]
 }

@@ -14,6 +14,8 @@
 
 主站从 D1 读取当前可见的目录。只读镜像按 ETag 同步公开快照，在一次 SQLite 事务中替换数据；同步失败时继续提供上一次成功的目录。[来源配置](../projects/plugin-market/README.md#本地运行与来源配置) · [镜像部署](../projects/plugin-market/README.md#只读镜像)
 
+D1 在包和发行写事务内使快照 ETag 失效。主站只保存最近一次成功编码的 ETag、快照格式版本和有序公开来源集合。条件请求命中时只读取这条记录。重新导出时在同一事务读取目录和 revision，仅当 revision 仍然匹配才保存 ETag。[快照实现](../projects/plugin-market/src/catalog/snapshot.ts)
+
 ## 从目录到精确发行
 
 `observe` 保存 registry 声明的 dist-tags、说明和 README，并记录 `metadataVersion`。`refresh` 针对精确版本核对归档 SHA-512、包名、版本、公开文件和依赖，通过审核后写入发行记录。概览的 **Requirements** 只采用与 `metadataVersion` 匹配的已检查发行。这样即使 `latest` 已经前移，用户仍能区分新版 README 与旧版的依赖要求。[目录查询](../projects/plugin-market/src/catalog/queries.ts) · [归档检查](../projects/plugin-market/src/registry/tarball.ts)

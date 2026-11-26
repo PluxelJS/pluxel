@@ -1,6 +1,7 @@
 {
 	"extends": "../../tsconfig.json",
 	"compilerOptions": {
+		"lib": ["ES2024", "ESNext.TypedArrays"],
 		"strictNullChecks": true,
 		"types": ["@cloudflare/workers-types", "node", "vite/client"]
 	},

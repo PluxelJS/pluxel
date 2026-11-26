@@ -10,6 +10,14 @@ import {
 } from 'drizzle-orm/sqlite-core'
 import type { GitHubNotificationPublisher, MarketCuration, Provenance } from '../protocol'
 
+// Catalog writes invalidate the last successfully encoded public snapshot in the same transaction.
+export const snapshotState = sqliteTable('catalog_snapshot_state', {
+	id: integer('id').primaryKey(),
+	revision: integer('revision').notNull().default(0),
+	scope: text('scope'),
+	etag: text('etag'),
+})
+
 export const hostedReleases = sqliteTable(
 	'hosted_releases',
 	{

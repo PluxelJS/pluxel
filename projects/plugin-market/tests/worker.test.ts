@@ -18,12 +18,13 @@ import {
 	type Request as MiniflareRequest,
 } from 'miniflare'
 import { packTar, type TarEntry } from 'modern-tar'
-import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest'
+import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest'
 import { buildMarketWorker, workerModule } from '../dev/build-worker'
 import { fetchObservation, fetchRelease } from '../src/registry/npm'
 import { registrySources } from '../src/registry/sources'
 import type { MarketAdmin } from '../src/admin'
 import { connect } from '../src/db/d1'
+import { catalogSnapshotResponse } from '../src/catalog/snapshot'
 import {
 	MarketError,
 	registry,
@@ -377,7 +378,12 @@ describe('plugin market on workerd and D1', () => {
 			})
 			const rejected = await fixture(verified.name, { registry: hostedUrl, version: '1.0.1' })
 			const packagePath = `${hostedUrl}/${encodeURIComponent(verified.name)}`
-			function publish(item: Fixture, bearer?: string, tag = 'latest') {
+			function publish(
+				item: Fixture,
+				bearer?: string,
+				tag = 'latest',
+				data = Buffer.from(item.bytes).toString('base64'),
+			) {
 				return fetch(packagePath, {
 					method: 'PUT',
 					headers: {
@@ -391,7 +397,7 @@ describe('plugin market on workerd and D1', () => {
 						'dist-tags': { [tag]: item.version },
 						_attachments: {
 							'plugin.tgz': {
-								data: Buffer.from(item.bytes).toString('base64'),
+								data,
 								length: item.bytes.byteLength,
 							},
 						},
@@ -407,6 +413,9 @@ describe('plugin market on workerd and D1', () => {
 			).resolves.toMatchObject({ status: 403 })
 
 			const credential = await signPublisher(hostedUrl)
+			const malformed = await publish(verified, credential, 'latest', 'invalid=base64')
+			expect(malformed.status).toBe(400)
+			await expect(malformed.json()).resolves.toMatchObject({ code: 'invalid-publish' })
 			const denied = await publish(rejected, credential)
 			expect(denied.status).toBe(422)
 			await expect(denied.json()).resolves.toMatchObject({ code: 'review-license-required' })
@@ -1745,6 +1754,52 @@ describe('plugin market on workerd and D1', () => {
 		expect(await getJson('/v1/facets')).toMatchObject({
 			authors: [{ id: 'github:owner/unverified', count: 1, avatarUrl: null }],
 		})
+	})
+
+	it('revalidates snapshots without exporting rows and discards a validator overtaken by a write', async () => {
+		await fixture()
+		await callAdmin((access) => access.refresh(selected))
+		await db.update(packages).set({ readme: { text: 'x'.repeat(256 * 1024), truncated: false } })
+		const initial = await get('/v1/snapshot')
+		const tag = initial.headers.get('ETag')!
+		const body = await initial.arrayBuffer()
+		expect(body.byteLength).toBeGreaterThan(256 * 1024)
+		const request = new Request(new URL('/v1/snapshot', origin), {
+			headers: { 'If-None-Match': `"unrelated", W/${tag}` },
+		})
+		const readBatch = db.batch.bind(db)
+		const batch = vi.spyOn(db, 'batch')
+		try {
+			const hit = await catalogSnapshotResponse(request, db, [registry])
+			expect(hit.status).toBe(304)
+			expect(hit.headers.get('ETag')).toBe(tag)
+			expect(await hit.text()).toBe('')
+			expect(batch).not.toHaveBeenCalled()
+
+			await db.update(releases).set({ license: 'ISC' })
+			const edited = await get('/v1/snapshot', { 'If-None-Match': tag })
+			expect(edited.status).toBe(200)
+			expect(await edited.json()).toMatchObject({ releases: [{ license: 'ISC' }] })
+
+			const other = await catalogSnapshotResponse(request, db, [privateRegistry])
+			expect(other.status).toBe(200)
+			expect(await other.json()).toMatchObject({ registries: [privateRegistry], packages: [] })
+			await db.update(packages).set({ description: 'before concurrent write' })
+			batch.mockImplementationOnce(async (queries) => {
+				const snapshot = await readBatch(queries)
+				await db.update(packages).set({ hidden: true })
+				return snapshot
+			})
+			const previous = await catalogSnapshotResponse(request, db, [registry])
+			expect(await previous.json()).toMatchObject({
+				packages: [{ description: 'before concurrent write' }],
+			})
+			const latest = await get('/v1/snapshot', { 'If-None-Match': previous.headers.get('ETag')! })
+			expect(latest.status).toBe(200)
+			expect(await latest.json()).toMatchObject({ packages: [], releases: [] })
+		} finally {
+			batch.mockRestore()
+		}
 	})
 
 	it('serves a public mirror from committed SQLite data after the Worker goes offline', async () => {
