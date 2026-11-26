@@ -1,6 +1,32 @@
 import { expect, it } from 'vitest'
 import { DraftGraph, factoryProvider, Runtime } from '../../../src/internal/di'
 
+it('retains undefined until a shared store replaces or clears it', () => {
+	const key = Symbol('service')
+	let calls = 0
+	const draft = new DraftGraph()
+	draft.put(
+		factoryProvider({
+			key,
+			use: (): undefined => {
+				calls++
+				return undefined
+			},
+		}),
+	)
+	const built = draft.build()
+	if ('err' in built) throw built.err
+	const runtime = built.val.runtime
+	expect(runtime.ensure(key)).toBeUndefined()
+	expect(runtime.ensure(key)).toBeUndefined()
+	expect(calls).toBe(1)
+	draft.instances.set(key, false)
+	expect(runtime.ensure(key)).toBe(false)
+	draft.instances.clear()
+	expect(runtime.ensure(key)).toBeUndefined()
+	expect(calls).toBe(2)
+})
+
 it('refreshes retained aliases across runtimes after consuming a one-shot invalidation iterable', () => {
 	const token = Symbol('alias')
 	const first = Symbol('first service')

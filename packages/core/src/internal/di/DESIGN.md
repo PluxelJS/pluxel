@@ -9,7 +9,7 @@
 | [graph.ts](./graph.ts) 的 `DraftGraph`             | staged provider 声明、dirty slots、编译和提交                  |
 | `GraphSnapshot`                                    | 已验证声明、token owner、required/optional 正反向边与 revision |
 | `Runtime`                                          | 对指定 snapshot 同步解析和激活 provider                        |
-| [InstanceStore.ts](./InstanceStore.ts)             | 显式实例缓存及全局/逐 key revision                             |
+| [InstanceStore.ts](./InstanceStore.ts)             | 按节点身份保存实例，供多个 snapshot 的 Runtime 共享            |
 | [errors.ts](./errors.ts)、[result.ts](./result.ts) | 图验证错误与 Result                                            |
 
 `NodeKey` 是节点身份，`Token` 是查找入口；一个节点可提供多个 token，同一 token 不能有多个有效 provider。Plugin 层传入 interned slot，不能用 class name 或 displayName 替代身份。
@@ -28,7 +28,7 @@ Snapshot 使用数字 slot、分块表与按需 activator/edge caches，规划�
 
 ## 缓存与生命周期
 
-`retain` provider 复用 InstanceStore；`fresh` 按调用构造。Runtime 的快速缓存同时核对 store 与 key revision，外部删除或替换实例不得返回旧值。缓存值可能是 `undefined`，存在性不能通过 truthiness 判断。
+`retain` provider 从共享的 InstanceStore 读取当前实例，`fresh` 按调用构造。外部替换、删除和清空立即对共享该 store 的所有 Runtime 生效。值为 `undefined` 时单独检查 key 是否存在。按 slot 记录的激活中节点仅占用当前递归调用所需的空间。
 
 Kernel 不启动或停止 Plugin，不 drain effects，不拥有 Vite/HMR、持久化、Host 运行意图或异步资源协议。这些工作由 Core lifecycle 与 Host coordinator 按 graph facts 执行。
 

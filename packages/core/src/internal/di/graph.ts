@@ -1269,63 +1269,24 @@ export class GraphSnapshot<M = unknown> {
 }
 
 export class Runtime<M = unknown> {
-	private readonly resolvingMarks: number[] = []
-	private readonly retainedValues: unknown[] = []
-	private readonly retainedRevisions: number[] = []
-	private readonly retainedStoreRevisions: number[] = []
-	private readonly retainedKnown: number[] = []
+	private readonly resolving = new Set<Slot>()
 
 	public constructor(
 		public readonly graph: GraphSnapshot<M>,
 		public readonly instances: InstanceStore<NodeKey, unknown> = new InstanceStore(),
 	) {}
 
-	private loadRetainedAtSlot<T>(slot: Slot, nodeKey: NodeKey): T | undefined {
-		const storeRevision = this.instances.getRevision()
-		if (this.retainedKnown[slot] === 1 && this.retainedStoreRevisions[slot] === storeRevision)
-			return this.retainedValues[slot] as T | undefined
-		const keyRevision = this.instances.getKeyRevision(nodeKey)
-		if (this.retainedKnown[slot] === 1 && this.retainedRevisions[slot] === keyRevision) {
-			this.retainedStoreRevisions[slot] = storeRevision
-			return this.retainedValues[slot] as T | undefined
-		}
-		if (keyRevision === 0) {
-			this.clearRetainedAtSlot(slot)
-			return undefined
-		}
-		const value = this.instances.peek(nodeKey) as T | undefined
-		this.retainedValues[slot] = value
-		this.retainedRevisions[slot] = keyRevision
-		this.retainedStoreRevisions[slot] = storeRevision
-		this.retainedKnown[slot] = 1
-		return value
-	}
-
-	private storeRetainedAtSlot(slot: Slot, nodeKey: NodeKey, value: unknown): void {
-		this.instances.set(nodeKey, value)
-		this.retainedValues[slot] = value
-		this.retainedRevisions[slot] = this.instances.getKeyRevision(nodeKey)
-		this.retainedStoreRevisions[slot] = this.instances.getRevision()
-		this.retainedKnown[slot] = 1
-	}
-
-	private clearRetainedAtSlot(slot: Slot): void {
-		this.retainedKnown[slot] = 0
-		this.retainedRevisions[slot] = 0
-		this.retainedStoreRevisions[slot] = 0
-		this.retainedValues[slot] = undefined
-	}
-
 	private resolveHandle(handle: Token | NodeKey): {
 		asKey: boolean
 		slot: Slot | undefined
 		nodeKey: NodeKey | undefined
 	} {
-		if (this.graph.has(handle as NodeKey)) {
+		const keySlot = this.graph.slotOf(handle as NodeKey)
+		if (keySlot !== undefined) {
 			const nodeKey = handle as NodeKey
 			return {
 				asKey: true,
-				slot: this.graph.slotOf(nodeKey),
+				slot: keySlot,
 				nodeKey,
 			}
 		}
@@ -1339,11 +1300,6 @@ export class Runtime<M = unknown> {
 	}
 
 	public peekByKey<T>(nodeKey: NodeKey): T | undefined {
-		const slot = this.graph.slotOf(nodeKey)
-		if (slot !== undefined) {
-			const declaration = this.graph.declarationAtSlot(slot)
-			if (declaration?.cache === 'retain') return this.loadRetainedAtSlot(slot, nodeKey)
-		}
 		return this.instances.peek(nodeKey) as T | undefined
 	}
 
@@ -1363,21 +1319,20 @@ export class Runtime<M = unknown> {
 
 	public ensureBySlot<T>(slot: Slot): T {
 		const declaration = this.graph.declarationAtSlot(slot)
-		const nodeKey = this.graph.keyOf(slot)
-		if (!declaration || nodeKey === undefined) throw new Error('Unknown node key')
+		if (!declaration) throw new Error('Unknown node key')
+		const nodeKey = declaration.key
 		if (declaration.cache === 'retain') {
-			const cached = this.loadRetainedAtSlot<T>(slot, nodeKey)
-			if (cached !== undefined) return cached as T
-			if (this.retainedKnown[slot] === 1) return cached as T
+			const cached = this.instances.peek(nodeKey)
+			if (cached !== undefined || this.instances.has(nodeKey)) return cached as T
 		}
-		if (this.resolvingMarks[slot] === 1) throw new Error('Unexpected runtime cycle')
-		this.resolvingMarks[slot] = 1
+		if (this.resolving.has(slot)) throw new Error('Unexpected runtime cycle')
+		this.resolving.add(slot)
 		try {
 			const value = this.graph.activatorAtSlot(slot)(this) as T
-			if (declaration.cache === 'retain') this.storeRetainedAtSlot(slot, nodeKey, value)
+			if (declaration.cache === 'retain') this.instances.set(nodeKey, value)
 			return value
 		} finally {
-			this.resolvingMarks[slot] = 0
+			this.resolving.delete(slot)
 		}
 	}
 
@@ -1403,18 +1358,12 @@ export class Runtime<M = unknown> {
 
 	public delete(handle: Token | NodeKey): void {
 		const resolved = this.resolveHandle(handle)
-		if (resolved.slot !== undefined) this.clearRetainedAtSlot(resolved.slot)
 		if (resolved.nodeKey === undefined) return
 		this.instances.delete(resolved.nodeKey)
 	}
 
 	public deleteMany(keys: Iterable<NodeKey>): void {
-		const handles = Array.isArray(keys) ? keys : [...keys]
-		for (const key of handles) {
-			const slot = this.graph.slotOf(key)
-			if (slot !== undefined) this.clearRetainedAtSlot(slot)
-		}
-		this.instances.deleteMany(handles)
+		this.instances.deleteMany(keys)
 	}
 }
 
