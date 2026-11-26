@@ -631,6 +631,7 @@ export class PluginService {
 
 	private stableStartOrder(graph: PluginGraph, nodes: Iterable<PluginNodeSlot>): PluginNodeSlot[] {
 		const orderedNodes = this.stableNodeOrder(graph, nodes)
+		if (orderedNodes.length <= 1) return orderedNodes
 		const included = new Set(orderedNodes)
 		const remaining = new Map<PluginNodeSlot, number>()
 		const dependents = new Map<PluginNodeSlot, PluginNodeSlot[]>()
@@ -654,51 +655,41 @@ export class PluginService {
 		let frontier = orderedNodes.filter((node) => remaining.get(node) === 0)
 		const out: PluginNodeSlot[] = []
 		while (frontier.length > 0) {
-			frontier.sort(compare)
-			const next = new Set<PluginNodeSlot>()
+			const next: PluginNodeSlot[] = []
 			for (const node of frontier) {
 				out.push(node)
 				for (const dependent of dependents.get(node)!) {
 					const count = remaining.get(dependent)! - 1
 					remaining.set(dependent, count)
-					if (count === 0) next.add(dependent)
+					if (count === 0) next.push(dependent)
 				}
 			}
-			frontier = [...next]
+			frontier = next.sort(compare)
 		}
-		const emitted = new Set(out)
-		const leftovers = orderedNodes.filter((node) => !emitted.has(node)).sort(compare)
-		out.push(...leftovers)
+		if (out.length < orderedNodes.length) {
+			for (const node of orderedNodes) if (remaining.get(node)! > 0) out.push(node)
+		}
 		return out
 	}
 
 	private collectStartedGenerationContexts(
-		graph: PluginGraph,
 		runtime: PluginRuntime,
-		nodes: Iterable<PluginNodeSlot>,
+		ordered: readonly PluginNodeSlot[],
 		failed: ReadonlySet<PluginNodeSlot>,
 	): readonly PluginContext[] {
-		const started = new Set<PluginContext>()
-		for (const node of this.stableStartOrder(graph, nodes)) {
+		const started: PluginContext[] = []
+		for (const node of ordered) {
 			if (failed.has(node)) continue
 			const instance = runtime.peekByKey<BasePlugin>(node)
 			if (!instance || !this.lifecycleManager.isRunning(instance)) continue
-			started.add(getPluginGenerationContext(instance) as PluginContext)
+			started.push(getPluginGenerationContext(instance) as PluginContext)
 		}
-		return Object.freeze([...started])
+		return Object.freeze(started)
 	}
 
-	private collectFailedNodes(
-		graph: PluginGraph,
-		nodes: Iterable<PluginNodeSlot>,
-		failed: ReadonlySet<PluginNodeSlot>,
-	): readonly PluginNodeSlot[] {
-		return Object.freeze(this.stableStartOrder(graph, nodes).filter((node) => failed.has(node)))
-	}
-
-	private stableContextOrder(contexts: Iterable<PluginContext>): readonly PluginContext[] {
+	private stableContextOrder(contexts: ReadonlySet<PluginContext>): readonly PluginContext[] {
 		return Object.freeze(
-			[...new Set(contexts)].sort((left, right) =>
+			[...contexts].sort((left, right) =>
 				comparePluginNodeAddress(left.pluginInfo.nodeAddress, right.pluginInfo.nodeAddress),
 			),
 		)
@@ -1372,11 +1363,12 @@ export class PluginService {
 			const pluginChanges = createPluginCommitChanges(plan, failed)
 			this.replacePendingStarts(failed)
 			if (this.lifecycleHooks.prepareCommit || this.lifecycleHooks.publishCommit) {
+				const ordered = this.stableStartOrder(graph, plan.toStart)
 				const publication: CoreCommitPublication = Object.freeze({
 					operation,
-					started: this.collectStartedGenerationContexts(graph, runtime, plan.toStart, failed),
+					started: this.collectStartedGenerationContexts(runtime, ordered, failed),
 					stopped: this.stableContextOrder(stopped),
-					failed: this.collectFailedNodes(graph, plan.toStart, failed),
+					failed: Object.freeze(ordered.filter((node) => failed.has(node))),
 				})
 				await this.prepareHostCommit(publication)
 				this.publishHostCommit(publication)

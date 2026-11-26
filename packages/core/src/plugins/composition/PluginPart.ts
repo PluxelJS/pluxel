@@ -1,6 +1,5 @@
 import type { Context, PluginContext } from '../../context/Context'
 import { createOwnerContext } from '../../context/context-factory'
-import { closeConsumerInvocations, closeOwnerInvocations } from '../../internal/owner-invocations'
 import type { BasePlugin, PluginCleanup, PluginRequirementResolver } from './BasePlugin'
 import { createPluginConfigs, type PluginConfigs } from './PluginConfigs'
 import {
@@ -371,16 +370,6 @@ export function isPluginPartContext(ctx: Context): boolean {
 /** @internal Core test helper; deliberately not exported from a package entry point. */
 export function pluginPartContextOf(part: PluginPart<any, any>): Context {
 	return pluginPartStateOf(part).ctx
-}
-
-export function closePluginPartInvocations(host: PluginParts<BasePlugin>): Promise<void[]> {
-	const runtime = host as PluginPartsRuntime<BasePlugin>
-	return Promise.all([...runtime.partContexts].map((ctx) => closeOwnerInvocations(ctx)))
-}
-
-export function closePluginPartConsumerInvocations(host: PluginParts<BasePlugin>): Promise<void[]> {
-	const runtime = host as PluginPartsRuntime<BasePlugin>
-	return Promise.all([...runtime.partContexts].map((ctx) => closeConsumerInvocations(ctx)))
 }
 
 export function finalizePluginParts(host: PluginParts<BasePlugin>): void {

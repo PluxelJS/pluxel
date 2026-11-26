@@ -522,6 +522,11 @@ class EffectsImpl implements Effects, EffectGuardHost {
 		this.activeTransaction = undefined
 		const parentRegistration = this.parentRegistration
 		this.parentRegistration = undefined
+		if (this.nextId === 0) {
+			this.state = ServiceState.DISPOSED
+			parentRegistration?.cancel()
+			return this.resolved
+		}
 		let complete!: () => void
 		let fail!: (error: unknown) => void
 		this.disposePromise = new Promise<void>((resolve, reject) => {

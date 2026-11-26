@@ -1,5 +1,8 @@
 import { describe, expect, it } from 'vitest'
 import {
+	comparePluginDefinitionAddress,
+	comparePluginNodeAddress,
+	encodePluginDefinitionAddressBytes,
 	encodePluginNodeAddressBytes,
 	formatPluginNodeReference,
 	formatPluginNodeRoute,
@@ -71,6 +74,35 @@ describe('Plugin identity', () => {
 		expect(formatPluginNodeRoute(nodes[0]!)).toBe(
 			'v1/package-subpath/OrdersPlugin/@acme/orders/1/plugins',
 		)
+	})
+
+	it('orders addresses by the canonical wire bytes across entry kinds, Unicode and forks', () => {
+		const nodes = [
+			packageDefault,
+			sourceFork,
+			sourceAddress('plugins/例.ts'),
+			sourceAddress('plugins/é.ts'),
+			parsePluginNodeAddress({
+				definition: {
+					entry: { kind: 'package-subpath', packageName: 'p', subpath: './a' },
+					exportName: 'A',
+				},
+				variant: 'default',
+			}),
+		]
+		for (const left of nodes) {
+			for (const right of nodes) {
+				expect(Math.sign(comparePluginNodeAddress(left, right))).toBe(
+					Buffer.compare(encodePluginNodeAddressBytes(left), encodePluginNodeAddressBytes(right)),
+				)
+				expect(Math.sign(comparePluginDefinitionAddress(left.definition, right.definition))).toBe(
+					Buffer.compare(
+						encodePluginDefinitionAddressBytes(left.definition),
+						encodePluginDefinitionAddressBytes(right.definition),
+					),
+				)
+			}
+		}
 	})
 
 	it('rejects ambiguous or non-concrete package subpaths', () => {

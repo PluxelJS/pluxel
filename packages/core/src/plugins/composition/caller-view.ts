@@ -38,7 +38,7 @@ type StableFacadeState<T extends BasePlugin> = {
 	readonly target: T
 	readonly facade: T
 	readonly providerContext: Context
-	readonly callerContext: Context
+	callerContext?: Context
 	readonly consumer: Context
 	readonly descriptors: PropertyDescriptorResolver
 	readonly methods: Map<PropertyKey, MethodCacheEntry>
@@ -199,7 +199,7 @@ function readFacadeProperty<T extends BasePlugin>(
 	if (state.kind === 'stable') assertConsumerInvocationOpen(stable.consumer)
 	if (property === 'ctx') {
 		if (state.kind === 'stable') assertOwnerInvocationOpen(stable.providerContext)
-		return stable.callerContext
+		return (stable.callerContext ??= createCallerContext(stable.providerContext, stable.consumer))
 	}
 
 	const entry = stable.descriptors.find(property)
@@ -378,7 +378,6 @@ export function createCallerGenerationView<T extends BasePlugin>(
 	if (cached) return cached as T
 
 	const providerContext = getPluginGenerationContext(provider)
-	const callerContext = createCallerContext(providerContext, consumer)
 	const descriptors = new PropertyDescriptorResolver(provider)
 	const shape = compileFacadeShape(
 		provider,
@@ -390,7 +389,6 @@ export function createCallerGenerationView<T extends BasePlugin>(
 		target: provider,
 		facade: shape.facade,
 		providerContext,
-		callerContext,
 		consumer,
 		descriptors,
 		methods: new Map(),

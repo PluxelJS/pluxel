@@ -23,8 +23,6 @@ import {
 import { OptionalPluginBindings } from './OptionalPluginBindings'
 import {
 	createRootPluginParts,
-	closePluginPartConsumerInvocations,
-	closePluginPartInvocations,
 	finalizePluginParts,
 	startPluginParts,
 	assignPluginPartConfig,
@@ -297,17 +295,7 @@ export function getPluginLifecycleAdapter<P extends BasePlugin>(
 				state.initActive = false
 			}
 		},
-		drain: async () => {
-			await Promise.all([closeOwnerInvocations(ctx), closePluginPartInvocations(state.parts)])
-			try {
-				await ctx.effects.dispose()
-			} finally {
-				await Promise.all([
-					closeConsumerInvocations(ctx),
-					closePluginPartConsumerInvocations(state.parts),
-				])
-			}
-		},
+		drain: () => drainPluginGeneration(ctx, state.parts.partContexts),
 		subscribeErrors:
 			typeof onError === 'function'
 				? (cb) => {
@@ -315,5 +303,30 @@ export function getPluginLifecycleAdapter<P extends BasePlugin>(
 						return typeof off === 'function' ? (off as () => void) : undefined
 					}
 				: undefined,
+	}
+}
+
+/** Close admission on the generation and all its Parts before awaiting in-flight calls. */
+function closeGenerationInvocations(
+	ctx: Context,
+	parts: ReadonlySet<Context>,
+	close: (owner: Context) => void | Promise<void>,
+): void | Promise<unknown> {
+	const pending = close(ctx)
+	if (parts.size === 0) return pending
+	const drains = [pending]
+	for (const part of parts) drains.push(close(part))
+	return Promise.all(drains)
+}
+
+export async function drainPluginGeneration(
+	ctx: Context,
+	parts: ReadonlySet<Context>,
+): Promise<void> {
+	await closeGenerationInvocations(ctx, parts, closeOwnerInvocations)
+	try {
+		await ctx.effects.dispose()
+	} finally {
+		await closeGenerationInvocations(ctx, parts, closeConsumerInvocations)
 	}
 }

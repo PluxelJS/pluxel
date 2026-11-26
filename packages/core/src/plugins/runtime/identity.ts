@@ -496,9 +496,9 @@ export function comparePluginDefinitionAddress(
 	leftAddress: PluginDefinitionAddress,
 	rightAddress: PluginDefinitionAddress,
 ): number {
-	return compareBytes(
-		encodePluginDefinitionAddressBytes(leftAddress),
-		encodePluginDefinitionAddressBytes(rightAddress),
+	return compareIndexKeys(
+		pluginDefinitionIndexKey(leftAddress),
+		pluginDefinitionIndexKey(rightAddress),
 	)
 }
 
@@ -506,10 +506,7 @@ export function comparePluginNodeAddress(
 	leftAddress: PluginNodeAddress,
 	rightAddress: PluginNodeAddress,
 ): number {
-	return compareBytes(
-		encodePluginNodeAddressBytes(leftAddress),
-		encodePluginNodeAddressBytes(rightAddress),
-	)
+	return compareIndexKeys(pluginNodeIndexKey(leftAddress), pluginNodeIndexKey(rightAddress))
 }
 
 export function encodePluginDefinitionAddressBytes(
@@ -816,13 +813,9 @@ function bytesToHex(bytes: Uint8Array): string {
 	return output
 }
 
-function compareBytes(left: Uint8Array, right: Uint8Array): number {
-	const length = Math.min(left.length, right.length)
-	for (let index = 0; index < length; index += 1) {
-		const difference = left[index]! - right[index]!
-		if (difference !== 0) return difference
-	}
-	return left.length - right.length
+// Fixed-width lowercase hex preserves byte order, including length prefixes and UTF-8 fields.
+function compareIndexKeys(left: string, right: string): number {
+	return left < right ? -1 : left > right ? 1 : 0
 }
 
 function packageEntrySpecifier(
