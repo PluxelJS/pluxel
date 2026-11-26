@@ -58,7 +58,10 @@ it('serves the market UI and replaces the active plugin on the same workerd Host
 		const address = server.httpServer!.address()
 		if (!address || typeof address === 'string') throw new Error('Missing Vite listener')
 		const origin = `http://127.0.0.1:${address.port}`
-		const readCounts = async () => (await fetch(origin + '/v1/test-counts')).json()
+		const readCounts = async () => {
+			const response = await fetch(origin + '/v1/test-counts')
+			return response.json()
+		}
 		const readVersion = async () => {
 			const response = await fetch(origin + '/v1')
 			expect(response.status).toBe(200)
@@ -97,10 +100,8 @@ it('serves the market UI and replaces the active plugin on the same workerd Host
 			closed = true
 		})
 		const app = join(fixture.path, 'src/application.ts')
-		await writeFile(
-			app,
-			(await readFile(app, 'utf8')).replace("name: 'Plugin Market'", "name: 'Updated Market'"),
-		)
+		const appSource = await readFile(app, 'utf8')
+		await writeFile(app, appSource.replace("name: 'Plugin Market'", "name: 'Updated Market'"))
 		await vi.waitFor(() => expect(closed).toBe(true), { timeout: 10_000 })
 		await vi.waitFor(
 			async () => {

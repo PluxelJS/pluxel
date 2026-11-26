@@ -24,13 +24,12 @@ class AdmissionSignal {
 	private notification = Promise.withResolvers<void>()
 	changed = this.listen()
 
-	private listen(): Promise<void> {
-		return this.notification.promise.then(() => {
-			if (this.open) {
-				this.notification = Promise.withResolvers<void>()
-				this.changed = this.listen()
-			}
-		})
+	private async listen(): Promise<void> {
+		await this.notification.promise
+		if (this.open) {
+			this.notification = Promise.withResolvers<void>()
+			this.changed = this.listen()
+		}
 	}
 
 	wake(): void {
@@ -62,7 +61,7 @@ export class RequestAdmission {
 	acquire(signal: AbortSignal): (() => void) | Promise<() => void> {
 		signal.throwIfAborted()
 		const free = this.concurrent - this.active
-		if (free > 0 && !this.pending.length) return this.admit()
+		if (free > 0 && this.pending.length === 0) return this.admit()
 		// Released slots already belong to the oldest waiters, even before their continuations run.
 		if (this.pending.length >= this.queued + free)
 			throw new OutboundHttpError('queue_full', 'Outbound HTTP request queue is full')

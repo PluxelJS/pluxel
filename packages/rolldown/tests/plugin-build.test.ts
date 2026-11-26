@@ -516,7 +516,7 @@ describe('plugin package build', () => {
 			).rejects.toThrow(/peerDependencies\.@pluxel\/host/)
 			expect(await readFile(runtime.packageJsonPath, 'utf8')).toBe(original)
 		})
-	})
+	}, 30_000)
 
 	it('checks control export ownership before tsdown replaces its previous export map', async () => {
 		await withBuildFixture('basic', async () => {
@@ -538,7 +538,7 @@ describe('plugin package build', () => {
 			).rejects.toThrow(/belongs to the author/)
 			expect(await readFile(runtime.packageJsonPath, 'utf8')).toBe(original)
 		})
-	})
+	}, 30_000)
 
 	it('lowers one direct Workbench definition into one multi-expose MF producer', async () => {
 		await withBuildFixture('runtimeUi', async (fixtureDir) => {

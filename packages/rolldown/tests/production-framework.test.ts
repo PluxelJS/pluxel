@@ -61,7 +61,7 @@ it('relocates an explicit native residual and its runtime-only data under the Pl
 			join(root, 'app.ts'),
 			`import {createRequire} from 'node:module';
 import {BasePlugin,Plugin} from '@pluxel/core';
-import {defineHostApplication} from '@pluxel/host/application';
+import {defineHostApplication} from '@pluxel/host';
 import * as v from 'valibot';
 @Plugin()
 class Probe extends BasePlugin {

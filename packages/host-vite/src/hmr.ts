@@ -24,7 +24,9 @@ export async function closeOnHotReload(
 		try {
 			await release()
 		} catch (cleanupError) {
-			throw new AggregateError([error, cleanupError], '[host-vite] Host reload cleanup failed')
+			throw new AggregateError([error, cleanupError], '[host-vite] Host reload cleanup failed', {
+				cause: cleanupError,
+			})
 		}
 		throw error
 	}

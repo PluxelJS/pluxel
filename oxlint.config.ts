@@ -61,6 +61,7 @@ const ignorePatterns: IgnorePatterns = [
 	...pluxelOxlintIgnorePatterns,
 	// These independent projects and uninstalled templates have their own checks.
 	'vendor/**',
+	'projects/host-expo/**',
 	'engineering/**',
 	'packages/create/template/**',
 	'packages/cli/templates/**',
