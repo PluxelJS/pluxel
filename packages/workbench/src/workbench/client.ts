@@ -26,7 +26,7 @@ import type {
 import { parseWorkbenchContentPresentation } from './client-validation.ts'
 import { readWorkbenchShortcuts } from './shortcuts.ts'
 export { readWorkbenchEntryLink, readWorkbenchShortcuts } from './shortcuts.ts'
-import { parseWorkbenchPlacement, type WorkbenchPlacement } from './definition.ts'
+import { parseWorkbenchPlacement, type WorkbenchPlacement } from './entry-options.ts'
 import {
 	createWorkbenchOpenedContentHandle,
 	createWorkbenchOpenedViewHandle,

@@ -1,9 +1,6 @@
 import { describe, expect, it } from 'vitest'
-import {
-	parseWorkbenchPlacement,
-	readWorkbenchDefinition,
-	readWorkbenchDescriptor,
-} from '../src/workbench/definition'
+import { parseWorkbenchPlacement } from '../src/workbench/entry-options'
+import { readWorkbenchDefinition, readWorkbenchDescriptor } from '../src/workbench/definition'
 import type { RpcTarget } from 'capnweb'
 import { workbench } from '@pluxel/workbench'
 import * as v from 'valibot'

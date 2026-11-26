@@ -6,6 +6,7 @@ import type { RuntimeClientBootstrap } from '@pluxel/services/management/session
 import type { WorkbenchSessionApi } from '@pluxel/workbench/client'
 import type {
 	WorkbenchAttachmentPlacement,
+	WorkbenchDefinition,
 	WorkbenchPrincipal,
 	WorkbenchView,
 } from '@pluxel/workbench'
@@ -34,9 +35,16 @@ interface ConsumerApi extends RpcTarget {
 }
 
 declare const principal: WorkbenchPrincipal
-declare const view: WorkbenchView<ProviderApi>
-declare const providerOnly: WorkbenchAttachmentPlacement<ProviderApi, never>
-declare const providerAndConsumer: WorkbenchAttachmentPlacement<ProviderApi, ConsumerApi>
+declare const entries: WorkbenchDefinition<{
+	view: WorkbenchView<ProviderApi>
+	providerOnly: WorkbenchAttachmentPlacement<ProviderApi, never>
+	providerAndConsumer: WorkbenchAttachmentPlacement<ProviderApi, ConsumerApi>
+}>
+const { view, providerOnly, providerAndConsumer } = entries
+
+declare const unboundView: WorkbenchView<ProviderApi>
+// @ts-expect-error Open requires an entry bound by workbench.define().
+host.workbench.open({ target: FirstPlugin.nodeAddress(), entry: unboundView, principal })
 
 const viewLease = host.workbench.open({ target: FirstPlugin.nodeAddress(), entry: view, principal })
 const providerOnlyLease = host.workbench.open({

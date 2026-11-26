@@ -11,7 +11,7 @@ export {
 	parseWorkbenchPlacement,
 	parseWorkbenchSourcePath,
 	type WorkbenchPlacement,
-} from './definition.ts'
+} from './entry-options.ts'
 export { nearestPackageManifest, readPackageManifest } from '@pluxel/host/internal/shared-runtime'
 
 export type WorkbenchCapnwebPackage = SharedRuntimePackage
