@@ -3,15 +3,25 @@ import { mkdtemp, open, readdir, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { BasePlugin, Plugin } from '@pluxel/core'
+import { installOwnerViewService } from '@pluxel/core/host'
+import { requirePluginService } from '@pluxel/core/internal'
 import { FontsConfig, FontsPlugin } from '@pluxel/plugin-fonts'
-import { createTestHost } from '@pluxel/test'
+import { createTestHost, PluginLifecycleAssertionError } from '@pluxel/test'
 import {
 	defineHostApplication,
+	defineHostService,
 	envBinding,
 	fileBinding,
 	resolveHostApplication,
 } from '@pluxel/host'
-import { nodeModules } from '@pluxel/services/node'
+import { createResolvedHost } from '@pluxel/host/internal'
+import {
+	NodeModules,
+	nodeModules,
+	type NodeModuleCleanup,
+	type NodeModuleSetup,
+} from '@pluxel/services/node'
+import { attachTestNodeCompiler } from '@pluxel/services/internal/test'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { TypstConfig, TypstPlugin, type TypstFiles, type TypstSession } from '../src/index.ts'
 
@@ -47,13 +57,23 @@ async function fixture() {
 	const host = await createTestHost({
 		services: [nodeModules()],
 	})
+	const started = performance.now()
 	try {
 		await host.commit((change) => {
 			change.catalog.add([FontsPlugin, TypstPlugin, TypstConsumer])
-			change.start([FontsPlugin, TypstPlugin, TypstConsumer])
+			change.start([
+				FontsPlugin.nodeAddress(),
+				TypstPlugin.nodeAddress(),
+				TypstConsumer.nodeAddress(),
+			])
 		})
 		return host
 	} catch (cause) {
+		if (cause instanceof PluginLifecycleAssertionError)
+			console.error(
+				'Typst fixture startup failed',
+				JSON.stringify({ elapsedMs: performance.now() - started, summary: cause.summary }),
+			)
 		await host.dispose()
 		throw cause
 	}
@@ -65,7 +85,7 @@ afterEach(async () => {
 
 describe('TypstPlugin real host and worker', () => {
 	it.skipIf(!deploymentFont)(
-		'applies file budgets and env overrides without Workbench or Fs',
+		'applies file budgets and env overrides without Workbench',
 		async () => {
 			const source = await template()
 			await writeFile(
@@ -73,20 +93,31 @@ describe('TypstPlugin real host and worker', () => {
 				JSON.stringify({ maxSessions: 2, maxInputBytes: 1024 }),
 			)
 			const application = defineHostApplication(() => ({
-				plugins: [FontsPlugin, TypstPlugin, TypstConsumer],
-				envBindings: [
-					envBinding(FontsPlugin, {
-						config: { schema: FontsConfig, mapping: { files: 'FONT_FILES' } },
-					}),
-					envBinding(TypstPlugin, {
-						config: { schema: TypstConfig, mapping: { maxSessions: 'TYPST_SESSIONS' } },
-					}),
+				plugins: [
+					{
+						plugin: FontsPlugin,
+						envBindings: [
+							envBinding({
+								config: { schema: FontsConfig, mapping: { files: 'FONT_FILES' } },
+							}),
+						],
+					},
+					{
+						plugin: TypstPlugin,
+						envBindings: [
+							envBinding({
+								config: { schema: TypstConfig, mapping: { maxSessions: 'TYPST_SESSIONS' } },
+							}),
+						],
+						fileBindings: [
+							fileBinding({
+								config: { schema: TypstConfig, path: './typst.json' },
+							}),
+						],
+					},
+					{ plugin: TypstConsumer, autoStart: true },
 				],
-				fileBindings: [
-					fileBinding(TypstPlugin, {
-						config: { schema: TypstConfig, path: './typst.json' },
-					}),
-				],
+				services: [nodeModules()],
 			}))
 			const resolved = await resolveHostApplication(application, {
 				root: source.root,
@@ -94,17 +125,18 @@ describe('TypstPlugin real host and worker', () => {
 				env: { TYPST_SESSIONS: '1', FONT_FILES: JSON.stringify([deploymentFont]) },
 				bindings: {},
 			})
-			await using host = await createTestHost({
-				services: [nodeModules()],
-				config: resolved.config,
-				policy: resolved.policy,
-				runtime: resolved.runtime,
-			})
-			await host.commit((change) => {
-				change.catalog.add([FontsPlugin, TypstPlugin, TypstConsumer])
-				change.start([FontsPlugin, TypstPlugin, TypstConsumer])
-			})
-			const consumer = host.require(TypstConsumer)
+			await using host = await createResolvedHost(resolved)
+			const compiler = await attachTestNodeCompiler(host.ctx)
+			if (compiler)
+				host.ctx.effects.defer(
+					async () => {
+						await compiler[Symbol.asyncDispose]()
+					},
+					{ phase: 'final' },
+				)
+			const report = await host.start()
+			const consumer = requirePluginService(host.ctx).getInstance(TypstConsumer)
+			if (!consumer) throw new Error('Typst configured startup failed', { cause: report })
 			expect(consumer.fonts.portableFonts.fonts).toHaveLength(1)
 			const typst = consumer.typst
 			await using session = await typst.open(source)
@@ -122,7 +154,9 @@ describe('TypstPlugin real host and worker', () => {
 					},
 				}),
 			).rejects.toMatchObject({ code: 'LIMIT_EXCEEDED' })
-			const patched = await host.config.patch(TypstPlugin, { set: { maxSessions: 3 } })
+			const patched = await host.config.patch(TypstPlugin.nodeAddress(), {
+				set: { maxSessions: 3 },
+			})
 			expect(patched).toMatchObject({
 				ok: true,
 				managedInput: { maxSessions: 3 },
@@ -139,7 +173,7 @@ describe('TypstPlugin real host and worker', () => {
 		const source = await template()
 		const disk = join(source.root, 'value.json')
 		await writeFile(disk, '{"n":2}')
-		await using session = await host.require(TypstConsumer).typst.open(source)
+		await using session = await host.require(TypstConsumer.nodeAddress()).typst.open(source)
 		const first = await session.update({
 			files: { ...files, '/inputs/b.json': { kind: 'file', path: disk } },
 		})
@@ -169,7 +203,9 @@ describe('TypstPlugin real host and worker', () => {
 
 	it('serializes updates while an accepted PDF export retains its revision', async () => {
 		await using host = await fixture()
-		await using session = await host.require(TypstConsumer).typst.open(await template())
+		await using session = await host
+			.require(TypstConsumer.nodeAddress())
+			.typst.open(await template())
 		const first = await session.update({ files })
 		const expected = await session.exportPdf(first.revision)
 		const exporting = session.exportPdf(first.revision)
@@ -182,9 +218,72 @@ describe('TypstPlugin real host and worker', () => {
 		expect(thirdResult.revision).toBe(first.revision + 2)
 	}, 30_000)
 
+	it('locates dynamic chapters and their cross references across updates to one session', async () => {
+		await using host = await fixture()
+		const source = await template(`#set heading(numbering: "1.")
+#include "/inputs/chapters/background.typ"
+#pagebreak()
+#include "/inputs/chapters/approach.typ"`)
+		await using session = await host.require(TypstConsumer.nodeAddress()).typst.open(source)
+		const chapters = {
+			'/inputs/chapters/background.typ': {
+				kind: 'text',
+				text: '= Background <chapter-background>\nSee #ref(<chapter-approach>).\n',
+			},
+			'/inputs/chapters/approach.typ': {
+				kind: 'text',
+				text: '= Initial method <chapter-approach>\nSee #ref(<chapter-background>).\n',
+			},
+		} satisfies TypstFiles
+		const first = await session.update({ files: chapters })
+		const firstPage = await session.renderPage({ revision: first.revision, page: 2, scale: 1 })
+		const second = await session.update({
+			files: {
+				...chapters,
+				'/inputs/chapters/approach.typ': {
+					kind: 'text',
+					text: '= Updated method <chapter-approach>\nSee #ref(<chapter-background>).\nMore detail.\n',
+				},
+			},
+		})
+		expect(second.revision).toBe(first.revision + 1)
+		expect(second.preview.sessionId).toBe(first.preview.sessionId)
+		for (const { preview } of [first, second]) {
+			const { links, pages, points, targets } = preview.navigation
+			expect(pages).toHaveLength(2)
+			for (const [chapter, page, linkPage] of [
+				['background', 1, 2],
+				['approach', 2, 1],
+			] as const) {
+				expect(points).toContainEqual(
+					expect.objectContaining({ path: `inputs/chapters/${chapter}.typ`, line: 2, page }),
+				)
+				const target = targets.find(({ label }) => label === `chapter-${chapter}`)
+				if (!target) throw new Error(`Missing chapter target: ${chapter}`)
+				expect(target.page).toBe(page)
+				expect(links).toContainEqual(
+					expect.objectContaining({
+						page: linkPage,
+						target: { kind: 'position', page, x: target.x, y: target.y },
+					}),
+				)
+			}
+		}
+		expect(second.preview.navigation.points).toContainEqual(
+			expect.objectContaining({ path: 'inputs/chapters/approach.typ', line: 3, page: 2 }),
+		)
+		const secondPage = await session.renderPage({ revision: second.revision, page: 2, scale: 1 })
+		expect(Buffer.from(secondPage.data).equals(firstPage.data)).toBe(false)
+		expect(
+			Buffer.from(await session.exportPdf(second.revision))
+				.subarray(0, 5)
+				.toString(),
+		).toBe('%PDF-')
+	}, 30_000)
+
 	it('await using closes sessions, releases capacity, and rejects cached handles', async () => {
 		await using host = await fixture()
-		const typst = host.require(TypstConsumer).typst
+		const typst = host.require(TypstConsumer.nodeAddress()).typst
 		let cached!: TypstSession
 		{
 			await using session = await typst.open(await template())
@@ -202,9 +301,11 @@ describe('TypstPlugin real host and worker', () => {
 		'closes cached sessions when the %s stops',
 		async (owner) => {
 			await using host = await fixture()
-			const session = await host.require(TypstConsumer).typst.open(await template())
+			const session = await host.require(TypstConsumer.nodeAddress()).typst.open(await template())
 			await session.update({ files })
-			await host.stop(owner === 'consumer' ? TypstConsumer : TypstPlugin)
+			await host.stop(
+				owner === 'consumer' ? TypstConsumer.nodeAddress() : TypstPlugin.nodeAddress(),
+			)
 			await expect(session.update({ files })).rejects.toMatchObject({ code: 'CLOSED' })
 			await session.dispose()
 		},
@@ -218,7 +319,7 @@ describe('TypstPlugin real host and worker', () => {
 		// Session resources must be checked independently of other files' concurrent workers.
 		for (const key of ['TMPDIR', 'TEMP', 'TMP']) vi.stubEnv(key, temporaryRoot)
 		try {
-			const session = await host.require(TypstConsumer).typst.open(await template())
+			const session = await host.require(TypstConsumer.nodeAddress()).typst.open(await template())
 			const first = session.update({ files })
 			const controller = new AbortController()
 			const reason = new Error('cancel queued document')
@@ -250,7 +351,7 @@ describe('TypstPlugin real host and worker', () => {
 			for (let i = 0; i < 64; i++) await file.write(chunk)
 			await file.write('"}')
 		}
-		await using session = await host.require(TypstConsumer).typst.open(
+		await using session = await host.require(TypstConsumer.nodeAddress()).typst.open(
 			await template(`
  #let data = json("/inputs/large.json")
  #assert(data.payload.len() == ${payloadBytes})
@@ -302,26 +403,38 @@ it('replaces template sources and removes deleted imports in the same native ses
 	await using host = await fixture()
 	const source = await template('#include "shared.typ"')
 	await writeFile(join(source.root, 'shared.typ'), 'Before')
-	await using session = await host.require(TypstConsumer).typst.open(source)
+	await using session = await host.require(TypstConsumer.nodeAddress()).typst.open(source)
 	const first = await session.update({ files: {} })
 	await writeFile(join(source.root, 'shared.typ'), 'After shared theme edit')
 	const changed = await session.update({ template: source, files: {} })
 	expect(changed.preview.sessionId).toBe(first.preview.sessionId)
 	expect(changed.revision).toBe(first.revision + 1)
 	expect(changed.preview.data).not.toEqual(first.preview.data)
+	const image = await session.renderPage({ revision: changed.revision, page: 1 })
+	const pdf = await session.exportPdf(changed.revision)
 	await rm(join(source.root, 'shared.typ'))
 	await expect(session.update({ template: source, files: {} })).rejects.toMatchObject({
 		code: 'COMPILE_FAILED',
 	})
+	expect(await session.exportPdf(changed.revision)).toEqual(pdf)
+	expect(await session.renderPage({ revision: changed.revision, page: 1 })).toEqual(image)
+	const retained = await session.update({ files: {} })
+	expect(retained.revision).toBe(changed.revision + 1)
+	const retainedPage = await session.renderPage({ revision: retained.revision, page: 1 })
+	expect(retainedPage.data).toEqual(image.data)
+	await expect(
+		// Simulate an explicit malformed value arriving from JavaScript.
+		session.update({ template: null as never, files: {} }),
+	).rejects.toMatchObject({ code: 'INVALID_INPUT', path: 'template' })
 	await writeFile(join(source.root, 'shared.typ'), 'Repaired')
 	expect(await session.update({ template: source, files: {} })).toMatchObject({
-		revision: changed.revision + 1,
+		revision: retained.revision + 1,
 	})
 })
 
 it('preserves timeout reason, closes the interrupted native session and can reopen', async () => {
 	await using host = await fixture()
-	const typst = host.require(TypstConsumer).typst
+	const typst = host.require(TypstConsumer.nodeAddress()).typst
 	await using interrupted = await typst.open(await template('#for i in range(100000) { [x] }'))
 	await expect(interrupted.update({ files: {}, timeoutMs: 50 })).rejects.toMatchObject({
 		name: 'TimeoutError',
@@ -329,4 +442,43 @@ it('preserves timeout reason, closes the interrupted native session and can reop
 	await expect(interrupted.update({ files: {} })).rejects.toMatchObject({ code: 'CLOSED' })
 	await using recovered = await typst.open(await template('Recovered'))
 	expect(await recovered.update({ files: {} })).toHaveProperty('preview')
+})
+
+it('keeps sessions admitted by a new compiler artifact when the previous artifact is withdrawn', async () => {
+	let setup!: NodeModuleSetup
+	const initial = new URL('file:///test-compiler-a.mjs')
+	let activeCleanup: NodeModuleCleanup | undefined
+	await using host = await createTestHost({
+		services: [
+			defineHostService({
+				name: 'Test Node module replacement',
+				provides: [
+					installOwnerViewService(NodeModules, {
+						createRoot: () => ({}),
+						createView: (_, ctx) => ({
+							ctx,
+							async use(_declaration, accept) {
+								setup = accept
+								activeCleanup = (await setup(initial)) || undefined
+								ctx.effects.defer(() => activeCleanup?.())
+							},
+						}),
+					}),
+				],
+			}),
+		],
+	})
+	await host.commit((change) => {
+		change.catalog.add([FontsPlugin, TypstPlugin])
+		change.start([FontsPlugin.nodeAddress(), TypstPlugin.nodeAddress()])
+	})
+	const typst = host.require(TypstPlugin.nodeAddress())
+	const source = await template('Report')
+	await using oldSession = await typst.open(source)
+	const previousCleanup = activeCleanup
+	activeCleanup = (await setup(new URL('file:///test-compiler-b.mjs'))) || undefined
+	await using newSession = await typst.open(source)
+	await previousCleanup?.()
+	await expect(oldSession.exportPdf(1)).rejects.toMatchObject({ code: 'CLOSED' })
+	await expect(newSession.exportPdf(1)).rejects.toMatchObject({ code: 'STALE_REVISION' })
 })

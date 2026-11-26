@@ -1,30 +1,12 @@
 import { Autocomplete, MultiSelect, Radio, Select, Stack, TagsInput, Text } from '@mantine/core'
-import { useCallback, useEffect, useMemo, useState } from 'react'
+import { useMemo } from 'react'
+import type { PicklistFieldNode } from '../../../../core/fields'
 import { SegmentedButtons } from '../../SegmentedButtons'
-import { toInputString } from '../types'
 
-export interface PicklistControlProps {
-	meta: {
-		options?: readonly (string | number)[]
-		entries?: readonly {
-			value: string | number
-			label?: string
-			description?: string
-			group?: string
-			disabled?: boolean
-			accentColor?: string
-		}[]
-		labels?: Partial<Record<string | number, string>>
-		disabled?: readonly (string | number)[]
-		placeholder?: string
-		searchable?: boolean
-		clearable?: boolean
-		max?: number
-		create?: boolean
-		control?: 'select' | 'segmented' | 'radio'
-		multiple?: boolean
-		emptyLabel?: string
-	}
+interface PicklistControlProps {
+	node: PicklistFieldNode
+	multiple?: boolean
+	maxValues?: number
 	value?: unknown
 	onChange: (val: unknown) => void
 	onBlur?: () => void
@@ -39,59 +21,73 @@ export interface PicklistControlProps {
 	error?: string
 }
 
-interface NormalizedOption {
+type Choice = string | number
+type Entry = NonNullable<PicklistFieldNode['entries']>[number]
+type NormalizedOption = Omit<Entry, 'value' | 'label'> & {
 	value: string
 	label: string
-	disabled?: boolean
-	raw: string | number
-	description?: string
-	group?: string
-	accentColor?: string
+	raw: Choice
 }
 
-function normalizeOptions(
-	options: readonly (string | number)[] = [],
-	entries?: PicklistControlProps['meta']['entries'],
-	labels?: Partial<Record<string | number, string>>,
-	disabled?: readonly (string | number)[],
-) {
-	const disabledSet = new Set((disabled ?? []).map(String))
-	const mapped: NormalizedOption[] = []
-	const seen = new Set<string | number>()
+function isChoice(value: unknown): value is Choice {
+	return typeof value === 'string' || (typeof value === 'number' && Number.isFinite(value))
+}
 
-	for (const entry of entries ?? []) {
-		const raw = entry.value
-		seen.add(raw)
-		mapped.push({
-			value: String(raw),
-			label: entry.label ?? labels?.[raw] ?? String(raw),
-			description: entry.description,
-			group: entry.group,
-			accentColor: entry.accentColor,
-			disabled: entry.disabled ?? disabledSet.has(String(raw)),
+function normalizeOptions(meta: PicklistFieldNode, current: unknown) {
+	const entries = new Map<Choice, Entry>()
+	for (const entry of meta.entries ?? []) entries.set(entry.value, entry)
+	for (const value of meta.options ?? []) {
+		if (!entries.has(value)) entries.set(value, { value })
+	}
+	const numeric =
+		entries.size > 0 && [...entries.keys()].every((value) => typeof value === 'number')
+	// A saved or newly entered value remains visible even when it is outside the suggested options.
+	for (const value of Array.isArray(current) ? current : [current]) {
+		if (isChoice(value) && !entries.has(value)) entries.set(value, { value })
+	}
+
+	const disabled = new Set(meta.disabled)
+	const spellings = new Set(Array.from(entries.keys(), String))
+	const numbers = new Set([...entries.keys()].filter((raw) => typeof raw === 'number').map(String))
+	const byValue = new Map<Choice, NormalizedOption>()
+	const byId = new Map<string, NormalizedOption>()
+	const groups = new Map<string, NormalizedOption[]>()
+	const loose: NormalizedOption[] = []
+	for (const [raw, entry] of entries) {
+		let id = String(raw)
+		// Mantine accepts string IDs. Text-entry controls also display those IDs, so keep
+		// natural spellings and quote only a string that collides with a number or the empty selection.
+		if (typeof raw === 'string' && (raw === '' || numbers.has(raw))) {
+			do {
+				id = JSON.stringify(id)
+			} while (spellings.has(id))
+			spellings.add(id)
+		}
+		const option: NormalizedOption = {
+			...entry,
 			raw,
-		})
+			value: id,
+			label: entry.label ?? meta.labels?.[raw] ?? id,
+			disabled: entry.disabled ?? disabled.has(raw),
+		}
+		byValue.set(raw, option)
+		byId.set(id, option)
+		if (entry.group) {
+			const group = groups.get(entry.group) ?? []
+			group.push(option)
+			groups.set(entry.group, group)
+		} else {
+			loose.push(option)
+		}
 	}
-
-	for (const opt of options ?? []) {
-		if (seen.has(opt)) continue
-		mapped.push({
-			value: String(opt),
-			label: labels?.[opt] ?? String(opt),
-			disabled: disabledSet.has(String(opt)),
-			raw: opt,
-		})
-	}
-
-	const allValues: (string | number)[] = []
-	for (const opt of options ?? []) allValues.push(opt)
-	for (const entry of entries ?? []) allValues.push(entry.value)
-	const isAllNumbers = allValues.length > 0 && allValues.every((opt) => typeof opt === 'number')
-	return { entries: mapped, isAllNumbers }
+	const data = [...Array.from(groups, ([group, items]) => ({ group, items })), ...loose]
+	return { byValue, byId, data, flat: [...Array.from(groups.values()).flat(), ...loose], numeric }
 }
 
 export function PicklistControl({
-	meta,
+	node,
+	multiple,
+	maxValues,
 	value,
 	onChange,
 	onBlur,
@@ -115,52 +111,25 @@ export function PicklistControl({
 		errorProps: { id: ariaDescribedBy, style: { whiteSpace: 'pre-line' as const } },
 		attributes: { input: { 'aria-invalid': ariaInvalid, 'aria-describedby': ariaDescribedBy } },
 	}
-	const multiple = Boolean(meta.multiple)
-	const variant = meta.control ?? (multiple ? 'select' : 'select')
-
-	const normalized = useMemo(
-		() => normalizeOptions(meta.options, meta.entries, meta.labels, meta.disabled),
-		[meta.options, meta.entries, meta.labels, meta.disabled],
-	)
-
-	const [optionsState, setOptionsState] = useState<NormalizedOption[]>(normalized.entries)
-
-	useEffect(() => {
-		setOptionsState(normalized.entries)
-	}, [normalized.entries])
-
-	const ensureOption = useCallback(
-		(raw?: string | number | null) => {
-			if (raw == null) return
-			setOptionsState((prev) => {
-				if (prev.some((opt) => opt.raw === raw)) return prev
-				return [
-					...prev,
-					{ value: String(raw), label: meta.labels?.[raw as any] ?? String(raw), raw },
-				]
-			})
-		},
-		[meta.labels],
-	)
-
-	useEffect(() => {
-		if (Array.isArray(value)) {
-			value.forEach((item) => {
-				if (typeof item === 'string' || typeof item === 'number') ensureOption(item)
-			})
-		} else if (typeof value === 'string' || typeof value === 'number') {
-			ensureOption(value)
-		}
-	}, [value, ensureOption])
-
-	const optionMap = useMemo(() => {
-		const map = new Map<string, NormalizedOption>()
-		for (const opt of optionsState) map.set(opt.value, opt)
-		return map
-	}, [optionsState])
-
+	const choices = useMemo(() => normalizeOptions(node, value), [node, value])
+	const singleValue = isChoice(value) ? choices.byValue.get(value)?.value : undefined
+	const multiValue = Array.isArray(value)
+		? value.filter(isChoice).map((item) => choices.byValue.get(item)!.value)
+		: []
+	const typedValue = (text: string): Choice | null => {
+		const known = choices.byId.get(text)
+		if (known) return known.raw
+		const trimmed = text.trim()
+		if (!trimmed) return null
+		const number = Number(trimmed)
+		return choices.numeric && Number.isFinite(number) ? number : trimmed
+	}
+	const select = (id: string | null) => onChange(id === null ? null : choices.byId.get(id)!.raw)
+	const searchable = node.searchable ?? (node.options?.length ?? 0) >= 8
+	const clearable = node.clearable ?? !required
+	const dropdown = { withinPortal: true, position: 'bottom-start' as const }
 	const renderOption = ({ option }: { option: { value: string; label: string } }) => {
-		const detail = optionMap.get(option.value)
+		const detail = choices.byId.get(option.value)
 		return (
 			<div>
 				<Text fw={500} size="sm" c={detail?.accentColor ? `${detail.accentColor}.6` : undefined}>
@@ -175,154 +144,60 @@ export function PicklistControl({
 		)
 	}
 
-	const rawToId = useMemo(() => {
-		const map = new Map<string | number, string>()
-		for (const opt of optionsState) map.set(opt.raw, opt.value)
-		return map
-	}, [optionsState])
-
-	const toRaw = useCallback(
-		(id: string | null) => {
-			if (id === null) return null
-			const match = optionMap.get(id)
-			if (match) return match.raw
-			return normalized.isAllNumbers ? Number(id) : id
-		},
-		[optionMap, normalized.isAllNumbers],
-	)
-
-	const singleValue = useMemo(
-		() => (value == null ? '' : (rawToId.get(value as any) ?? toInputString(value))),
-		[value, rawToId],
-	)
-
-	const multiValue = useMemo(() => {
-		if (!Array.isArray(value)) return []
-		return (value as (string | number)[]).map((item) => rawToId.get(item) ?? String(item))
-	}, [value, rawToId])
-
-	const searchable = meta.searchable ?? (meta.options?.length ?? 0) >= 8
-	const clearable = meta.clearable ?? !required
-	const allowCreate = Boolean(meta.create)
-
-	const sharedData = useMemo(() => {
-		const loose: NormalizedOption[] = []
-		const groups = new Map<string, NormalizedOption[]>()
-		for (const option of optionsState) {
-			if (option.group) {
-				const bucket = groups.get(option.group) ?? []
-				bucket.push(option)
-				groups.set(option.group, bucket)
-			} else {
-				loose.push(option)
-			}
-		}
-		const all: NormalizedOption[] = []
-		for (const [, items] of groups) {
-			all.push(...items)
-		}
-		all.push(...loose)
-		return all
-	}, [optionsState])
-
-	const selectData = useMemo<any[]>(() => {
-		const groups = new Map<string, any[]>()
-		const loose: any[] = []
-		const toItem = (option: NormalizedOption): any => ({
-			value: option.value,
-			label: option.label,
-			disabled: option.disabled,
-			description: option.description,
-		})
-		for (const option of optionsState) {
-			if (option.group) {
-				const bucket = groups.get(option.group) ?? []
-				bucket.push(toItem(option))
-				groups.set(option.group, bucket)
-			} else {
-				loose.push(toItem(option))
-			}
-		}
-		const data: any[] = []
-		for (const [group, items] of groups) {
-			data.push({ group, items })
-		}
-		data.push(...loose)
-		return data
-	}, [optionsState])
-
-	const nothingFound = meta.emptyLabel ?? (searchable ? '无匹配项' : undefined)
+	const nothingFound = node.emptyLabel ?? (searchable ? '无匹配项' : undefined)
 
 	if (multiple) {
-		if (allowCreate) {
-			const tagsData = optionsState.map((option) => ({
-				value: option.value,
-				...(option.disabled ? { disabled: true } : {}),
-			}))
+		const limit = maxValues === undefined ? node.max : Math.min(maxValues, node.max ?? Infinity)
+		if (node.create) {
 			return (
 				<TagsInput
 					{...inputAccessibilityProps}
 					name={name}
-					data={tagsData}
+					data={choices.flat}
 					value={multiValue}
-					onChange={(ids) => {
-						const cleaned = ids.map((id) => id.trim()).filter(Boolean)
-						const raw = cleaned.map((id) => toRaw(id)).filter((item) => item !== null) as (
-							| string
-							| number
-						)[]
-						onChange(raw)
-					}}
-					onBlur={onBlur as any}
+					onChange={(ids) => onChange(ids.map(typedValue).filter(isChoice))}
+					onBlur={onBlur}
 					clearable={clearable}
-					maxTags={meta.max}
-					placeholder={meta.placeholder}
+					maxTags={limit}
+					placeholder={node.placeholder}
 					disabled={disabled}
-					comboboxProps={{ withinPortal: true, position: 'bottom-start' as const }}
+					comboboxProps={dropdown}
 					maxDropdownHeight={280}
 					aria-label={ariaLabel}
 				/>
 			)
 		}
-
-		const multiSelectProps: any = {
-			...inputAccessibilityProps,
-			name,
-			data: sharedData,
-			value: multiValue,
-			onChange: (ids: string[]) => {
-				const raw = ids.map((id) => toRaw(id)).filter((item) => item !== null) as (
-					| string
-					| number
-				)[]
-				onChange(raw)
-			},
-			onBlur,
-			'aria-label': ariaLabel,
-			searchable,
-			clearable,
-			hidePickedOptions: true,
-			withScrollArea: true,
-			comboboxProps: { withinPortal: true, position: 'bottom-start' as const },
-			maxDropdownHeight: 280,
-		}
-
-		if (meta.placeholder) multiSelectProps.placeholder = meta.placeholder
-		if (disabled !== undefined) multiSelectProps.disabled = disabled
-		if (meta.max) multiSelectProps.maxValues = meta.max
-		if (nothingFound) multiSelectProps.nothingFoundMessage = nothingFound
-		multiSelectProps.renderOption = renderOption
-
-		return <MultiSelect {...multiSelectProps} />
+		return (
+			<MultiSelect
+				{...inputAccessibilityProps}
+				name={name}
+				data={choices.data}
+				value={multiValue}
+				onChange={(ids: string[]) => onChange(ids.map((id) => choices.byId.get(id)!.raw))}
+				onBlur={onBlur}
+				aria-label={ariaLabel}
+				searchable={searchable}
+				clearable={clearable}
+				hidePickedOptions
+				withScrollArea
+				comboboxProps={dropdown}
+				maxDropdownHeight={280}
+				placeholder={node.placeholder}
+				disabled={disabled}
+				maxValues={limit}
+				nothingFoundMessage={nothingFound}
+				renderOption={renderOption}
+			/>
+		)
 	}
 
-	if (variant === 'segmented') {
+	if (node.control === 'segmented') {
 		return (
 			<div {...accessibilityProps} role="group" aria-label={ariaLabel}>
 				<SegmentedButtons
-					data={sharedData as any}
-					value={singleValue || null}
-					onChange={(id) => onChange(toRaw(id))}
+					data={choices.flat}
+					value={singleValue ?? null}
+					onChange={select}
 					onBlur={onBlur}
 					fullWidth
 					disabled={disabled}
@@ -331,19 +206,19 @@ export function PicklistControl({
 		)
 	}
 
-	if (variant === 'radio') {
+	if (node.control === 'radio') {
 		return (
 			<Radio.Group
 				{...accessibilityProps}
 				name={name}
-				value={singleValue || null}
-				onChange={(id) => onChange(toRaw(id))}
+				value={singleValue ?? null}
+				onChange={select}
 				onBlur={onBlur}
 				aria-label={ariaLabel}
 				{...(disabled !== undefined && { disabled })}
 			>
 				<Stack gap={6} mt="xs">
-					{sharedData.map((option) => (
+					{choices.flat.map((option) => (
 						<Radio
 							key={option.value}
 							value={option.value}
@@ -356,51 +231,43 @@ export function PicklistControl({
 		)
 	}
 
-	// Single select
-	if (allowCreate) {
-		const autoData = optionsState.map((option) => option.value)
+	if (node.create) {
+		// Autocomplete writes its selected label back into the textbox. Use the same
+		// unambiguous text for selection and free entry, independently of display metadata.
 		return (
 			<Autocomplete
 				{...inputAccessibilityProps}
 				name={name}
-				data={autoData}
-				value={singleValue || ''}
-				onChange={(next) => {
-					const trimmed = next.trim()
-					if (!trimmed) {
-						onChange(null)
-						return
-					}
-					onChange(toRaw(trimmed))
-				}}
-				onBlur={onBlur as any}
-				placeholder={meta.placeholder}
+				data={choices.flat.map((option) => ({ value: option.value, disabled: option.disabled }))}
+				value={singleValue ?? ''}
+				onChange={(next) => onChange(typedValue(next))}
+				onBlur={onBlur}
+				placeholder={node.placeholder}
 				disabled={disabled}
 				clearable={clearable}
-				comboboxProps={{ withinPortal: true, position: 'bottom-start' as const }}
+				comboboxProps={dropdown}
 				maxDropdownHeight={280}
 				aria-label={ariaLabel}
 			/>
 		)
 	}
 
-	const selectProps: any = {
-		...inputAccessibilityProps,
-		name,
-		data: selectData,
-		value: singleValue || null,
-		onChange: (id: string | null) => onChange(toRaw(id)),
-		onBlur,
-		'aria-label': ariaLabel,
-		searchable,
-		clearable,
-		comboboxProps: { withinPortal: true, position: 'bottom-start' as const },
-	}
-
-	if (meta.placeholder) selectProps.placeholder = meta.placeholder
-	if (disabled !== undefined) selectProps.disabled = disabled
-	if (nothingFound) selectProps.nothingFoundMessage = nothingFound
-	selectProps.renderOption = renderOption
-
-	return <Select {...selectProps} />
+	return (
+		<Select
+			{...inputAccessibilityProps}
+			name={name}
+			data={choices.data}
+			value={singleValue ?? null}
+			onChange={select}
+			onBlur={onBlur}
+			aria-label={ariaLabel}
+			searchable={searchable}
+			clearable={clearable}
+			comboboxProps={dropdown}
+			placeholder={node.placeholder}
+			disabled={disabled}
+			nothingFoundMessage={nothingFound}
+			renderOption={renderOption}
+		/>
+	)
 }

@@ -73,20 +73,21 @@ async function consoleRun(exportName, file = 'workbench.ts', input) {
 		.trim()
 		.split('\n')
 		.map((line) => JSON.parse(line))
-		.find((event) => event.event === 'accepted')
+		.find((event) => event.stage === 'accepted')
 	assert.ok(accepted?.receipt, 'The dev console preserves the original accepted receipt')
 	assert.equal(result.ok, true, JSON.stringify(result))
-	assert.equal(result.value.state, 'succeeded', JSON.stringify(result.value))
+	const { run } = result.value
+	assert.equal(run.state, 'succeeded', JSON.stringify(run))
 	receipt.console ??= []
 	receipt.console.push({
 		exportName,
 		receipt: accepted.receipt,
-		runId: result.value.runId,
-		hostEpoch: result.value.hostEpoch,
-		revisions: result.value.revisions,
-		value: result.value.value,
+		runId: run.runId,
+		hostEpoch: run.hostEpoch,
+		revisions: run.revisions,
+		value: run.value,
 	})
-	return result.value.value
+	return run.value
 }
 async function check(name, run) {
 	await run()
@@ -731,12 +732,15 @@ try {
 			await expect(
 				pane.getByRole('heading', { name: 'Plugin packages', exact: true }),
 			).toBeVisible()
+			await expect(pane.getByRole('tab', { name: 'Installed', exact: true })).toBeVisible()
 			await expect(
-				pane.getByRole('tab', { name: `Installed (${before.packages.length})`, exact: true }),
-			).toBeVisible()
-			await expect(pane.locator('tbody tr')).toHaveCount(before.packages.length)
-			await pane.getByRole('tab', { name: 'Direct install', exact: true }).click()
-			const input = pane.getByRole('textbox', { name: 'npm packages', exact: true })
+				pane.locator('section[aria-label="Managed packages"] li[aria-label]'),
+			).toHaveCount(before.packages.length)
+			await pane.getByRole('tab', { name: 'Find plugins', exact: true }).click()
+			const input = pane.getByRole('searchbox', {
+				name: 'Find plugins in your npm registry',
+				exact: true,
+			})
 			await expect(input).toBeEnabled()
 			const packageInputA = await input.elementHandle()
 			const draftA = '@pluxel/browser-draft-a@0.0.0'
@@ -753,9 +757,9 @@ try {
 			await rename(duplicate, copyTitle)
 			await expect(tab(copyTitle)).toBeVisible()
 			const copyPane = page.getByRole('tabpanel', { name: copyTitle, exact: true })
-			await copyPane.getByRole('tab', { name: 'Direct install', exact: true }).click()
-			const copyInput = copyPane.getByRole('textbox', {
-				name: 'npm packages',
+			await copyPane.getByRole('tab', { name: 'Find plugins', exact: true }).click()
+			const copyInput = copyPane.getByRole('searchbox', {
+				name: 'Find plugins in your npm registry',
 				exact: true,
 			})
 			await expect(copyInput).toBeEnabled()
@@ -917,6 +921,29 @@ try {
 				backendInstructionsUnchanged: true,
 			}
 			await page.screenshot({ path: resolve(artifacts, 'dirty-view-reopened.png') })
+		},
+	)
+	await check(
+		'a source editor opens independently of the center’s unsaved bot instructions',
+		async () => {
+			await page.goto(origin + basepath + '/bot-lab/discord/support')
+			const instructions = page.getByRole('textbox', { name: '机器人指令', exact: true })
+			const center = await nativeTabOf(instructions)
+			const original = await instructions.inputValue()
+			const draft = original + '（编辑中）'
+			await instructions.fill(draft)
+			await page.getByRole('button', { name: '打开来源编辑器' }).click()
+			const channel = page.getByRole('textbox', { name: '通知频道 ID' })
+			await expect(channel).toBeEnabled()
+			await expect(page).toHaveURL(/\/workbench\/.+\/discord\/bots\/support$/)
+			await channel.fill('#general')
+			await page.getByRole('button', { name: '保存频道' }).click()
+			await expect(page.getByText(/请输入.*频道 ID/)).toBeVisible()
+			await expect(channel).toHaveValue('#general')
+			await page.getByRole('button', { name: '放弃修改并重新读取' }).click()
+			await center.click()
+			await expect(instructions).toHaveValue(draft)
+			await instructions.fill(original)
 		},
 	)
 	await check('newer document navigation supersedes a slow real MF activation', async () => {

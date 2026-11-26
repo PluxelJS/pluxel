@@ -6,24 +6,19 @@ import {
 	pluginConfigValidate as validateConfig,
 	pluginConfigPatch as patchConfig,
 	pluginConfigReset as resetConfig,
-	projectPluginApplyReport,
+	projectPluginConfigResult,
 } from '@pluxel/host/internal'
-import { type HostConfigMutation, type HostPluginConfigResult } from '@pluxel/host'
+import { type HostConfigMutation } from '@pluxel/host'
 import { type ConfigPresentationResult, type ConfigResult } from '../../web/protocol'
-import { compileConfigPresentationPlanV2 } from '../presenters/configPresentation'
+import { compileConfigPresentationPlanV3 } from '../presenters/configPresentation'
 import { parseConfigFieldPathSegments } from '../../web/validation'
 
-function projectConfigResult(ctx: Context, result: HostPluginConfigResult): ConfigResult {
-	if (result.ok === false) return result
-	const { report, ...snapshot } = result
-	return { ...snapshot, ...(report ? { report: projectPluginApplyReport(ctx, report) } : {}) }
-}
 export async function pluginConfigGet(
 	ctx: Context,
 	owner: PluginNodeAddress,
 	options?: HostOperationOptions,
 ): Promise<ConfigResult> {
-	return projectConfigResult(ctx, await getConfig(ctx, owner, options))
+	return projectPluginConfigResult(ctx, await getConfig(ctx, owner, options))
 }
 export async function pluginConfigValidate(
 	ctx: Context,
@@ -31,7 +26,7 @@ export async function pluginConfigValidate(
 	patch: HostConfigMutation,
 	options?: HostOperationOptions,
 ): Promise<ConfigResult> {
-	return projectConfigResult(ctx, await validateConfig(ctx, owner, patch, options))
+	return projectPluginConfigResult(ctx, await validateConfig(ctx, owner, patch, options))
 }
 export async function pluginConfigPatch(
 	ctx: Context,
@@ -39,7 +34,7 @@ export async function pluginConfigPatch(
 	patch: HostConfigMutation,
 	options?: HostOperationOptions,
 ): Promise<ConfigResult> {
-	return projectConfigResult(ctx, await patchConfig(ctx, owner, patch, options))
+	return projectPluginConfigResult(ctx, await patchConfig(ctx, owner, patch, options))
 }
 export async function pluginConfigReset(
 	ctx: Context,
@@ -47,7 +42,7 @@ export async function pluginConfigReset(
 	paths?: readonly (readonly string[])[],
 	options?: HostOperationOptions,
 ): Promise<ConfigResult> {
-	return projectConfigResult(ctx, await resetConfig(ctx, owner, paths, options))
+	return projectPluginConfigResult(ctx, await resetConfig(ctx, owner, paths, options))
 }
 
 function plainRecord(value: unknown): Record<string, unknown> {
@@ -87,26 +82,16 @@ export async function pluginConfigPresentation(
 		}
 	}
 	const config = lookup.config
-	const declarations = [
-		...(config.owner ? [{ path: Object.freeze([] as string[]), declaration: config.owner }] : []),
-		...config.parts.flatMap((part) =>
-			part.declaration ? [{ path: part.path, declaration: part.declaration }] : [],
-		),
-	]
-	const sections = declarations.map(({ path, declaration }) =>
-		Object.freeze({
-			path: Object.freeze([...path]),
-			fieldName: declaration.fieldName,
-			schema: declaration.schema,
-		}),
-	)
 	return {
 		ok: true,
-		plan: compileConfigPresentationPlanV2({
-			fieldName: config.fieldName,
-			schema: config.schema,
-			sections,
-		}),
+		plan: compileConfigPresentationPlanV3([
+			...(config.owner
+				? [{ path: [], fieldName: config.owner.fieldName, schema: config.owner.schema }]
+				: []),
+			...config.parts.flatMap(({ path, declaration }) =>
+				declaration ? [{ path, fieldName: declaration.fieldName, schema: declaration.schema }] : [],
+			),
+		]),
 	}
 }
 
@@ -125,7 +110,7 @@ export async function pluginConfigPatchField(
 			message: parsed.message,
 		}
 	}
-	return projectConfigResult(
+	return projectPluginConfigResult(
 		ctx,
 		await patchConfig(
 			ctx,

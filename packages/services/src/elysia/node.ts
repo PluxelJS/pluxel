@@ -19,6 +19,8 @@ const CARRIER_CLOSE_CODE = 1001
 const CARRIER_CLOSE_REASON = 'Server Shutdown'
 const HANDSHAKE_TIMEOUT_MS = 10_000
 const FORCE_CLOSE_TIMEOUT_MS = 1_000
+// A queued send is accepted (-1); only a bounded queue overflow is dropped (0).
+const MAX_SOCKET_BUFFER_BYTES = 16 * 1024 * 1024
 
 type UpgradeState = {
 	ownerKey: string
@@ -257,6 +259,7 @@ export class NodeElysiaApplicationCarrier implements ElysiaApplicationCarrier {
 			send: (value, compress) => sendPeer(peer, value, compress),
 			sendText: (value, compress) => sendPeer(peer, value, compress),
 			sendBinary: (value, compress) => sendPeer(peer, value, compress),
+			getBufferedAmount: () => peer.bufferedAmount,
 			close: (code, reason) => peer.close(code, reason),
 			terminate: () => peer.terminate(),
 			ping: (value) => pingPeer(peer, value),
@@ -343,8 +346,10 @@ function sendPeer(
 	compress?: boolean,
 ): number {
 	if (!isOpen(peer)) return 0
+	const bytes = payloadByteLength(data)
+	if (peer.bufferedAmount + bytes > MAX_SOCKET_BUFFER_BYTES) return 0
 	peer.send(data, { compress })
-	return peer.bufferedAmount > 0 ? -1 : payloadByteLength(data)
+	return peer.bufferedAmount > 0 ? -1 : bytes
 }
 
 function pingPeer(peer: Peer, data?: string | ArrayBufferView | ArrayBufferLike): number {

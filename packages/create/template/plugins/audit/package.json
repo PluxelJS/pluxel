@@ -18,13 +18,20 @@
 	"devDependencies": {
 		"@pluxel/cli": "catalog:pluxel",
 		"@pluxel/core": "catalog:pluxel",
+		"@pluxel/host": "catalog:pluxel",
 		"@pluxel/test": "catalog:pluxel",
 		"typescript": "catalog:tooling",
 		"vite-plus": "catalog:tooling",
 		"vitest": "catalog:test"
 	},
 	"peerDependencies": {
-		"@pluxel/core": "catalog:pluxel"
+		"@pluxel/core": "catalog:pluxel",
+		"@pluxel/host": "catalog:pluxel"
+	},
+	"peerDependenciesMeta": {
+		"@pluxel/host": {
+			"optional": true
+		}
 	},
 	"pluxel": {
 		"artifactRoot": "dist",

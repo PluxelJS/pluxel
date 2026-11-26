@@ -1,21 +1,15 @@
 ---
-title: 插件持久化状态（TinyBase）
-description: 使用内建的 TinyBase Store 保存用户偏好与轻量业务记录，支持自动快照与跨重启恢复。
+title: 插件状态（TinyBase）
+description: 使用内建 Store 保存插件状态，为需要跨重启恢复的数据选择持久后端。
 ---
 
-对于用户偏好设置、开关标记或轻量业务记录，Pluxel 内置了对 [TinyBase](https://tinybase.org/) 响应式内存数据存储的支持。每个插件节点拥有专属的 Store，修改会自动由宿主生成快照并持久化到文件后端。
+每个插件节点可以通过 `ctx.tinybase` 打开自己的 TinyBase Store。Core 把 Store 的 Tables 和 Values 写成 JSON 快照，交给 Host 文档存储保存，无需安装 SQL 驱动。Node 和浏览器的直接启动入口默认把快照存在内存里。Cloudflare Worker 的快照可供同一个根上的后续请求读取，根被替换或 isolate 被回收时就会丢失。业务需要跨重启恢复时，在打开 Store 时指定 `durable: true`。 [Host 存储](../host/configuration.md#选择文件后端)
 
-> [!TIP]
-> **状态选型建议**
->
-> - **应用静态/环境配置**：使用 [`this.configs.use()`](./configuration.md)；
-> - **私密密钥与密码**：使用 [Vault 凭据服务](./vault.md)；
-> - **用户轻量状态与偏好**：使用本文介绍的 `ctx.tinybase`；
-> - **大型关系型数据与高频事务**：使用 [SQL 数据库服务](./database.md)。
+随版本交付的只读字典和模板可以直接导入。部署配置使用 `configs.use()`，部署凭据由 Vault 提供。 [发布前确定哪些输入](../host/runtime-portability.md#发布前确定哪些输入)
 
 ## 打开并使用原生 Store
 
-在插件的 `init()` 阶段，通过 `this.ctx.tinybase.open()` 打开托管的 Store：
+下面的插件在同一个 Host 根上保存主题选择，允许使用会话存储。它把自己创建的 Store 交给 Core，因此插件的 `peerDependencies.tinybase` 和 `devDependencies.tinybase` 都要指向已安装 `@pluxel/core` 清单中 `pluxel.tinybase` 指定的精确版本。可以使用指向该版本的 pnpm catalog。Host 会核对插件实际解析到的版本，再共享同一份 TinyBase。
 
 ```ts twoslash
 // @filename: preferences.ts
@@ -31,7 +25,6 @@ export class PreferencesPlugin extends BasePlugin {
 	private store!: Store
 
 	protected override async init(): Promise<void> {
-		// 1. 打开或创建 Store，并提供初始值快照
 		this.store = await this.state.open(createStore().setValues({ theme: 'system' }))
 		v.parse(Preference, this.store.getValues())
 	}
@@ -44,20 +37,31 @@ export class PreferencesPlugin extends BasePlugin {
 		const preference = v.parse(Preference, input)
 		this.store.setValue('theme', preference.theme)
 
-		// 2. 显式等待持久化刷新确认
 		await this.state.flush()
 	}
 }
 ```
 
-### 自动持久化与快照刷新
+`open(store)` 先读取该节点的快照。没有快照时使用传入 Store 的初值，已有快照时恢复完整内容，包括用户保存的空 Store。发布新版时修改初值，只会影响还没有快照的节点。
 
-- **自动持久化**：宿主会在插件更新数据后自动生成快照并安排写入，在插件卸载时会确保所有在途数据安全排空（Drain）。
-- **显式确认（`flush`）**：在对外提供的方法中，如果需要等待数据真正落盘并返回调用回执，可以 `await this.state.flush()`。
+如果用户下次打开应用时仍应看到已保存的主题，把示例中的打开操作换成下面这一行。
 
-## 单元测试中的状态验证
+```ts
+this.store = await this.state.open({
+	durable: true,
+	store: createStore().setValues({ theme: 'system' }),
+})
+```
 
-使用 `@pluxel/test` 可以在隔离的内存环境中测试状态读写与持久化：
+宿主须为快照目录挂载可写的持久存储，并在 `coreConfig.zenfs.durableMounts` 声明对应挂载点。会话后端或持久性未知时，`open({ durable: true })` 抛出错误码为 `DURABILITY_UNAVAILABLE` 的 `TinyBaseError`。在 `init()` 中等待它，部署方就能在插件启动时发现配置缺失。
+
+### 自动保存与写入确认
+
+Store 修改后，框架会安排快照写入。在向调用方确认保存前，用 `await this.state.flush()` 等待当前后端完成写入。内存后端也可以成功完成这一步。要验证跨重启恢复，请在同一介质上关闭并重新打开 Host，再读取上次保存的值。
+
+## 在内存宿主中验证读写
+
+下面的测试使用示例中的会话存储，检查同一插件实例上的修改和读取。
 
 ```ts no-twoslash
 import { createTestHost } from '@pluxel/test'
@@ -66,7 +70,7 @@ import { expect, it } from 'vitest'
 
 it('能够保存并读取偏好状态', async () => {
 	await using host = await createTestHost()
-	const preferences = await host.start(PreferencesPlugin)
+	const preferences = await host.start(PreferencesPlugin.nodeAddress())
 
 	expect(preferences.getTheme()).toBe('system')
 

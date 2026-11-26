@@ -9,7 +9,7 @@ import {
 	useWorkbenchState,
 } from '@worksplit/react'
 import { DockLocation, type IJsonModel } from 'flexlayout-react'
-import { findTypstEditorPosition } from '@pluxel/plugin-typst/source/browser'
+import { findTypstEditorPosition, type TypstSourceFiles } from '@pluxel/plugin-typst/source/browser'
 import { FileExplorer, type WorkspaceFolders } from './file-explorer'
 import { EditorPane } from './editor-pane'
 import { PreviewPane } from './preview-pane'
@@ -27,6 +27,7 @@ import {
 	useWorkspace,
 	type CaretSelection,
 	type FileFocus,
+	type FileLocation,
 	type WorkspaceContextValue,
 } from './workspace-context'
 
@@ -83,22 +84,24 @@ function PreviewDocument() {
 				(item) => item.folder === folder && item.pending,
 			)}
 			onIssue={workspace.report}
-			onNavigate={(point) => {
+			onNavigate={({ point, revision, kind }) => {
 				const path = point.path.replace(/^\//, '')
 				if (!Object.hasOwn(project.snapshot().files, path)) return
-				const position = path.endsWith('.typ')
-					? findTypstEditorPosition({
-							projection: project.open(path),
-							sourcePosition: { ...point, path },
-						})
-					: undefined
-				void workspace.openFile(
-					folder,
-					path,
-					position,
-					folder === 'application-form' && path === 'main.typ',
-					content,
-				)
+				const location: FileLocation = {
+					kind: 'source',
+					point,
+					revision,
+				}
+				const position =
+					kind === 'preview' &&
+					path.endsWith('.typ') &&
+					!(folder === 'application-form' && path === 'main.typ')
+						? findTypstEditorPosition({ projection: project.open(path), sourcePosition: point })
+						: undefined
+				void workspace.openFile(folder, path, {
+					location: position === undefined ? location : { kind: 'editor', position, revision },
+					source: content,
+				})
 			}}
 		/>
 	)
@@ -113,13 +116,13 @@ function ExplorerTool() {
 			activeFolder={workspace.active.folder}
 			activePath={workspace.active.path}
 			onOpen={(folder, path) => {
-				void workspace.openFile(folder, path, undefined, undefined, source)
+				void workspace.openFile(folder, path, { source })
 			}}
 			onCreate={async (path) => {
 				const project = workspace.folders[workspace.active.folder].project
 				const result = project.createFile({ baseRevision: project.revision, path, contents: '' })
 				if (!result.ok) return result.issues.map((issue) => issue.message).join('\n')
-				await workspace.openFile(workspace.active.folder, path, undefined, undefined, source)
+				await workspace.openFile(workspace.active.folder, path, { source })
 				return undefined
 			}}
 		/>
@@ -212,6 +215,7 @@ export function Workspace({
 		{},
 	)
 	const serial = useRef(0)
+	const openRequest = useRef(0)
 	const activeDocument = workbench.getActiveDocument()
 	const activeHref = activeDocument?.href
 	const isDocument = activeHref === '/preview' || activeHref?.startsWith('/chapter/')
@@ -261,10 +265,9 @@ export function Workspace({
 	async function openFile(
 		targetFolder: ExampleId,
 		path: string,
-		position?: number,
-		showSource?: boolean,
-		source?: ContentHandle,
+		{ location, source }: { location?: FileLocation; source?: ContentHandle } = {},
 	) {
+		const request = ++openRequest.current
 		const editors = workbench
 			.getDocuments()
 			.filter((doc) => doc.navigationKey === 'editor' || doc.navigationKey === 'chapter')
@@ -281,12 +284,13 @@ export function Workspace({
 				reuse: 'preserve',
 			},
 		)
+		if (request !== openRequest.current) return
 		if (result.status !== 'applied') {
 			if (result.status === 'failed') report(String(result.error))
 			return
 		}
 		setLastFile({ folder: targetFolder, path })
-		setFocus({ folder: targetFolder, path, position, source: showSource, serial: ++serial.current })
+		setFocus({ folder: targetFolder, path, location, serial: ++serial.current })
 		if (result.value.document.id === previousId) {
 			void workbench.activate('files', { presentation: 'reveal' })
 			await showPreview(targetFolder, true, result.value.document.handle)
@@ -384,10 +388,12 @@ export function Workspace({
 												return
 											}
 											try {
-												const project = folders[active.folder].project
+												const { project, writablePathsFor } = folders[active.folder]
+												const files: TypstSourceFiles = JSON.parse(saved)
 												const result = project.replace({
 													baseRevision: project.revision,
-													files: JSON.parse(saved),
+													files,
+													writablePaths: writablePathsFor(files),
 												})
 												report(
 													result.ok
@@ -408,10 +414,11 @@ export function Workspace({
 												report('请先应用或取消尚未应用的输入。')
 												return
 											}
-											const project = folders[active.folder].project
+											const { project, initialFiles, writablePathsFor } = folders[active.folder]
 											const result = project.replace({
 												baseRevision: project.revision,
-												files: folders[active.folder].initialFiles,
+												files: initialFiles,
+												writablePaths: writablePathsFor(initialFiles),
 											})
 											report(
 												result.ok

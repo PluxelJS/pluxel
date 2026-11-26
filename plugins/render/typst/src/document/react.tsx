@@ -1,11 +1,8 @@
 import { useEffect, useRef, useState } from 'react'
-import type { TypstPage, TypstPagePosition } from '../preview-contract.js'
-import type {
-	TypstDocumentLocation,
-	TypstDocumentPoint,
-	TypstDocumentPreviewData,
-	TypstDocumentSelection,
-} from './types.js'
+import { pointAtPreview } from '../browser/navigation.js'
+import type { TypstPage } from '../preview-contract.js'
+import { pointAtDocumentPosition, type Highlight } from './navigation.js'
+import type { TypstDocumentPreviewData, TypstDocumentSelection } from './types.js'
 
 export type {
 	TypstDocumentLocation,
@@ -24,71 +21,9 @@ export interface TypstDocumentPreviewProps {
 	/** Follow selection changes; explicit requests reveal even when disabled. @default true */
 	following?: boolean
 	/** A page click selects exposed document content. Native links navigate within the preview. */
-	onSelect(location: TypstDocumentLocation): void
+	onSelect(selection: TypstDocumentSelection): void
 	className?: string
 	'aria-label'?: string
-}
-
-interface Highlight extends TypstPagePosition {
-	width: number
-	height: number
-	location?: TypstDocumentLocation
-}
-
-function pointAtPosition(
-	preview: TypstDocumentPreviewData,
-	selection: TypstDocumentLocation,
-	page: number,
-): Highlight | undefined {
-	// Document boundaries can precede every editable glyph. Prefer the actual
-	// compiler destination to clamping position zero to the first body glyph.
-	const destination = preview.targets.find(
-		(target) =>
-			target.location?.documentId === selection.documentId &&
-			target.location.position === selection.position,
-	)
-	if (destination) return { ...destination, width: 2, height: 12 }
-	const point = preview.points
-		.filter((item) => item.documentId === selection.documentId)
-		.sort((a, b) => {
-			const distance = (item: TypstDocumentPoint) =>
-				Math.max(item.position - selection.position, selection.position - item.endPosition, 0)
-			const contains = (item: TypstDocumentPoint) =>
-				selection.position >= item.position && selection.position < item.endPosition
-			return (
-				distance(a) - distance(b) ||
-				Number(contains(b)) - Number(contains(a)) ||
-				a.endPosition - a.position - (b.endPosition - b.position) ||
-				Math.abs(a.page - page) - Math.abs(b.page - page)
-			)
-		})[0]
-	return (
-		point && {
-			...point,
-			location: { documentId: point.documentId, position: point.position },
-		}
-	)
-}
-
-function pointAtPage(points: readonly TypstDocumentPoint[], page: number, x: number, y: number) {
-	let found: TypstDocumentPoint | undefined
-	let distance = Infinity
-	for (const point of points) {
-		if (point.page !== page) continue
-		const next = Math.hypot(
-			Math.max(point.x - x, 0, x - point.x - point.width),
-			Math.max(point.y - y, 0, y - point.y - point.height),
-		)
-		if (next > Math.max(6, point.height * 0.6)) continue
-		if (
-			next < distance ||
-			(next === distance && point.width * point.height < found!.width * found!.height)
-		) {
-			found = point
-			distance = next
-		}
-	}
-	return found
 }
 
 function rectangle(
@@ -104,7 +39,7 @@ function rectangle(
 }
 
 function safeUrl(value: string) {
-	if (/^\/(?!\/)/.test(value)) return value
+	if (/^\/(?!\/)/.test(value) && !/[\\\t\r\n]/.test(value)) return value
 	try {
 		const url = new URL(value)
 		return ['https:', 'http:', 'mailto:', 'tel:'].includes(url.protocol) ? url.href : undefined
@@ -128,9 +63,15 @@ export function TypstDocumentPreview({
 	const scroller = useRef<HTMLDivElement>(null)
 	const [target, setTarget] = useState<{ revision: number; point: Highlight }>()
 	useEffect(() => {
-		if (!current || !preview || !selection || (!following && !selection.explicit)) return
+		if (
+			!current ||
+			!preview ||
+			selection?.revision !== preview.revision ||
+			(!following && !selection.explicit)
+		)
+			return
 		setTarget((previous) => {
-			const point = pointAtPosition(preview, selection, previous?.point.page ?? 1)
+			const point = pointAtDocumentPosition(preview, selection, previous?.point.page ?? 1)
 			return point ? { revision: preview.revision, point } : undefined
 		})
 	}, [selection, preview, current, following])
@@ -188,13 +129,18 @@ export function TypstDocumentPreview({
 								const point =
 									event.detail === 0
 										? preview.points.find((item) => item.page === page.page)
-										: pointAtPage(
+										: pointAtPreview(
 												preview.points,
 												page.page,
 												((event.clientX - bounds.left) / bounds.width) * page.width,
 												((event.clientY - bounds.top) / bounds.height) * page.height,
 											)
-								if (point) onSelect({ documentId: point.documentId, position: point.position })
+								if (point)
+									onSelect({
+										documentId: point.documentId,
+										position: point.position,
+										revision: preview.revision,
+									})
 							}}
 						>
 							<img

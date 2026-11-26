@@ -92,7 +92,7 @@ export type WorkersConfig = Readonly<{
 	worker?: Omit<WorkerOptions, 'eval' | 'transferList' | 'stdin' | 'stdout' | 'stderr'>
 }>
 
-/** Declare a module-level worker task for `ctx.workers.run()`. */
+/** Declare a module-level worker task for `ctx.service(Workers).run()`. */
 export function defineWorkerTask<Input, Output>(
 	moduleUrl: string | URL,
 	entryPath: string,

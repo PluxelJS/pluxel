@@ -55,16 +55,18 @@ const PingInput = v.object({
 
 export type RedisWorkbenchStatus = v.InferOutput<typeof RedisStatus>
 
-export const RedisWorkbench = workbench.define({
+export const RedisWorkbench = workbench.define(import.meta.url, {
 	connections: workbench.content({
-		document: workbench.markdown(import.meta.url, './workbench-guide.md', {
+		document: './workbench-guide.md',
+		slots: {
 			status: workbench.data(RedisStatus),
 			ping: workbench.action({ label: 'Send PING', input: PingInput }),
-		}),
-		placement: workbench.tab({
+		},
+		placement: {
+			kind: 'tab',
 			label: 'Connections',
-			icon: workbench.icons.PlugConnected,
+			icon: 'plug-connected',
 			order: 80,
-		}),
+		},
 	}),
 })

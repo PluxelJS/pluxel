@@ -1,3 +1,4 @@
+import { resolveContextService } from '@pluxel/core/internal'
 import { elysia } from '@pluxel/services/elysia'
 import { ElysiaRuntime } from '@pluxel/services/internal'
 import { NodeElysiaApplicationCarrier } from '../../src/elysia/node'
@@ -11,14 +12,17 @@ import { getWebSocketHooks, setWebSocketHooks } from 'crossws'
 import { newWebSocketRpcSession } from 'capnweb'
 import { BasePlugin, Plugin } from '@pluxel/core'
 import { createHost } from '@pluxel/host'
-import { resolveContextCapability } from '@pluxel/core/host'
+
 import { expect, it, vi } from 'vitest'
 import { requirePluginHostCoordinator } from '@pluxel/host/internal'
 import { RuntimeManagementTargetImpl } from '../../src/management/services/management/RuntimeManagementTarget'
 import { managementAccess, AdminAccess } from '../../src/management/access'
 import { management, createHostManagementTarget } from '../../src/management/service'
 import { createManagementEndpoint } from '../../src/management/index'
-import { createRuntimeManagementClient } from '../../src/management/client'
+import {
+	createRuntimeManagementClient,
+	OutboundHttpRevisionConflictError,
+} from '../../src/management/client'
 import { type RuntimeSessionRoot } from '../../src/management/web/session/protocol'
 
 // Crossws forwards the third argument to ws on Node, although its declaration only exposes WebSocket.
@@ -31,12 +35,12 @@ class ManagedWorker extends BasePlugin {}
 
 it('serves a real authenticated socket for a Core Host and leaves it alive when the endpoint closes', async () => {
 	const host = await createHost({
-		plugins: [ManagedWorker],
+		plugins: [{ plugin: ManagedWorker }],
 		services: [managementAccess(), management()],
 	})
 	await host.start()
 	const endpoint = createManagementEndpoint({
-		authentication: resolveContextCapability(host.ctx, AdminAccess),
+		authentication: resolveContextService(host.ctx, AdminAccess),
 		createManagement: (session) => createHostManagementTarget(host.ctx, session),
 		onError: (error) => {
 			throw error
@@ -99,9 +103,26 @@ it('serves a real authenticated socket for a Core Host and leaves it alive when 
 		expect(boot.kind).toBe('management')
 		if (boot.kind !== 'management') throw new Error('Expected authenticated management')
 		const client = createRuntimeManagementClient(boot.management)
-		expect(await client.describe()).toMatchObject({ workbench: { enabled: false } })
+		expect(await client.describe()).toMatchObject({
+			protocol: { capabilities: expect.arrayContaining(['outbound-http']) },
+			workbench: { enabled: false },
+		})
 		expect(await client.catalog.snapshot()).toMatchObject({ summary: { total: 1, running: 0 } })
 		const address = ManagedWorker.nodeAddress()
+		const outbound = await client.outboundHttp.get(address)
+		if (!outbound.managed) throw new Error('Expected managed outbound HTTP')
+		const saved = await client.outboundHttp.save(address, outbound.revision, { timeoutMs: 1_200 })
+		expect(saved.snapshot).toMatchObject({
+			owner: address,
+			settings: { timeoutMs: 1_200 },
+			effective: { timeoutMs: 1_200 },
+		})
+		await expect(client.outboundHttp.save(address, outbound.revision, null)).rejects.toBeInstanceOf(
+			OutboundHttpRevisionConflictError,
+		)
+		expect(await client.outboundHttp.save(address, saved.snapshot.revision, null)).toMatchObject({
+			snapshot: { settings: {}, effective: { timeoutMs: outbound.effective.timeoutMs } },
+		})
 		const started = await client.plugins.applyLifecycleCommands([{ address, command: 'start' }])
 		expect(started.ok).toBe(true)
 		expect(await host.status()).toMatchObject({ statuses: [{ lifecycleState: 'running' }] })
@@ -151,11 +172,11 @@ it.each([undefined, 'http://bot-new-omni.localhost:1355', 'https://bot-new-omni.
 	'mounts management with public origin %s and withdraws it on Host close',
 	async (publicOrigin) => {
 		const host = await createHost({
-			plugins: [ManagedWorker],
+			plugins: [{ plugin: ManagedWorker }],
 			services: [elysia(), managementAccess(), management(), managementHttp()],
 		})
 		await host.start()
-		const boundary = resolveContextCapability(host.ctx, ElysiaRuntime)
+		const boundary = resolveContextService(host.ctx, ElysiaRuntime)
 		const unmountShell = boundary.mountFallback({
 			matchesRequest: (request) => new URL(request.url).pathname === '/shell',
 			fetch: async (request) =>

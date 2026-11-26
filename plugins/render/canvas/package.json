@@ -35,7 +35,12 @@
 			"@pluxel/hmr": "./src/worker-pretext.ts",
 			"default": "./dist/worker/pretext.mjs"
 		},
-		"./package.json": "./package.json"
+		"./package.json": "./package.json",
+		"./control": {
+			"types": "./dist/control/index.d.mts",
+			"import": "./dist/control/index.mjs",
+			"default": "./dist/control/index.mjs"
+		}
 	},
 	"publishConfig": {
 		"exports": {
@@ -44,7 +49,12 @@
 			"./table": "./dist/table.mjs",
 			"./worker": "./dist/worker.mjs",
 			"./worker/pretext": "./dist/worker/pretext.mjs",
-			"./package.json": "./package.json"
+			"./package.json": "./package.json",
+			"./control": {
+				"types": "./dist/control/index.d.mts",
+				"import": "./dist/control/index.mjs",
+				"default": "./dist/control/index.mjs"
+			}
 		},
 		"access": "public"
 	},
@@ -63,6 +73,7 @@
 	"devDependencies": {
 		"@pluxel/cli": "workspace:*",
 		"@pluxel/core": "workspace:*",
+		"@pluxel/host": "workspace:*",
 		"@pluxel/plugin-fonts": "workspace:*",
 		"@pluxel/rolldown": "workspace:*",
 		"@pluxel/services": "workspace:*",
@@ -74,8 +85,14 @@
 	},
 	"peerDependencies": {
 		"@pluxel/core": "workspace:^",
+		"@pluxel/host": "workspace:^",
 		"@pluxel/plugin-fonts": "workspace:^",
 		"@pluxel/workbench": "workspace:^"
+	},
+	"peerDependenciesMeta": {
+		"@pluxel/host": {
+			"optional": true
+		}
 	},
 	"engines": {
 		"node": ">=24"
@@ -86,6 +103,7 @@
 		},
 		"artifactRoot": "dist",
 		"nodeArtifacts": true,
-		"workbenchArtifacts": true
+		"workbenchArtifacts": true,
+		"control": "./dist/control/manifest.json"
 	}
 }

@@ -9,17 +9,14 @@ import type {
 	WorkbenchConfirmInput,
 	WorkbenchNotificationInput,
 } from '@pluxel/workbench/federation'
-import type {
-	ConfigPresentationFieldV1,
-	RuntimeJsonValue,
-} from '@pluxel/services/management/client'
+import type { RuntimeJsonValue } from '@pluxel/services/management/client'
+import type { FieldNode } from 'valibot-form'
 import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
 import { AutoForm, type AutoFormOptions } from 'valibot-form/web'
 import type {
 	WorkbenchContentController,
 	WorkbenchContentDataState,
 } from './WorkbenchContentController'
-import { adaptConfigPresentationFields } from './presentationAdapter'
 import {
 	mapServerValidationIssues,
 	mountedFieldNames,
@@ -169,7 +166,7 @@ function PortableValue({
 	value,
 	depth = 0,
 }: {
-	field: ConfigPresentationFieldV1 | null | undefined
+	field: FieldNode | null | undefined
 	value: RuntimeJsonValue | undefined
 	depth?: number
 }): ReactNode {
@@ -287,7 +284,7 @@ function PortableRecord({
 	emptyLabel,
 }: {
 	record: Readonly<Record<string, RuntimeJsonValue>>
-	valueField: ConfigPresentationFieldV1 | null | undefined
+	valueField: FieldNode | null | undefined
 	depth: number
 	emptyLabel: string
 }) {
@@ -499,7 +496,7 @@ function ContentActionForm({
 	onCancel?: () => void
 	onSuccess?: () => void
 }) {
-	const fields = useMemo(() => adaptConfigPresentationFields(slot.fields ?? []), [slot.fields])
+	const fields = slot.fields ?? []
 	const opts = useMemo(
 		() =>
 			({
@@ -600,10 +597,7 @@ function actionFailureMessage(
 	}
 }
 
-function formatInlineValue(
-	field: ConfigPresentationFieldV1,
-	value: RuntimeJsonValue | undefined,
-): string {
+function formatInlineValue(field: FieldNode, value: RuntimeJsonValue | undefined): string {
 	if (value === undefined || value === null) return '—'
 	if (field.kind === 'string' && field.control === 'password') return '••••••••'
 	if (field.kind === 'boolean') return value ? '是' : '否'
@@ -615,7 +609,7 @@ function formatInlineValue(
 }
 
 function picklistLabel(
-	field: Extract<ConfigPresentationFieldV1, { kind: 'picklist' }>,
+	field: Extract<FieldNode, { kind: 'picklist' }>,
 	value: RuntimeJsonValue,
 ): string {
 	if (Array.isArray(value)) return value.map((item) => picklistLabel(field, item)).join('、')
@@ -624,7 +618,7 @@ function picklistLabel(
 	return entry?.label ?? field.labels?.[String(value)] ?? String(value)
 }
 
-function fieldLabel(field: ConfigPresentationFieldV1): string {
+function fieldLabel(field: FieldNode): string {
 	return field.meta.label || field.name || '数据'
 }
 

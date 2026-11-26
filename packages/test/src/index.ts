@@ -1,14 +1,13 @@
 import type { ServiceTestHost, ServiceTestHostOptions } from '@pluxel/services/internal/test'
 import type { WorkbenchTestDriver } from '@pluxel/workbench/test'
 
-export { definePluginFork, PluginLifecycleAssertionError } from '@pluxel/core/internal/test'
+export { PluginLifecycleAssertionError } from '@pluxel/core/internal/test'
 export type {
 	DependencyOverrideInput,
 	DependencyOverrideTarget,
 	ProviderDefaultInput,
 	PluginInitialConfigOptions,
 	LifecycleFailureCommitSummary,
-	PluginForkRef,
 	PluginInstanceFor,
 	PluginInstances,
 	PluginLifecycleAssertionOperation,
@@ -32,7 +31,7 @@ export type TestHostOptions<TWorkbench extends boolean = boolean> = Omit<
 	'services' | 'management'
 > &
 	Readonly<{
-		/** Complete service list. Defaults to []; no implicit standardServices installation. */
+		/** Complete service list. Defaults to []; no implicit service installation. */
 		services?: ServiceTestHostOptions['services']
 		/** Defaults to workbench's value. Explicit false conflicts with workbench: true. */
 		management?: boolean

@@ -1,5 +1,4 @@
-import './services/index'
-import { createCoreRootContext } from './context/core-plan'
+import { createCoreRootContext } from './context/zenfs-plan'
 import { prepareCoreContext } from './context/core-logging'
 import type { CoreHostConfig, RootContext } from './context/Context'
 import { closeOwnerInvocations } from './internal/owner-invocations'
@@ -21,13 +20,11 @@ import type { PluginConstructor, PluginToken } from './plugins/types'
 import {
 	assertPluginTestTargetCurrent,
 	collectPluginTestDraft,
-	definePluginFork,
 	PluginLifecycleAssertionError,
 	PluginTestOperationGate,
 	projectPluginTestCommitSummary,
 	resolvePluginTestTarget,
 	type LifecycleFailureCommitSummary,
-	type PluginForkRef,
 	type PluginInstanceFor,
 	type PluginInstances,
 	type PluginLifecycleAssertionOperation,
@@ -49,10 +46,9 @@ export type {
 	PluginRef,
 	PluginToken,
 } from './index'
-export { definePluginFork, PluginLifecycleAssertionError }
+export { PluginLifecycleAssertionError }
 export type {
 	LifecycleFailureCommitSummary,
-	PluginForkRef,
 	PluginInstanceFor,
 	PluginInstances,
 	PluginLifecycleAssertionOperation,
@@ -119,10 +115,7 @@ export interface CoreTestHost extends AsyncDisposable {
 	dispose(): Promise<void>
 }
 
-/**
- * Core-only test host configuration. `plugins` tunes the production lifecycle executor; it is not
- * a Plugin constructor catalog. Omitted fields use the same defaults as a Core root.
- */
+/** Core-only test host configuration uses the same facilities and execution as a Core root. */
 export type CoreTestHostConfig = CoreHostConfig
 
 type AddCommand = Readonly<{
@@ -230,6 +223,9 @@ export function createCoreTestHost(config: CoreTestHostConfig = {}): CoreTestHos
 					: immutableConfigRecord(options.initialConfig)
 			const previous = plan.adds.get(key)
 			if (previous) {
+				if (previous.implementation !== resolved.implementation) {
+					throw conflictError('add', target, 'two different implementations')
+				}
 				if (!configValuesEqual(previous.initialConfig, initialConfig)) {
 					throw conflictError('add', target, 'two different initialConfig values')
 				}
@@ -293,8 +289,8 @@ export function createCoreTestHost(config: CoreTestHostConfig = {}): CoreTestHos
 
 		const replaceDefinition = (current: PluginConstructor, next: PluginConstructor): undefined => {
 			authority.recordCommand('change.replaceDefinition()')
-			const currentAddress = resolvePluginTestTarget(current).address.definition
-			const nextAddress = resolvePluginTestTarget(next).address.definition
+			const currentAddress = current.address()
+			const nextAddress = next.address()
 			if (!pluginDefinitionAddressEqual(currentAddress, nextAddress)) {
 				throw new TypeError(
 					'[pluxel/test] replaceDefinition() constructors must have the same canonical definition address',
@@ -307,7 +303,7 @@ export function createCoreTestHost(config: CoreTestHostConfig = {}): CoreTestHos
 				throw conflictError('replaceDefinition', current, 'two different replacements')
 			}
 			plan.replacements.set(key, Object.freeze({ current, next, definition: currentAddress }))
-			plan.targets.set(pluginNodeIndexKey(resolvePluginTestTarget(current).address), current)
+			plan.targets.set(pluginNodeIndexKey(current.nodeAddress()), current.nodeAddress())
 			return undefined
 		}
 
@@ -332,23 +328,21 @@ export function createCoreTestHost(config: CoreTestHostConfig = {}): CoreTestHos
 
 		const setDefault = (input: ProviderDefaultInput): undefined => {
 			authority.recordCommand('change.dependencies.setDefault()')
-			const key = pluginDefinitionIndexKey(input.requirement.definitionAddress())
+			const key = pluginDefinitionIndexKey(input.requirement.address())
 			const previous = plan.defaults.get(key)
-			if (
-				previous &&
-				(previous.kind !== 'set' || !samePluginTarget(previous.provider, input.provider))
-			) {
+			if (previous && (previous.kind !== 'set' || previous.provider !== input.provider)) {
 				throw conflictError('dependencies.setDefault', input.requirement)
 			}
 			plan.defaults.set(key, Object.freeze({ kind: 'set', ...input }))
-			const provider = resolvePluginTestTarget(input.provider)
-			plan.targets.set(pluginNodeIndexKey(provider.address), input.provider)
+			const target = input.provider.nodeAddress()
+			const provider = resolvePluginTestTarget(target)
+			plan.targets.set(pluginNodeIndexKey(provider.address), target)
 			return undefined
 		}
 
 		const clearDefault = (requirement: PluginToken): undefined => {
 			authority.recordCommand('change.dependencies.clearDefault()')
-			const key = pluginDefinitionIndexKey(requirement.definitionAddress())
+			const key = pluginDefinitionIndexKey(requirement.address())
 			const previous = plan.defaults.get(key)
 			if (previous && previous.kind !== 'clear') {
 				throw conflictError('dependencies.setDefault/clearDefault', requirement)
@@ -359,7 +353,7 @@ export function createCoreTestHost(config: CoreTestHostConfig = {}): CoreTestHos
 
 		const overrideKey = (input: DependencyOverrideTarget) => {
 			const consumer = resolvePluginTestTarget(input.consumer).address
-			return `${pluginNodeIndexKey(consumer)}\0${pluginDefinitionIndexKey(input.requirement.definitionAddress())}`
+			return `${pluginNodeIndexKey(consumer)}\0${pluginDefinitionIndexKey(input.requirement.address())}`
 		}
 
 		const setOverride = (input: DependencyOverrideInput): undefined => {
@@ -440,7 +434,7 @@ export function createCoreTestHost(config: CoreTestHostConfig = {}): CoreTestHos
 			if (!committed) throw new Error('[pluxel/test] Core commit completed without a summary')
 			for (const key of plan.adds.keys()) enteredLifecycle.add(key)
 			for (const command of plan.defaults.values()) {
-				const requirement = command.requirement.definitionAddress()
+				const requirement = command.requirement.address()
 				const key = pluginDefinitionIndexKey(requirement)
 				if (command.kind === 'set') explicitProviderDefaults.set(key, requirement)
 				else explicitProviderDefaults.delete(key)
@@ -674,9 +668,13 @@ function validatePlan(
 			invalidTarget('restart', command.target, 'is not running')
 	}
 	for (const replacement of plan.replacements.values()) {
-		assertPluginTestTargetCurrent(registry, replacement.current)
+		assertPluginTestTargetCurrent(registry, replacement.current.nodeAddress())
 		if (!findDefinitionImplementation(registry, replacement.definition)) {
-			invalidTarget('replaceDefinition', replacement.current, 'definition is not materialized')
+			invalidTarget(
+				'replaceDefinition',
+				replacement.current.nodeAddress(),
+				'definition is not materialized',
+			)
 		}
 	}
 	for (const config of plan.configs.values()) {
@@ -686,11 +684,15 @@ function validatePlan(
 	}
 	for (const command of plan.defaults.values()) {
 		if (command.kind === 'clear') continue
-		const provider = resolvePluginTestTarget(command.provider)
+		const provider = resolvePluginTestTarget(command.provider.nodeAddress())
 		if (!willExist(plan, registry, provider.address)) {
-			invalidTarget('dependencies.setDefault', command.provider, 'provider is not materialized')
+			invalidTarget(
+				'dependencies.setDefault',
+				command.provider.nodeAddress(),
+				'provider is not materialized',
+			)
 		}
-		assertCurrentOrPlanned(plan, registry, command.provider)
+		assertCurrentOrPlanned(plan, registry, command.provider.nodeAddress())
 	}
 	for (const command of plan.overrides.values()) {
 		const consumer = resolvePluginTestTarget(command.consumer)
@@ -725,14 +727,14 @@ function applyGraphPlan(
 	}
 	for (const command of plan.defaults.values()) {
 		update.setProviderDefault(
-			command.requirement.definitionAddress(),
-			command.kind === 'set' ? resolvePluginTestTarget(command.provider).address : null,
+			command.requirement.address(),
+			command.kind === 'set' ? command.provider.nodeAddress() : null,
 		)
 	}
 	for (const command of plan.overrides.values()) {
 		update.setDependencyOverride(
 			resolvePluginTestTarget(command.consumer).address,
-			command.requirement.definitionAddress(),
+			command.requirement.address(),
 			command.kind === 'set' ? resolvePluginTestTarget(command.provider).address : null,
 		)
 	}
@@ -891,7 +893,7 @@ function conflictError(
 ): Error {
 	if (typeof target === 'function') {
 		return new Error(
-			`[pluxel/test] Conflicting ${operation} commands for ${target.definitionAddress().exportName}${detail ? `: ${detail}` : ''}`,
+			`[pluxel/test] Conflicting ${operation} commands for ${target.address().exportName}${detail ? `: ${detail}` : ''}`,
 		)
 	}
 	const resolved = resolvePluginTestTarget(target)

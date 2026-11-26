@@ -1,41 +1,55 @@
 import { Accordion, Box } from '@mantine/core'
+import { createAtom, useSelector } from '@tanstack/react-store'
 import { useEffect, useId, useMemo, useRef, useState } from 'react'
 import type { FieldNode } from 'valibot-form'
-import { AutoForm, type AutoFormOptions, useAutoFormCtx } from 'valibot-form/web'
+import {
+	AutoForm,
+	buildEditableConfigPatch,
+	prepareEditableConfigFields,
+	type AutoFormOptions,
+	useAutoFormCtx,
+} from 'valibot-form/web'
 
-import { ServerValidationSummary } from '../../forms/serverValidation'
 import { FormToc } from './components/FormToc'
 import type { ConfigSectionForm } from './useConfigForms'
 import { makeFieldAnchorPrefix, makeSectionAnchorPrefix } from './configAnchors'
+import { ManagedBooleanField } from './ManagedBooleanField'
 
-const EMPTY_PATH: readonly string[] = []
+const configRenderers = { boolean: ManagedBooleanField }
 
 export function ConfigTabContent({
 	displayName,
 	fields,
 	savedValue,
+	saving,
 	showToc = true,
-	path = EMPTY_PATH,
+	tabKey,
 	scrollHost,
 	scrollHostVersion = 0,
 	registerForm,
 	onSubmit,
+	onDraftChange,
 }: {
 	displayName: string
 	fields: readonly FieldNode[]
 	savedValue: Record<string, unknown>
+	saving: boolean
 	showToc?: boolean
-	path?: readonly string[]
+	tabKey: string
 	scrollHost?: HTMLElement | null
 	scrollHostVersion?: number
 	onSubmit: (key: string) => Promise<void>
+	onDraftChange: () => void
 	registerForm: (key: string, form: ConfigSectionForm) => () => void
 }) {
 	const initialValue = useMemo(() => savedValue, [savedValue])
 	// Keep reset and React options aligned while the query publishes the saved configuration.
 	// External input changes refresh only clean forms; drafts keep their original baseline.
 	const [baseline, setBaseline] = useState(initialValue)
-	const tabKey = path.join('.') || 'config'
+	const editableFields = useMemo(
+		() => prepareEditableConfigFields(fields, baseline),
+		[fields, baseline],
+	)
 	const anchorScope = useId()
 	const sectionIdPrefix = `${anchorScope}-${makeSectionAnchorPrefix(displayName, tabKey)}`
 	const fieldIdPrefix = `${anchorScope}-${makeFieldAnchorPrefix(displayName, tabKey)}`
@@ -45,21 +59,21 @@ export function ConfigTabContent({
 				defaultValues: baseline,
 				canSubmitWhenInvalid: true,
 				listeners: {
-					onChange: ({ formApi }) => {
-						// Field bindings clear their own errors; a summary can depend on any field.
-						formApi.setErrorMap({ onServer: undefined })
-					},
+					// Field bindings clear their own errors; a summary can depend on any field.
+					onChange: onDraftChange,
 				},
 				onSubmit: () => onSubmit(tabKey),
 			}) satisfies AutoFormOptions<Record<string, unknown>>,
-		[baseline, onSubmit, tabKey],
+		[baseline, onDraftChange, onSubmit, tabKey],
 	)
 
 	return (
-		<AutoForm fields={fields} formOpts={opts}>
+		<AutoForm fields={editableFields} formOpts={opts} renderers={configRenderers}>
 			<RegisterForm
+				fields={fields}
 				tabKey={tabKey}
 				registerForm={registerForm}
+				saving={saving}
 				setBaseline={setBaseline}
 				incomingValue={initialValue}
 			/>
@@ -80,50 +94,63 @@ export function ConfigTabContent({
 			) : null}
 			<Box>
 				<AutoForm.Fields sectionIdPrefix={sectionIdPrefix} fieldIdPrefix={fieldIdPrefix} />
-				<ServerValidationSummary />
 			</Box>
 		</AutoForm>
 	)
 }
 
 function RegisterForm({
+	fields,
 	setBaseline,
 	incomingValue,
+	saving,
 	tabKey,
 	registerForm,
 }: {
+	fields: readonly FieldNode[]
+	saving: boolean
 	tabKey: string
 	registerForm: (key: string, form: ConfigSectionForm) => () => void
 	setBaseline: (values: Record<string, unknown>) => void
 	incomingValue: Record<string, unknown>
 }): null {
 	const { form, reset, defaultValues } = useAutoFormCtx()
-	const observedInput = useRef(incomingValue)
+	const latestSaved = useRef(incomingValue)
+	const changes = useMemo(
+		() =>
+			createAtom(() => {
+				const { values, isDirty } = form.store.get()
+				return isDirty ? buildEditableConfigPatch(fields, values, defaultValues) : {}
+			}),
+		[defaultValues, fields, form],
+	)
+	const dirty = useSelector(changes, (patch) => Boolean(patch.set || patch.remove?.length))
 	useEffect(() => {
-		if (observedInput.current === incomingValue) return
-		observedInput.current = incomingValue
-		if (!form.state.isDirty) {
-			setBaseline(incomingValue)
-			reset(incomingValue)
+		latestSaved.current = incomingValue
+	}, [incomingValue])
+	useEffect(() => {
+		if (!saving && !dirty && latestSaved.current !== defaultValues) {
+			setBaseline(latestSaved.current)
+			reset(latestSaved.current)
 		}
-	}, [defaultValues, form, incomingValue, reset, setBaseline])
+	}, [defaultValues, dirty, incomingValue, reset, saving, setBaseline])
 
 	useEffect(() => {
 		return registerForm(tabKey, {
 			form,
 			baseline: defaultValues,
-			reset: (values) => {
-				if (values) setBaseline(values)
-				reset(values)
+			changes,
+			reset: () => {
+				setBaseline(latestSaved.current)
+				reset(latestSaved.current)
 			},
 			acceptSaved: (values, submitted) => {
-				const acknowledged =
-					JSON.stringify(values) === JSON.stringify(submitted) ? submitted : values
-				setBaseline(acknowledged)
-				if (form.state.values === submitted) reset(acknowledged)
+				latestSaved.current = values
+				setBaseline(values)
+				if (form.state.values === submitted) reset(values)
 			},
 		})
-	}, [defaultValues, form, registerForm, reset, setBaseline, tabKey])
+	}, [changes, defaultValues, form, registerForm, reset, setBaseline, tabKey])
 
 	return null
 }

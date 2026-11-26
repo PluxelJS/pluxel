@@ -10,10 +10,12 @@ export default defineConfig({
 				command: 'vp pack',
 				dependsOn: ['@pluxel/core#compile'],
 				cache: {
+					input: ['!dist/**', '!tests/**'],
 					output: ['dist/**'],
 				},
 			},
-			'check-types': 'tsc --noEmit --pretty false',
+			'check-types':
+				'tsc --noEmit --pretty false && tsc --project tsconfig.control.json --pretty false',
 			'check-tests': {
 				command: 'vp test run',
 				cache: {

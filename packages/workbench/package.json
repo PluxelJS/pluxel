@@ -78,7 +78,12 @@
 			"@pluxel/source": "./src/vite.ts",
 			"default": "./dist/vite.mjs"
 		},
-		"./package.json": "./package.json"
+		"./package.json": "./package.json",
+		"./control": {
+			"types": "./dist/control/index.d.mts",
+			"import": "./dist/control/index.mjs",
+			"default": "./dist/control/index.mjs"
+		}
 	},
 	"publishConfig": {
 		"exports": {
@@ -98,7 +103,12 @@
 			"./shell": "./dist/shell.mjs",
 			"./test": "./dist/test.mjs",
 			"./vite": "./dist/vite.mjs",
-			"./package.json": "./package.json"
+			"./package.json": "./package.json",
+			"./control": {
+				"types": "./dist/control/index.d.mts",
+				"import": "./dist/control/index.mjs",
+				"default": "./dist/control/index.mjs"
+			}
 		},
 		"access": "public"
 	},
@@ -116,7 +126,8 @@
 		"@module-federation/sdk": "catalog:prod",
 		"@tanstack/query-core": "catalog:frontend",
 		"pathe": "catalog:node",
-		"valibot": "catalog:validation"
+		"valibot": "catalog:validation",
+		"valibot-form": "workspace:^"
 	},
 	"devDependencies": {
 		"@dagrejs/dagre": "catalog:prod",
@@ -157,7 +168,6 @@
 		"react-dom": "catalog:frontend",
 		"sass-embedded": "catalog:dev",
 		"typescript": "catalog:dev",
-		"valibot-form": "workspace:*",
 		"vite": "catalog:build",
 		"vite-plus": "catalog:build",
 		"ws": "catalog:test"
@@ -186,5 +196,8 @@
 		"vite": {
 			"optional": true
 		}
+	},
+	"pluxel": {
+		"control": "./dist/control/manifest.json"
 	}
 }

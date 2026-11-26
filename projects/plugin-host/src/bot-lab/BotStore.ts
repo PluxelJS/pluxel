@@ -1,17 +1,6 @@
-import type { BotSourceId } from './BotWorkspace.contracts'
+import type { BotPreferences, StoredBot } from './BotWorkspace.contracts'
 import type { Store } from 'tinybase'
 import * as v from 'valibot'
-
-export type StoredBot = Readonly<{
-	id: string
-	name: string
-	account: string
-	group: string
-	running: boolean
-	messages: number
-	unread: number
-	instructions: string
-}>
 
 const EditableBot = v.strictObject({
 	instructions: v.pipe(
@@ -29,9 +18,13 @@ export class BotStore {
 	constructor(
 		bots: readonly StoredBot[],
 		private readonly store: Store,
+		additionalTables: readonly string[] = [],
 	) {
 		this.bots = new Map(bots.map((bot) => [bot.id, Object.freeze({ ...bot })]))
-		if (store.getTableIds().some((id) => id !== 'bots') || store.getValueIds().length > 0) {
+		if (
+			store.getTableIds().some((id) => id !== 'bots' && !additionalTables.includes(id)) ||
+			store.getValueIds().length > 0
+		) {
 			throw new TypeError('Bot preferences contain unknown tables or values')
 		}
 		for (const [id, row] of Object.entries(store.getTable('bots'))) {
@@ -48,7 +41,7 @@ export class BotStore {
 				}) as StoredBot,
 		)
 	}
-	update(id: string, patch: Readonly<{ instructions?: string; running?: boolean }>): void {
+	update(id: string, patch: Partial<BotPreferences>): void {
 		const bot = this.bots.get(id)
 		if (!bot) throw new Error(`Unknown bot: ${id}`)
 		const current = this.store.getRow('bots', id)
@@ -61,14 +54,7 @@ export class BotStore {
 	}
 }
 
-export type BotSourceRegistration = Readonly<{
-	id: BotSourceId
-	label: string
-	capability: string
-	store: BotStore
-}>
-
-export function simulatedBots(source: BotSourceId): readonly StoredBot[] {
+export function simulatedBots(source: string): readonly StoredBot[] {
 	return [
 		{
 			id: 'support',

@@ -6,13 +6,26 @@ export const registry = 'https://registry.npmjs.org' as const
 export type PackageIdentity = { registry: string; name: string }
 export type Coordinate = PackageIdentity & { version: string }
 
-export type MarketMetadata = { official: boolean; category: string | null; tags: string[] }
-export type PackageQuery = {
+export type MarketCuration = { official: boolean; category: string | null; tags: string[] }
+
+/** Owner of the declared GitHub repository; the release carries its own publisher evidence. */
+export type MarketAuthor = {
+	id: string
+	name: string
+	kind: 'github'
+	avatarUrl: string | null
+}
+
+export type CatalogFilters = {
 	query?: string
-	registry?: string
+	registries?: string[]
 	official?: boolean
-	category?: string
-	tag?: string
+	categories?: string[]
+	tags?: string[]
+	authors?: string[]
+}
+
+export type PackageQuery = CatalogFilters & {
 	cursor?: string
 	limit?: number
 }
@@ -40,11 +53,22 @@ export type PackageSummary = {
 	repository: string | null
 	repositoryStars: number | null
 	repositoryObservedAt: number | null
+	author: MarketAuthor | null
 	indexedVersions: number
 	observedAt: number
-} & MarketMetadata
+} & MarketCuration
 
 export type PackagePage = { packages: PackageSummary[]; nextCursor: string | null }
+
+type FacetValue = { value: string; count: number }
+
+export type CatalogFacets = {
+	total: number
+	registries: FacetValue[]
+	categories: FacetValue[]
+	tags: FacetValue[]
+	authors: (MarketAuthor & { count: number })[]
+}
 
 export type Receipt = Coordinate & {
 	id: string
@@ -65,8 +89,11 @@ export type NotificationQuery = {
 	limit?: number
 }
 
+export type GitHubNotificationPublisher = { workflowRef: string; runId: string; runAttempt: string }
+
 export type NotificationDetail = Receipt & {
 	diagnostic: string | null
+	githubPublisher: GitHubNotificationPublisher | null
 	retry: 'available' | 'not-failed' | 'attempts-exhausted' | 'provenance-runtime-unsupported'
 }
 
@@ -142,6 +169,31 @@ export function registryBase(value: string): string {
 
 export function taxonomySlug(value: unknown): value is string {
 	return typeof value === 'string' && /^[a-z0-9][a-z0-9-]{0,31}$/.test(value)
+}
+
+const githubLogin = /^[a-z0-9](?:[a-z0-9]|-(?=[a-z0-9])){0,38}$/i
+export const repositoryOwnerIdPrefix = 'github:owner/'
+
+export function catalogAuthorId(value: string): boolean {
+	if (!value.startsWith(repositoryOwnerIdPrefix)) return false
+	const login = value.slice(repositoryOwnerIdPrefix.length)
+	return login === login.toLowerCase() && githubLogin.test(login)
+}
+
+/** Input is the normalized repository link stored by observe/refresh. */
+export function repositoryOwner(repository: string | null): string | null {
+	const parts = /^https:\/\/github\.com\/([^/]+)\/([A-Za-z0-9_.-]{1,100})$/.exec(repository ?? '')
+	if (!parts || !githubLogin.test(parts[1]) || parts[2] === '.' || parts[2] === '..') return null
+	return parts[1]
+}
+
+export function repositoryAuthor(owner: string, avatarUrl: string | null): MarketAuthor {
+	return {
+		id: repositoryOwnerIdPrefix + owner.toLowerCase(),
+		name: '@' + owner,
+		kind: 'github',
+		avatarUrl,
+	}
 }
 
 export function pageLimit(value: unknown = 20): number {
@@ -224,7 +276,10 @@ export async function readJson(
 	body: ReadableStream<Uint8Array> | null,
 	limit: number,
 ): Promise<unknown> {
-	const bytes = await readBytes(body, limit)
+	return parseJsonBytes(await readBytes(body, limit))
+}
+
+export function parseJsonBytes(bytes: Uint8Array): unknown {
 	try {
 		return JSON.parse(new TextDecoder('utf-8', { fatal: true }).decode(bytes)) as unknown
 	} catch {

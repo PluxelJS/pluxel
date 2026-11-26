@@ -1,25 +1,21 @@
 import { useQuery, useQueryClient, type QueryClient } from '@tanstack/react-query'
 import { type PluginNodeAddress } from '@pluxel/core'
-import { type FieldNode } from 'valibot-form'
-import type { ConfigResultOk, ConfigResultErr } from '@pluxel/services/management/client'
+import type {
+	ConfigPresentationPlanV3,
+	ConfigResultOk,
+	ConfigResultErr,
+} from '@pluxel/services/management/client'
 import { useRuntimeManagementClient, type RuntimeManagementClient } from '../../../runtime'
 import { managementQueryKeys, refetchManagementQuery } from '../../managementQuery'
-import { adaptConfigPresentationFields, applyConfigSources } from './presentationAdapter'
 
-export type PluginConfigSection = Readonly<{
-	path: readonly string[]
-	fieldName: string
-	fields: readonly FieldNode[]
-}>
-type PluginConfigPresentation = {
-	fieldName: string
-	fields: readonly FieldNode[]
-	sections: readonly PluginConfigSection[]
-}
+export type PluginConfigSection = ConfigPresentationPlanV3['sections'][number]
 export type PluginConfigSnapshot =
 	| ConfigResultOk
 	| Extract<ConfigResultErr, { code: 'validation_failed' }>
-export type PluginConfigData = PluginConfigPresentation & { snapshot: PluginConfigSnapshot | null }
+export type PluginConfigData = {
+	sections: readonly PluginConfigSection[]
+	snapshot: PluginConfigSnapshot | null
+}
 export type PluginConfigState = {
 	data?: PluginConfigData
 	loading: boolean
@@ -30,21 +26,13 @@ export type PluginConfigState = {
 async function readPresentation(
 	client: RuntimeManagementClient,
 	owner: PluginNodeAddress,
-): Promise<PluginConfigPresentation> {
+): Promise<readonly PluginConfigSection[]> {
 	const result = await client.config.presentation(owner)
 	if (!result.ok) {
-		if (result.code === 'presentation_not_found') return { fieldName: '', fields: [], sections: [] }
+		if (result.code === 'presentation_not_found') return []
 		throw new Error(result.message ?? result.code)
 	}
-	return {
-		fieldName: result.plan.fieldName,
-		fields: adaptConfigPresentationFields(result.plan.fields),
-		sections: result.plan.sections.map((section) => ({
-			path: section.path,
-			fieldName: section.fieldName,
-			fields: adaptConfigPresentationFields(section.fields),
-		})),
-	}
+	return result.plan.sections
 }
 async function readConfig(
 	client: RuntimeManagementClient,
@@ -94,27 +82,7 @@ export function usePluginConfig(owner: PluginNodeAddress | undefined): PluginCon
 	const snapshot = saved.data
 	const data =
 		presentation.data && snapshot !== undefined
-			? {
-					...presentation.data,
-					snapshot,
-					fields: applyConfigSources(
-						presentation.data.fields,
-						snapshot?.sources ?? [],
-						[],
-						snapshot?.effectiveInput,
-						snapshot?.ok ? snapshot.config : undefined,
-					),
-					sections: presentation.data.sections.map((section) => ({
-						...section,
-						fields: applyConfigSources(
-							section.fields,
-							snapshot?.sources ?? [],
-							section.path,
-							snapshot?.effectiveInput,
-							snapshot?.ok ? snapshot.config : undefined,
-						),
-					})),
-				}
+			? { sections: presentation.data, snapshot }
 			: undefined
 	return {
 		...(data ? { data } : {}),

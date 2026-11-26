@@ -2,18 +2,20 @@ packages:
   - .
 
 catalog:
+  '@pluxel/agent-sdk': ^1.1.0
   vite-plus: 1.4.0
   '@pluxel/cli': ^1.1.0
   '@pluxel/core': ^1.1.0
+  '@pluxel/host': ^1.1.0
   '@pluxel/rolldown': ^1.1.0
   '@pluxel/test': ^1.1.0
   '@pluxel/services': ^1.1.0
-  tinybase: 10.0.1
+  tinybase: 10.1.0
   typescript: ^7.0.2
   vite: npm:@voidzero-dev/vite-plus-core@1.4.0
   vitest: 5.0.5
   valibot: ^1.5.0
-  typebox: ^1.4.3
+  typebox: 1.4.4
 
 allowBuilds:
   esbuild: true

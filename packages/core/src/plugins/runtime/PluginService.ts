@@ -1,6 +1,7 @@
 import type { Context as PluxelContext, PluginContext } from '../../context/Context'
 import { pinOwnerContext } from '../../context/owner-view'
 import { createGenerationContext } from '../../context/context-factory'
+import type { ResolvedCoreExecutionConfig } from '../../context/plugin-execution'
 import type { GraphBuildError } from '../../internal/di'
 import { createErr, createOk } from 'option-t/plain_result'
 import { requireConfigService } from '../../internal/config-service'
@@ -84,21 +85,6 @@ export type {
 	RuntimeUpdateCommitSummary,
 } from './plugin-service/CommitPlan'
 
-export type PluginServiceConfig = {
-	startTimeoutMs?: number
-	drainTimeoutMs?: number
-	startConcurrency?: number
-	stopConcurrency?: number
-}
-
-/** @internal Authoritative default execution parameters. */
-export const DEFAULT_PLUGIN_EXECUTION = Object.freeze({
-	startTimeoutMs: 1500,
-	drainTimeoutMs: 3000,
-	startConcurrency: 8,
-	stopConcurrency: 1,
-})
-
 type RuntimeUpdateCommitResult =
 	| { ok: true; val: { graph: PluginGraph; delta: CommitExecutionDelta } }
 	| { ok: false; err: unknown }
@@ -157,11 +143,11 @@ export class CorePluginGraphVerificationError extends Error {
 
 export class PluginService {
 	private readonly definitions: PluginDefinitions
+	private readonly committedAdjacency = new WeakMap<
+		PluginGraph,
+		CommittedPluginDependencyAdjacency
+	>()
 	private _commitLock: Promise<unknown> = Promise.resolve()
-	private readonly startTimeoutMs: number
-	private readonly drainTimeoutMs: number
-	private readonly startConcurrency: number
-	private readonly stopConcurrency: number
 	private _lastCommit?: CommitSummary
 	private _activeGraph?: PluginGraph
 	private _activeRuntime?: PluginRuntime
@@ -198,21 +184,16 @@ export class PluginService {
 
 	constructor(
 		public readonly ctx: PluxelContext,
-		config: PluginServiceConfig = {},
+		private readonly execution: ResolvedCoreExecutionConfig,
 		lifecycleHooks: CorePluginLifecycleHooks = EMPTY_CORE_PLUGIN_LIFECYCLE_HOOKS,
 	) {
 		pinOwnerContext(this, ctx)
-		this.startTimeoutMs = config.startTimeoutMs ?? DEFAULT_PLUGIN_EXECUTION.startTimeoutMs
-		this.drainTimeoutMs = config.drainTimeoutMs ?? DEFAULT_PLUGIN_EXECUTION.drainTimeoutMs
-		this.startConcurrency = config.startConcurrency ?? DEFAULT_PLUGIN_EXECUTION.startConcurrency
-		this.stopConcurrency = config.stopConcurrency ?? DEFAULT_PLUGIN_EXECUTION.stopConcurrency
 		this.lifecycleHooks = freezeCorePluginLifecycleHooks(lifecycleHooks)
 		this.definitions = new PluginDefinitions(() => this.createPluginContext())
 		this.lifecycleManager = new LifecycleManager(
 			this.ctx,
 			this.definitions.slots,
-			this.startTimeoutMs,
-			this.drainTimeoutMs,
+			execution.drainTimeoutMs,
 		)
 		this.dependentClosure = new DependentClosureCollector((graph, address) =>
 			this.resolveGraphKey(graph, address),
@@ -287,46 +268,49 @@ export class PluginService {
 	 *
 	 * This deliberately has no address input: iteration starts from existing graph slots and only
 	 * projects their canonical addresses, so an observation cannot intern or materialize an absent
-	 * Plugin. The returned node set includes committed nodes without dependencies.
+	 * Plugin. The node set includes isolated nodes, and each edge list is collected on first read.
 	 */
 	readCommittedDependencyAdjacency(): CommittedPluginDependencyAdjacency {
 		const graph = this.graph
-		const nodes: PluginNodeAddress[] = []
-		const required: CommittedPluginDependencyEdge[] = []
-		const optional: CommittedPluginDependencyEdge[] = []
-		for (const key of graph.keys()) {
-			if (!isPluginNodeSlot(key)) {
+		const cached = this.committedAdjacency.get(graph)
+		if (cached) return cached
+		const addresses = new Map<number, PluginNodeAddress>()
+		for (let slot = 0; slot < graph.slotCount(); slot++) {
+			const declaration = graph.declarationAtSlot(slot)
+			if (!declaration) continue
+			if (!isPluginNodeSlot(declaration.key) || !declaration.meta)
 				throw new Error('[pluxel/core] Committed Plugin graph contains a non-Plugin node')
-			}
-			const slot = graph.slotOf(key)
-			if (slot === undefined) {
-				throw new Error('[pluxel/core] Committed Plugin graph node has no active slot')
-			}
-			const consumer = this.nodeAddressOf(key)
-			nodes.push(consumer)
-			for (const dependencySlot of graph.depSlotsOf(slot)) {
-				const provider = graph.keyOf(dependencySlot)
-				if (!isPluginNodeSlot(provider)) {
-					throw new Error('[pluxel/core] Committed required Plugin dependency has no provider node')
-				}
-				required.push(Object.freeze({ consumer, provider: this.nodeAddressOf(provider) }))
-			}
-			for (const dependencySlot of graph.optionalDepSlotsOf(slot)) {
-				const provider = graph.keyOf(dependencySlot)
-				if (!isPluginNodeSlot(provider)) {
-					throw new Error('[pluxel/core] Committed optional Plugin dependency has no provider node')
-				}
-				optional.push(Object.freeze({ consumer, provider: this.nodeAddressOf(provider) }))
-			}
+			addresses.set(slot, declaration.meta.address)
 		}
-		nodes.sort(comparePluginNodeAddress)
-		required.sort(compareCommittedDependencyEdges)
-		optional.sort(compareCommittedDependencyEdges)
-		return Object.freeze({
-			nodes: Object.freeze(nodes),
-			required: Object.freeze(required),
-			optional: Object.freeze(optional),
+		const projectEdges = (kind: 'required' | 'optional') => {
+			const edges: CommittedPluginDependencyEdge[] = []
+			for (const [slot, consumer] of addresses) {
+				const dependencies =
+					kind === 'required' ? graph.depSlotsOf(slot) : graph.optionalDepSlotsOf(slot)
+				for (const dependency of dependencies) {
+					const provider = addresses.get(dependency)
+					if (!provider)
+						throw new Error(
+							`[pluxel/core] Committed ${kind} Plugin dependency has no provider node`,
+						)
+					edges.push(Object.freeze({ consumer, provider }))
+				}
+			}
+			return Object.freeze(edges.sort(compareCommittedDependencyEdges))
+		}
+		let required: readonly CommittedPluginDependencyEdge[] | undefined
+		let optional: readonly CommittedPluginDependencyEdge[] | undefined
+		const adjacency = Object.freeze({
+			nodes: Object.freeze([...addresses.values()].sort(comparePluginNodeAddress)),
+			get required() {
+				return (required ??= projectEdges('required'))
+			},
+			get optional() {
+				return (optional ??= projectEdges('optional'))
+			},
 		})
+		this.committedAdjacency.set(graph, adjacency)
+		return adjacency
 	}
 
 	resolvePluginNode(
@@ -647,6 +631,7 @@ export class PluginService {
 
 	private stableStartOrder(graph: PluginGraph, nodes: Iterable<PluginNodeSlot>): PluginNodeSlot[] {
 		const orderedNodes = this.stableNodeOrder(graph, nodes)
+		if (orderedNodes.length <= 1) return orderedNodes
 		const included = new Set(orderedNodes)
 		const remaining = new Map<PluginNodeSlot, number>()
 		const dependents = new Map<PluginNodeSlot, PluginNodeSlot[]>()
@@ -670,51 +655,41 @@ export class PluginService {
 		let frontier = orderedNodes.filter((node) => remaining.get(node) === 0)
 		const out: PluginNodeSlot[] = []
 		while (frontier.length > 0) {
-			frontier.sort(compare)
-			const next = new Set<PluginNodeSlot>()
+			const next: PluginNodeSlot[] = []
 			for (const node of frontier) {
 				out.push(node)
 				for (const dependent of dependents.get(node)!) {
 					const count = remaining.get(dependent)! - 1
 					remaining.set(dependent, count)
-					if (count === 0) next.add(dependent)
+					if (count === 0) next.push(dependent)
 				}
 			}
-			frontier = [...next]
+			frontier = next.sort(compare)
 		}
-		const emitted = new Set(out)
-		const leftovers = orderedNodes.filter((node) => !emitted.has(node)).sort(compare)
-		out.push(...leftovers)
+		if (out.length < orderedNodes.length) {
+			for (const node of orderedNodes) if (remaining.get(node)! > 0) out.push(node)
+		}
 		return out
 	}
 
 	private collectStartedGenerationContexts(
-		graph: PluginGraph,
 		runtime: PluginRuntime,
-		nodes: Iterable<PluginNodeSlot>,
+		ordered: readonly PluginNodeSlot[],
 		failed: ReadonlySet<PluginNodeSlot>,
 	): readonly PluginContext[] {
-		const started = new Set<PluginContext>()
-		for (const node of this.stableStartOrder(graph, nodes)) {
+		const started: PluginContext[] = []
+		for (const node of ordered) {
 			if (failed.has(node)) continue
 			const instance = runtime.peekByKey<BasePlugin>(node)
 			if (!instance || !this.lifecycleManager.isRunning(instance)) continue
-			started.add(getPluginGenerationContext(instance) as PluginContext)
+			started.push(getPluginGenerationContext(instance) as PluginContext)
 		}
-		return Object.freeze([...started])
+		return Object.freeze(started)
 	}
 
-	private collectFailedNodes(
-		graph: PluginGraph,
-		nodes: Iterable<PluginNodeSlot>,
-		failed: ReadonlySet<PluginNodeSlot>,
-	): readonly PluginNodeSlot[] {
-		return Object.freeze(this.stableStartOrder(graph, nodes).filter((node) => failed.has(node)))
-	}
-
-	private stableContextOrder(contexts: Iterable<PluginContext>): readonly PluginContext[] {
+	private stableContextOrder(contexts: ReadonlySet<PluginContext>): readonly PluginContext[] {
 		return Object.freeze(
-			[...new Set(contexts)].sort((left, right) =>
+			[...contexts].sort((left, right) =>
 				comparePluginNodeAddress(left.pluginInfo.nodeAddress, right.pluginInfo.nodeAddress),
 			),
 		)
@@ -1005,7 +980,7 @@ export class PluginService {
 				const node = graph.keyOf(slot)
 				if (isPluginNodeSlot(node)) await this.stopPlugin(node, report)
 			},
-			{ concurrency: this.stopConcurrency },
+			{ concurrency: this.execution.stopConcurrency },
 		)
 	}
 
@@ -1117,8 +1092,12 @@ export class PluginService {
 		operation: CorePluginLifecycleOperation,
 	): Promise<boolean> {
 		try {
+			const startTimeoutMs =
+				this.execution.readNodeStartTimeout?.(instance.ctx.pluginInfo.nodeAddress) ??
+				requirePluginGenerationInfo(instance.ctx).startTimeoutMs ??
+				this.execution.startTimeoutMs
 			const result = await this.lifecycleManager.startLifecycle(node, instance, {
-				timeoutMs: requirePluginGenerationInfo(instance.ctx).startTimeoutMs,
+				timeoutMs: startTimeoutMs,
 				finalizeGeneration: this.lifecycleHooks.finalizeGeneration
 					? (signal) =>
 							this.lifecycleHooks.finalizeGeneration!({
@@ -1190,7 +1169,7 @@ export class PluginService {
 					: Promise.resolve(false)
 			},
 			{
-				concurrency: this.startConcurrency,
+				concurrency: this.execution.startConcurrency,
 				blocks: (slot, dependency) =>
 					graph.depSlotsOf(slot as number).includes(dependency as number),
 				onDependencyBlocked: (slot, dependency) => {
@@ -1384,11 +1363,12 @@ export class PluginService {
 			const pluginChanges = createPluginCommitChanges(plan, failed)
 			this.replacePendingStarts(failed)
 			if (this.lifecycleHooks.prepareCommit || this.lifecycleHooks.publishCommit) {
+				const ordered = this.stableStartOrder(graph, plan.toStart)
 				const publication: CoreCommitPublication = Object.freeze({
 					operation,
-					started: this.collectStartedGenerationContexts(graph, runtime, plan.toStart, failed),
+					started: this.collectStartedGenerationContexts(runtime, ordered, failed),
 					stopped: this.stableContextOrder(stopped),
-					failed: this.collectFailedNodes(graph, plan.toStart, failed),
+					failed: Object.freeze(ordered.filter((node) => failed.has(node))),
 				})
 				await this.prepareHostCommit(publication)
 				this.publishHostCommit(publication)

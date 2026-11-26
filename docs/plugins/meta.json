@@ -4,7 +4,6 @@
 	"pages": [
 		"index",
 		"---公开插件---",
-		"wretch",
 		"browser",
 		"invoice",
 		"auth",

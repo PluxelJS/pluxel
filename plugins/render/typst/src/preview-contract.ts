@@ -8,7 +8,7 @@ export interface TypstPagePosition {
 
 /** Source range and its rendered box, in page-local points (1 pt = 1/72 inch). */
 export interface TypstNavigationPoint extends TypstPagePosition {
-	/** Workspace-relative source path; generated /inputs/ files are excluded. */
+	/** Workspace-relative path of the compiled source, including Typst files under inputs/. */
 	readonly path: string
 	/** One-based UTF-16 positions, with an exclusive end. */
 	readonly line: number

@@ -8,7 +8,7 @@ import { createTestHost } from '@pluxel/test'
 import { afterEach, expect, it, vi } from 'vitest'
 import { createMiTeXFiles } from '../src/tiptap/mitex.js'
 import { TypstPlugin } from '../src/wasm.ts'
-import runTypst from '../src/worker.ts'
+import { compileFixture } from './compile-fixture.ts'
 
 const require = createRequire(import.meta.url)
 const fontFamily = 'DejaVu Math TeX Gyre'
@@ -72,15 +72,15 @@ it('renders pinned LaTeX in native Typst with template numbering and references 
 			maxOutputBytes: 8_000_000,
 			bindingPath: fileURLToPath(new URL('../native/compiler.node', import.meta.url)),
 		}
-		const compiled = runTypst({ ...input, revision: 1 })
+		const compiled = compileFixture({ ...input, revision: 1 })
 		if (!compiled.ok) throw new Error(JSON.stringify(compiled.diagnostics))
 		expect(Buffer.from(compiled.pdf).subarray(0, 5).toString()).toBe('%PDF-')
 		expect(compiled.vector.byteLength).toBeGreaterThan(100)
 		await writeFile(join(root, 'sections/references.typ'), 'See @eq:missing.')
-		const missing = runTypst({ ...input, revision: 2 })
+		const missing = compileFixture({ ...input, revision: 2 })
 		expect(missing).toMatchObject({ ok: false, code: 'COMPILE_FAILED' })
 		await writeFile(join(root, 'sections/references.typ'), 'See @eq:matrix.')
-		expect(runTypst({ ...input, revision: 3 })).toMatchObject({ ok: true })
+		expect(compileFixture({ ...input, revision: 3 })).toMatchObject({ ok: true })
 	} finally {
 		await rm(root, { recursive: true, force: true })
 	}
@@ -103,21 +103,14 @@ it('renders the same LaTeX and cross-file references in WASM using only explicit
 		if (!path) throw new Error(`Unexpected request: ${url}`)
 		return new Response(await readFile(path))
 	})
-	await using host = await createTestHost({
-		config: {
-			records: [
-				{
-					owner: TypstPlugin.nodeAddress(),
-					config: {
-						compilerWasmUrl: 'https://example.test/compiler.wasm',
-						rendererWasmUrl: 'https://example.test/renderer.wasm',
-						fontUrls: ['https://example.test/math.ttf'],
-					},
-				},
-			],
+	await using host = await createTestHost()
+	const typst = await host.start(TypstPlugin.nodeAddress(), {
+		initialConfig: {
+			compilerWasmUrl: 'https://example.test/compiler.wasm',
+			rendererWasmUrl: 'https://example.test/renderer.wasm',
+			fontUrls: ['https://example.test/math.ttf'],
 		},
 	})
-	const typst = await host.start(TypstPlugin)
 	const source = template
 	const files = Object.fromEntries(
 		Object.entries(documentFiles()).map(([path, content]) => [`/${path}`, content]),

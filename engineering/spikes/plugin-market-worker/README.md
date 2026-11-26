@@ -26,7 +26,7 @@
 网络实验从 npm 拉取 `capnweb@0.12.0` 的真实 tarball 与 attestation。Node 侧使用原生 `@sigstore/tuf`，从其内置 TUF bootstrap root 开始获取并验证 Sigstore 信任材料；随后将原生数据交给 workerd 中的 `@sigstore/verify`。
 此处 Node 负责实验准备，签名和 tarball 摘要检查在 Worker probe 中执行。生产环境的信任根供给、刷新和失效策略尚未实现；真实通知端不能接受调用方提供的信任根。
 
-固定样本的 Node 验证通过；相同数据在 workerd 中报 `inclusion promise could not be verified`。进一步用本地生成的 ECDSA P-256 密钥和 SHA-256 签名复现：
+固定样本在原生 Node 中通过证书、透明日志及制品绑定验证。更换包名、版本、tarball 或签名 payload 均被拒绝。相同正例在 workerd 中报 `inclusion promise could not be verified`，替换为 `workerd 1.20261121.1` 复测仍失败。用本地生成的 ECDSA P-256 密钥和 SHA-256 签名可以复现：
 
 | 调用                                             | Node 24.16.0 | workerd 1.20261103.1 + `nodejs_compat`      |
 | ------------------------------------------------ | ------------ | ------------------------------------------- |
@@ -59,7 +59,7 @@ pnpm test:crypto
 pnpm test:provenance
 ```
 
-`test:crypto` 不需要网络。`test:provenance` 读取 npm 与 Sigstore TUF 服务，不使用 npm token；正例通过后才继续验证替换包名、版本、tarball 和签名 payload 的负例。
+`test:crypto` 使用本地密钥。`test:provenance` 从 npm 与 Sigstore TUF 读取公开样本。Node 和 workerd 分别执行同一组正例及替换包名、版本、tarball 和签名 payload 的负例，每组先验证正例。
 样本是有 provenance 的普通 npm 包，并非已经符合新 manifest 格式的 Pluxel 插件。实验入口接受测试数据，仅用于隔离本地执行。
 
 主要版本由本目录 `package.json` 与 lockfile 拥有：Drizzle ORM 0.45.4 / Kit 0.31.11、Cap’n Web 0.12.0、Wrangler 4.157.0、其同版 Miniflare 5.20261103.0-beta、Sigstore Verify 4.1.2。
@@ -70,5 +70,15 @@ Miniflare 使用该锁定版本的 `workers[].config` 原生入口；不能直�
 下一步先解决并复验 Worker 原生验证路径，再从标准 build 生成一个真实 Plugin manifest，连接通知、拉包、校验、目录提交与查询。
 本实验不包含发行目录、tarball 解包与 manifest 校验、Cron 调度、自动重试策略、流量与容量控制、私有 registry、生产认证、后台页面或安装器；不代表产品初版的支持范围。
 实验中的单 token 管理认证和硬编码来源仅用于验证传输边界；回执接受成功不表示包已验证或收录。
+
+## 参考市场接入后的框架反馈
+
+参考实现用 Vite 编译 Pluxel 的语义构建产物，将请求和 Cron 交给 `@pluxel/host/cloudflare`。关闭 Node 兼容开关后，workerd 能执行 `MarketPlugin` 的 HTTP、D1、R2、Web Crypto 和流式 tar 解析。轻量 Host 入口将平台能力交给市场，构建与测试检查 Node 依赖是否进入 Worker 产物。[Worker 装配](../../../projects/plugin-market/src/worker.ts) · [workerd 验收](../../../projects/plugin-market/tests/worker.test.ts)
+
+- 当前 `MarketBindings` 直接使用 Cloudflare 类型。出现第二个写入宿主时，优先按已有行为定义业务存储契约，并让 Node 与 Worker 实现跑同一组测试。验收包括发行不可改写、摘要一致、冲突不留成功审计和回执租约失效。只读镜像已经用 Node/SQLite 复用目录协议。
+- Host 的 SDK 借用在插件方法拒绝时提供控制面错误包装。HTTP 业务在所属插件内把可预期失败转换成正确状态码和稳定错误码；请求入口只负责装配和转发。未来如果多个 Worker 应用需要同样的适配，再从实际调用提炼通用入口。
+- 证明验证需要保留本页的真实正负例作为接纳条件。可单独为验证选择支持其密码 API 的运行时；调用契约仍绑定 registry、包名、版本和 tarball 摘要。验证服务不可用时保持现有失败回执。
+
+市场增强可以按刷新边界组合。压缩大小、解包字节数、直接依赖数和许可证来自校验后的制品。完整安装大小和传递依赖数量需要指定解析器、依赖版本视图和目标平台。漏洞结果需要绑定具体版本、来源和查询时间，查询缺失或失败显示未知。README 图片与仓库信息也可由观测插件提供，使用声明的来源及可控的请求预算。外部观测单独刷新、标注测量时间与方法，避免堵住发布和目录提交；只有运营方明确选择准入规则，才由审核返回可审计的决定。现有实现提供制品大小与可配置审核，尚未添加外部观测任务和字段。[npmx 功能与数据来源](https://docs.npmx.dev/guide/features)
 
 上游依据：[Miniflare D1](https://developers.cloudflare.com/workers/testing/miniflare/storage/d1/)、[D1 migrations](https://developers.cloudflare.com/d1/reference/migrations/)、[Workers Node crypto](https://developers.cloudflare.com/workers/runtime-apis/nodejs/crypto/)、[Sigstore TUF](https://github.com/sigstore/sigstore-js/tree/main/packages/tuf)。

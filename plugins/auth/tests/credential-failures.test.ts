@@ -22,7 +22,7 @@ it.each([
 	const applyAccount = vi.fn()
 	using provisioning = new CredentialProvisioning(
 		{ type: 'password' },
-		{ available: true, saveAccount, saveOidcSecret: vi.fn() },
+		{ saveAccount, saveOidcSecret: vi.fn() },
 		applyAccount,
 		vi.fn(),
 	)
@@ -38,7 +38,7 @@ it('does not misclassify unexpected crypto failures as invalid input or expose t
 	const applyAccount = vi.fn()
 	using provisioning = new CredentialProvisioning(
 		{ type: 'password' },
-		{ available: true, saveAccount, saveOidcSecret: vi.fn() },
+		{ saveAccount, saveOidcSecret: vi.fn() },
 		applyAccount,
 		vi.fn(),
 	)
@@ -56,7 +56,7 @@ it.each(['password', 'password-totp'] as const)(
 		vi.mocked(hashPassword).mockRejectedValueOnce(new Error('private crypto diagnostic'))
 		const provisioning = new CredentialProvisioning(
 			{ type: mode },
-			{ available: true, saveAccount: vi.fn(), saveOidcSecret: vi.fn() },
+			{ saveAccount: vi.fn(), saveOidcSecret: vi.fn() },
 			vi.fn(),
 			vi.fn(),
 		)

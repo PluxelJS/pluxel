@@ -1,16 +1,16 @@
 import type { WorkbenchManagementOperations } from './management.ts'
 import { createContext, useContext, type ReactNode } from 'react'
+import type { PluginNodeAddress } from '@pluxel/core'
 import type { WorkbenchDeclarationIdentity } from '@pluxel/core/federation'
 import type { RpcStub, RpcTarget } from 'capnweb'
 import type { WorkbenchOpenedClientValue, WorkbenchOpenedViewHandle } from './client.ts'
+import type { WorkbenchEntryLink } from './client-protocol.ts'
 import {
 	readWorkbenchDescriptor,
 	type WorkbenchDescriptorApi,
 	type WorkbenchDescriptorConsumerApi,
 	type WorkbenchRenderableDescriptor,
 } from './definition.ts'
-
-export type { WorkbenchRenderableDescriptor } from './definition.ts'
 
 type ApiOf<Descriptor> = WorkbenchDescriptorApi<Descriptor>
 
@@ -45,11 +45,13 @@ export type WorkbenchConfirmInput = Readonly<{
 	tone?: 'default' | 'danger'
 }>
 
-export type WorkbenchDocumentInput = Readonly<{
-	path: string
-	title: string
-	meta?: string
-}>
+/** Open this View's route, an exact Plugin node's detail page, or a published entry on that node. */
+export type WorkbenchDocumentInput = WorkbenchDocumentTitle &
+	(
+		| Readonly<{ path: string; plugin?: never; entry?: never }>
+		| Readonly<{ plugin: PluginNodeAddress; path?: never; entry?: never }>
+		| Readonly<{ entry: WorkbenchEntryLink; path?: never; plugin?: never }>
+	)
 
 export type WorkbenchNavigation = Readonly<{
 	navigate(path: string): void
@@ -105,14 +107,14 @@ export function WorkbenchReactContextProvider({
 	return <WorkbenchReactContext.Provider value={value}>{children}</WorkbenchReactContext.Provider>
 }
 
-/** @internal Used by descriptor hooks only. */
+/** @internal Used by the renderer scope. */
 export function useWorkbenchReactRuntime(): WorkbenchReactRuntime {
 	const value = useContext(WorkbenchReactContext)
 	if (!value) throw new Error('Workbench renderer is outside its generated Bridge')
 	return value
 }
 
-/** @internal Shared exact-descriptor projection for low-level and scoped renderer hooks. */
+/** @internal Binds the active Bridge roots to the renderer scope. */
 export function resolveWorkbenchHookValue<Descriptor extends WorkbenchRenderableDescriptor>(
 	runtime: WorkbenchReactRuntime,
 	descriptor: Descriptor,
@@ -123,7 +125,7 @@ export function resolveWorkbenchHookValue<Descriptor extends WorkbenchRenderable
 		metadata.kind !== runtime.identity.kind ||
 		metadata.key !== runtime.identity.key
 	) {
-		throw new Error('useWorkbench() descriptor identity does not match this renderer')
+		throw new Error('Workbench descriptor identity does not match this renderer')
 	}
 	if (metadata.kind === 'view') {
 		if (runtime.opened.kind !== 'local') {

@@ -1,5 +1,8 @@
 import { pluginNodeAddressEqual } from '@pluxel/core'
-import type { PluginControlMutationSuccess } from '@pluxel/services/management/client'
+import type {
+	PluginControlMutationSuccess,
+	PluginControlMutationFailure,
+} from '@pluxel/services/management/client'
 import type { PluginStatusEntry } from '../../pluginOverview'
 import type { PluginLifecycleCommand } from '../../pluginStatusActions'
 
@@ -110,18 +113,24 @@ export function describePluginControl(
 export function describePluginLifecycleOutcome(
 	pluginLabel: string,
 	command: PluginLifecycleCommand,
-	result: PluginControlMutationSuccess,
+	result:
+		| PluginControlMutationSuccess
+		| Extract<PluginControlMutationFailure, { code: 'lifecycle_failed' }>,
 ): PluginLifecycleOutcomePresentation {
 	const report = result.report.core
 	const issue =
 		report.status === 'committed'
-			? report.summary.lifecycleReport.issues.find((candidate) =>
+			? (report.summary.lifecycleReport.issues.find((candidate) =>
 					pluginNodeAddressEqual(candidate.plugin, result.address),
-				)
+				) ?? report.summary.lifecycleReport.issues[0])
 			: undefined
-	if (issue) {
-		const detail = issue.error?.message || issue.message
-		const partPath = issue.error?.partPath
+	if (result.ok === false) {
+		const detail =
+			issue?.error?.message ||
+			issue?.message ||
+			result.report.reconciliation[0]?.message ||
+			result.error
+		const partPath = issue?.error?.partPath
 		return Object.freeze({
 			title:
 				command === 'stop'
@@ -135,7 +144,7 @@ export function describePluginLifecycleOutcome(
 				{
 					command,
 					address: result.address,
-					lifecycleReport: report.status === 'committed' ? report.summary.lifecycleReport : null,
+					report: result.report,
 				},
 				null,
 				2,

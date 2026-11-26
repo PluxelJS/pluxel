@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState, useSyncExternalStore } from 'react'
 import { useContent, useContentController } from '@worksplit/react'
+import { findTypstSourceOffset } from '@pluxel/plugin-typst/source/browser'
 import { TypstSourceEditor } from '@pluxel/plugin-typst/tiptap/react'
 import type { Editor } from '@tiptap/core'
 import { ApplicationForm } from './application-form'
@@ -32,6 +33,7 @@ export function EditorPane({ folder, path }: { folder: ExampleId; path: string }
 	const sourceDirty = draft.text !== draft.base
 	const pending = sourceDirty || unapplied
 	const editVersion = useRef(0)
+	const appliedFocus = useRef(0)
 	const [leavePauses, setLeavePauses] = useState(0)
 	const content = useContent()
 	useContentController({
@@ -97,14 +99,36 @@ export function EditorPane({ folder, path }: { folder: ExampleId; path: string }
 	}, [content.id])
 	const focus = workspace.focus
 	const focusHere = focus?.folder === folder && focus.path === path
-	useEffect(() => {
-		if (!focusHere) return
-		if (focus.source) setMode('source')
-		else if (focus.position !== undefined && path.endsWith('.typ')) {
-			setMode('editor')
-			editor.current?.commands.focus(focus.position)
+	function revealLocation(instance = editor.current) {
+		if (!focusHere || !focus.location || appliedFocus.current === focus.serial) return
+		const location = focus.location
+		if (pending || project.revision !== location.revision) {
+			appliedFocus.current = focus.serial
+			return
 		}
-	}, [focus?.serial])
+		if (location.kind === 'editor') {
+			if (mode !== 'editor') {
+				setMode('editor')
+				return
+			}
+			if (!instance || instance.isDestroyed) return
+			appliedFocus.current = focus.serial
+			instance.commands.focus(location.position)
+			return
+		}
+		if (mode !== 'source') {
+			setMode('source')
+			return
+		}
+		const input = sourceInput.current
+		if (!input) return
+		appliedFocus.current = focus.serial
+		const offset = findTypstSourceOffset({ source: input.value, position: location.point })
+		if (offset === undefined) return
+		input.focus({ preventScroll: true })
+		input.setSelectionRange(offset, offset)
+	}
+	useEffect(revealLocation, [focus?.serial, mode, pending, revision])
 	const mayReplace = () => {
 		if (pending) {
 			workspace.report('有尚未应用的源码或参数，请先应用或取消。')
@@ -176,31 +200,39 @@ export function EditorPane({ folder, path }: { folder: ExampleId; path: string }
 						fontFamilies={fontFamilies}
 						renderComponentParameters={renderComponentParameters}
 						onOpenFile={(file) => {
-							void workspace.openFile(folder, file, undefined, undefined, content)
+							void workspace.openFile(folder, file, { source: content })
 						}}
 						onEditor={(instance) => {
 							editor.current = instance
-							if (instance && focusHere && focus.position !== undefined)
-								instance.commands.focus(focus.position)
+							if (instance) revealLocation(instance)
 						}}
 						onSelection={(position) =>
 							workspace.selectCaret(folder, {
+								kind: 'editor',
 								path,
 								position,
 								explicit: false,
-								editor: editor.current ?? undefined,
+								revision: project.revision,
 							})
 						}
 						onReveal={(position) =>
 							workspace.selectCaret(folder, {
+								kind: 'editor',
 								path,
 								position,
 								explicit: true,
-								editor: editor.current ?? undefined,
+								revision: project.revision,
 							})
 						}
 						onReference={(file, position) => {
-							void workspace.openFile(folder, file, position, undefined, content)
+							void workspace.openFile(folder, file, {
+								source: content,
+								location: {
+									kind: 'editor',
+									position,
+									revision: project.revision,
+								},
+							})
 						}}
 					/>
 				</div>
@@ -216,6 +248,18 @@ export function EditorPane({ folder, path }: { folder: ExampleId; path: string }
 						readOnly={!writable}
 						value={draft.text}
 						onChange={(event) => setDraft({ ...draft, text: event.currentTarget.value })}
+						onSelect={({ currentTarget: input }) => {
+							if (pending || draft.revision !== project.revision || !path.endsWith('.typ')) return
+							const prefix = input.value.slice(0, input.selectionStart)
+							const lines = prefix.split('\n')
+							workspace.selectCaret(folder, {
+								kind: 'source',
+								path,
+								point: { path, line: lines.length, column: lines.at(-1)!.length + 1 },
+								revision: draft.revision,
+								explicit: false,
+							})
+						}}
 					/>
 					<button type="button" disabled={!writable || !sourceDirty} onClick={applySource}>
 						应用文件源码

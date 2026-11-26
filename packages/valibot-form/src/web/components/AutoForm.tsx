@@ -18,6 +18,7 @@ import { alignToCss, resolveFieldSpan } from './internal/layout'
 import { BoundField } from './internal/BoundField'
 import { FieldRenderer } from './internal/FieldRenderer'
 import { FieldRendererProvider } from './internal/fieldRendererContext'
+import type { ScalarRenderers } from './renders/types'
 
 export { useAutoFormCtx, type AutoFormOptions } from './internal/formContext'
 
@@ -28,6 +29,8 @@ type AutoFormSharedProps = {
 	resetKey?: string | number
 	/** 传入 form 标签的自定义属性 */
 	formProps?: Omit<React.ComponentPropsWithoutRef<'form'>, 'onSubmit'>
+	/** Replace scalar controls within this form, including scalar rows. */
+	renderers?: ScalarRenderers
 }
 
 export type AutoFormSchemaProps<S extends ObjectLikeSchema> = AutoFormSharedProps & {
@@ -58,7 +61,15 @@ export function AutoForm<TValues extends Record<string, unknown>>(
 export function AutoForm<
 	S extends ObjectLikeSchema,
 	TValues extends Record<string, unknown> = InferInput<S> & Record<string, unknown>,
->({ schema, fields, formOpts, children, resetKey, formProps }: AutoFormProps<S, TValues>) {
+>({
+	schema,
+	fields,
+	formOpts,
+	children,
+	resetKey,
+	formProps,
+	renderers,
+}: AutoFormProps<S, TValues>) {
 	const defaultValues = useMemo(
 		() =>
 			(formOpts?.defaultValues ?? (schema === undefined ? {} : getDefaults(schema))) as Record<
@@ -67,7 +78,7 @@ export function AutoForm<
 			>,
 		[schema, formOpts?.defaultValues],
 	)
-	const { form, resetVersion } = useAppForm<Record<string, unknown>>(
+	const { form, resetVersion, baseline } = useAppForm<Record<string, unknown>>(
 		defaultValues,
 		formOpts as AutoFormOptions<Record<string, unknown>>,
 	)
@@ -75,7 +86,7 @@ export function AutoForm<
 	const reset = useCallback((values?: Record<string, unknown>): void => form.reset(values), [form])
 
 	const fieldPlan = useMemo(() => {
-		if (fields) return planFieldSections([...fields])
+		if (fields) return planFieldSections(fields)
 		if (schema) return planSchemaFields(schema)
 		throw new Error('AutoForm requires either schema or fields')
 	}, [fields, schema])
@@ -85,11 +96,11 @@ export function AutoForm<
 			form,
 			sections: fieldPlan.sections,
 			hiddenFields: fieldPlan.hiddenFields,
-			defaultValues,
+			defaultValues: baseline,
 			submit,
 			reset,
 		}),
-		[form, fieldPlan, defaultValues, submit, reset],
+		[form, fieldPlan, baseline, submit, reset],
 	)
 
 	useEffect(() => {
@@ -110,7 +121,11 @@ export function AutoForm<
 		<form {...formProps} onSubmit={onSubmit}>
 			<AutoFormCtx.Provider value={ctx}>
 				<FormResetVersion.Provider value={resetVersion}>
-					<FieldRendererProvider value={renderBoundField} renderValue={renderFieldValue}>
+					<FieldRendererProvider
+						value={renderBoundField}
+						renderValue={renderFieldValue}
+						renderers={renderers}
+					>
 						{children}
 					</FieldRendererProvider>
 				</FormResetVersion.Provider>

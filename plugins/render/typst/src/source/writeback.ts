@@ -1177,11 +1177,16 @@ export function prepareTypstSourceEdit(
 			for (const key of ['module', 'name', 'label', 'parameters', 'binding', 'source'])
 				if (!equal(before.attrs?.[key], next.attrs?.[key]))
 					reject(origin, `Edit component ${key} through its source or authoritative JSON file`)
+			const readonlyParameters: readonly string[] = before.attrs?.readonlyParameters ?? []
+			if (!equal(readonlyParameters, next.attrs?.readonlyParameters ?? []))
+				reject(origin, 'Component parameter availability comes from its authored arguments')
 			const oldProps = before.attrs?.props ?? {},
 				nextProps = next.attrs?.props ?? {},
 				changes: Record<string, string | null> = {}
 			for (const name of new Set([...Object.keys(oldProps), ...Object.keys(nextProps)])) {
 				if (equal(oldProps[name], nextProps[name])) continue
+				if (readonlyParameters.includes(name))
+					reject(origin, `Edit the source to change component parameter ${name}`)
 				const definition = declaration!.parameters[name],
 					value = nextProps[name]
 				if (definition && !Object.hasOwn(nextProps, name)) {
@@ -1325,7 +1330,16 @@ export function prepareTypstSourceEdit(
 		typstSource: ['source', 'role'],
 		typstInlineSource: ['source', 'role'],
 		typstField: ['file', 'path', 'source'],
-		typstComponent: ['module', 'name', 'label', 'parameters', 'props', 'binding', 'source'],
+		typstComponent: [
+			'module',
+			'name',
+			'label',
+			'parameters',
+			'readonlyParameters',
+			'props',
+			'binding',
+			'source',
+		],
 		typstImport: ['module', 'alias', 'items', 'source'],
 		typstInclude: ['module', 'source'],
 	}

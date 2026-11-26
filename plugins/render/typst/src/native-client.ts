@@ -14,7 +14,10 @@ export class NativeCompilerClient {
 		private readonly url: URL,
 		private readonly bindingPath: string,
 	) {}
-	run(input: TypstWorkerInput, signal: AbortSignal): Promise<TypstWorkerOutput> {
+	get closed(): boolean {
+		return this.closing !== undefined || this.failure !== undefined
+	}
+	compile(input: TypstWorkerInput, signal: AbortSignal): Promise<TypstWorkerOutput> {
 		return this.request(input, signal)
 	}
 	render(input: TypstRenderWorkerInput, signal: AbortSignal): Promise<TypstPageImage> {
@@ -25,15 +28,15 @@ export class NativeCompilerClient {
 		signal: AbortSignal,
 	): Promise<T> {
 		signal.throwIfAborted()
-		if (this.closing || this.failure) throw this.failure ?? new Error('Typst compiler is closed')
+		if (this.closed) throw this.failure ?? new TypstError('CLOSED', 'Typst compiler is closed')
 		if (this.pending) throw new Error('Typst compiler already has an active update')
 		if (!this.worker) {
 			const worker = (this.worker = new Worker(this.url))
 			worker.on(
 				'message',
 				(message: { ok: boolean; value?: unknown; error?: Error; code?: TypstErrorCode }) => {
+					if (this.closing) return
 					const pending = this.pending
-					this.pending = undefined
 					if (message.ok) pending?.resolve(message.value!)
 					else
 						pending?.reject(
@@ -45,38 +48,55 @@ export class NativeCompilerClient {
 						)
 				},
 			)
-			worker.on('error', (error) => {
-				this.failure = error instanceof Error ? error : new Error(String(error))
-				this.pending?.reject(error)
-				this.pending = undefined
-			})
+			worker.on('error', (error) => this.fail(error))
+			worker.on('messageerror', (error) => this.fail(error))
 			worker.on('exit', (code) => {
-				if (!this.closing) this.failure = new Error(`Typst compiler thread exited (${code})`)
-				this.pending?.reject(this.failure ?? new Error('Typst compiler closed'))
-				this.pending = undefined
+				this.fail(new Error(`Typst compiler thread exited (${code})`))
 			})
 		}
-		let abort!: () => void
+		const pending = Promise.withResolvers<unknown>()
+		this.pending = pending
+		const abort = () => {
+			void this.close().then(() => pending.reject(signal.reason), pending.reject)
+		}
+		signal.addEventListener('abort', abort, { once: true })
 		try {
-			return await new Promise<T>((resolve, reject) => {
-				this.pending = { resolve: (value) => resolve(value as T), reject }
-				abort = () => {
-					this.failure =
-						signal.reason instanceof Error ? signal.reason : new Error(String(signal.reason))
-					void this.close().then(() => reject(signal.reason), reject)
-				}
-				signal.addEventListener('abort', abort, { once: true })
+			this.worker.postMessage({ ...input, bindingPath: this.bindingPath }, [])
+			const value = await pending.promise
+			if (signal.aborted) {
+				await this.close()
+				signal.throwIfAborted()
+			}
+			return value as T
+		} catch (cause) {
+			if (this.failure) {
 				try {
-					this.worker!.postMessage({ ...input, bindingPath: this.bindingPath }, [])
-				} catch (error) {
-					this.pending = undefined
-					reject(error)
+					await this.close()
+				} catch (cleanup) {
+					throw new WorkerTaskError(
+						'EXECUTION_UNSETTLED',
+						'Typst compiler thread exit is unconfirmed',
+						{
+							cause: new AggregateError(
+								[cause, cleanup],
+								'Typst compiler execution and cleanup failed',
+								{ cause },
+							),
+						},
+					)
 				}
-			})
+			}
+			throw cause
 		} finally {
+			this.pending = undefined
 			signal.removeEventListener('abort', abort)
-			if (signal.aborted) await this.close()
 		}
+	}
+	private fail(error: unknown): void {
+		if (this.closing || this.failure) return
+		this.failure =
+			error instanceof Error ? error : new Error('Typst compiler failed', { cause: error })
+		this.pending?.reject(this.failure)
 	}
 	close(): Promise<void> {
 		if (!this.closing)

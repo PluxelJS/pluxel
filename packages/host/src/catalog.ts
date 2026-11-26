@@ -21,13 +21,108 @@ export class PluginCatalogError extends Error {
 	}
 }
 
+/** Immutable public control files produced with one implementation candidate. */
+export type PluginControlMaterial = Readonly<{
+	snapshot: string
+	manifest: Readonly<Record<string, unknown>>
+	files: Readonly<Record<string, string>>
+}>
+
+export type PluginControlMetadata =
+	| Readonly<{
+			state: 'available'
+			format: 2
+			contracts: Readonly<{ config: string | null; instance: string }>
+			material?: PluginControlMaterial
+	  }>
+	| Readonly<{
+			state: 'unavailable'
+			reason: 'missing' | 'analysis_failed' | 'source_changed'
+			message?: string
+	  }>
+
+export class PluginControlError extends Error {
+	constructor(
+		readonly code:
+			| 'stale_target'
+			| 'control_evidence_missing'
+			| 'control_format_unsupported'
+			| 'control_material_unavailable'
+			| 'control_contract_mismatch',
+		message: string,
+	) {
+		super(message)
+		this.name = 'PluginControlError'
+	}
+}
+
+export function assertPluginControlContract(
+	entry: PluginCatalogEntry,
+	surface: 'config' | 'instance',
+	expected: string | null,
+): void {
+	const control = entry.provenance.control
+	if (!control || control.state !== 'available')
+		throw new PluginControlError(
+			'control_material_unavailable',
+			`Control declarations are unavailable for ${formatPluginDefinitionReference(entry.address)}`,
+		)
+	if (control.format !== 2)
+		throw new PluginControlError('control_format_unsupported', 'Control format 2 is required')
+	if (control.contracts[surface] !== expected)
+		throw new PluginControlError(
+			'control_contract_mismatch',
+			`${surface} contract mismatch: expected ${String(expected)}, actual ${String(control.contracts[surface])}`,
+		)
+}
+
+function immutableControlValue(value: unknown, depth = 0): unknown {
+	if (depth > 128) throw new TypeError('Control metadata exceeds the maximum nesting depth')
+	if (value === null || typeof value === 'string' || typeof value === 'boolean') return value
+	if (typeof value === 'number' && Number.isFinite(value)) return value
+	if (Array.isArray(value))
+		return Object.freeze(value.map((item) => immutableControlValue(item, depth + 1)))
+	if (value && typeof value === 'object') {
+		const prototype = Object.getPrototypeOf(value)
+		if (prototype !== null && prototype !== Object.prototype)
+			throw new TypeError('Control metadata must contain plain portable data')
+		const result: Record<string, unknown> = Object.create(null)
+		for (const [key, descriptor] of Object.entries(Object.getOwnPropertyDescriptors(value))) {
+			if (!descriptor.enumerable) continue
+			if (!('value' in descriptor)) throw new TypeError('Control metadata cannot contain accessors')
+			result[key] = immutableControlValue(descriptor.value, depth + 1)
+		}
+		return Object.freeze(result)
+	}
+	throw new TypeError('Control metadata must contain plain portable data')
+}
+
+function snapshotPluginControl(control: PluginControlMetadata): PluginControlMetadata {
+	if (control.state === 'unavailable') return Object.freeze({ ...control })
+	if (control.state !== 'available' || control.format !== 2)
+		throw new PluginControlError('control_format_unsupported', 'Control format 2 is required')
+	for (const digest of [control.contracts.config, control.contracts.instance])
+		if (digest !== null && !/^sha256:[a-f0-9]{64}$/.test(digest))
+			throw new TypeError('Control contracts require a SHA-256 digest')
+	return Object.freeze({
+		state: 'available',
+		format: 2,
+		contracts: Object.freeze({ ...control.contracts }),
+		...(control.material === undefined
+			? {}
+			: { material: immutableControlValue(control.material) as PluginControlMaterial }),
+	})
+}
+
 export type PluginCatalogProvenance = Readonly<{
-	/** Route-owned module identity. It never enters Core identity or graph state. */
-	moduleId?: string
+	/** Physical discovery entries exporting this implementation, including re-exports of a shared or fixed constructor. */
+	sourceFiles?: readonly string[]
 	/** Immutable execution fact projected to management clients without physical module identity. */
 	execution?: PluginExecutionSnapshot
 	/** Route-owned artifact/build input. Core must never receive this value. */
 	artifactInput?: unknown
+	/** Same-candidate declaration contracts and optional public control files. */
+	control?: PluginControlMetadata
 }>
 
 export type PluginCatalogEntry = Readonly<{
@@ -41,6 +136,8 @@ export type PluginCatalogSnapshot = Readonly<{
 	revision: number
 	entries: readonly PluginCatalogEntry[]
 	byDefinition: ReadonlyMap<string, PluginCatalogEntry>
+	/** Canonical catalog order, reused across policy changes and publication reviews. */
+	declarations: ReadonlyMap<string, ConcretePluginDefinitionCandidate['declaration']>
 }>
 
 export type PluginDefinitionRole = 'concrete' | 'abstract'
@@ -57,6 +154,29 @@ export type PluginCatalogEntryInput = Readonly<{
 	candidate: ConcretePluginDefinitionCandidate
 	provenance?: PluginCatalogProvenance
 }>
+
+const EMPTY_PROVENANCE: PluginCatalogProvenance = Object.freeze({})
+
+function snapshotProvenance(
+	address: PluginDefinitionAddress,
+	provenance: PluginCatalogProvenance,
+): PluginCatalogProvenance {
+	return Object.freeze({
+		...provenance,
+		...(provenance.sourceFiles ? { sourceFiles: Object.freeze([...provenance.sourceFiles]) } : {}),
+		...(provenance.control === undefined
+			? {}
+			: { control: snapshotPluginControl(provenance.control) }),
+		...(provenance.execution === undefined
+			? {}
+			: {
+					execution: clonePluginExecutionSnapshot(
+						provenance.execution,
+						`Plugin catalog execution for ${formatPluginDefinitionReference(address)}`,
+					),
+				}),
+	})
+}
 
 export function createPluginCatalogSnapshot(
 	revision: number,
@@ -91,22 +211,13 @@ export function createPluginCatalogSnapshot(
 			abstractRoles.set(tokenKey, provides)
 		}
 
-		const provenance = input.provenance
 		const entry = Object.freeze({
 			address,
 			indexKey,
 			candidate: input.candidate,
-			provenance: Object.freeze({
-				...provenance,
-				...(provenance?.execution === undefined
-					? {}
-					: {
-							execution: clonePluginExecutionSnapshot(
-								provenance.execution,
-								`Plugin catalog execution for ${formatPluginDefinitionReference(address)}`,
-							),
-						}),
-			}),
+			provenance: input.provenance
+				? snapshotProvenance(address, input.provenance)
+				: EMPTY_PROVENANCE,
 		})
 		concreteRoles.add(indexKey)
 		entries.push(entry)
@@ -122,11 +233,41 @@ export function createPluginCatalogSnapshot(
 		}
 	}
 
-	entries.sort((left, right) => left.indexKey.localeCompare(right.indexKey))
+	entries.sort((left, right) => (left.indexKey < right.indexKey ? -1 : 1))
 	return Object.freeze({
 		revision,
 		entries: Object.freeze(entries),
 		byDefinition,
+		declarations: new Map(
+			entries.map(({ indexKey, candidate }) => [indexKey, candidate.declaration]),
+		),
+	})
+}
+
+/** Capture route facts supplied during Host preparation, reusing the validated declarations. */
+export function attachPluginCatalogProvenance(
+	snapshot: PluginCatalogSnapshot,
+	read: (candidate: ConcretePluginDefinitionCandidate) => PluginCatalogProvenance | undefined,
+): PluginCatalogSnapshot {
+	let byDefinition: Map<string, PluginCatalogEntry> | undefined
+	for (const entry of snapshot.entries) {
+		const provenance = read(entry.candidate)
+		if (provenance === undefined) continue
+		byDefinition ??= new Map(snapshot.byDefinition)
+		byDefinition.set(
+			entry.indexKey,
+			Object.freeze({
+				...entry,
+				provenance: snapshotProvenance(entry.address, provenance),
+			}),
+		)
+	}
+	if (!byDefinition) return snapshot
+	const resolved = byDefinition
+	return Object.freeze({
+		...snapshot,
+		entries: Object.freeze(snapshot.entries.map(({ indexKey }) => resolved.get(indexKey)!)),
+		byDefinition: resolved,
 	})
 }
 
@@ -150,19 +291,20 @@ export function pluginCatalogEntry(
  */
 export function extendPluginDefinitionRoleHistory(
 	committed: PluginDefinitionRoleHistory,
-	catalog: PluginCatalogSnapshot,
+	declarations: Iterable<
+		Pick<ConcretePluginDefinitionCandidate['declaration'], 'address' | 'provides' | 'optional'>
+	>,
 ): PluginDefinitionRoleHistory {
 	const next = new Map(committed)
-	for (const entry of catalog.entries) {
-		assertRole(next, entry.address, 'concrete')
-		const provides = entry.candidate.declaration.provides
-		if (provides) assertRole(next, provides, 'abstract')
+	const optionals: PluginDefinitionAddress[] = []
+	for (const declaration of declarations) {
+		assertRole(next, declaration.address, 'concrete')
+		if (declaration.provides) assertRole(next, declaration.provides, 'abstract')
+		for (const optional of declaration.optional) optionals.push(optional)
 	}
-	for (const entry of catalog.entries) {
-		for (const optional of entry.candidate.declaration.optional) {
-			if (next.get(pluginDefinitionIndexKey(optional))?.role !== 'abstract') continue
+	for (const optional of optionals) {
+		if (next.get(pluginDefinitionIndexKey(optional))?.role === 'abstract')
 			throw optionalAbstractForbidden(optional)
-		}
 	}
 	return next
 }

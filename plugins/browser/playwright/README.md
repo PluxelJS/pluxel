@@ -34,7 +34,7 @@ export class PageTitlePlugin extends BasePlugin {
 每次调用创建隔离 context；调用者应在 `finally` 关闭。插件和调用方停止时兜底关闭各自 context。
 `signal` 只取消获取阶段；已经交付的 context 的后续操作使用原生 Playwright 超时与调用方的关闭策略。
 
-配置选择 `endpoint` 或 `connectionKey`，二者互斥。无凭据的 endpoint 不需要安装 Vault。
+配置选择 `endpoint` 或 `connectionKey`，二者互斥。无凭据的 endpoint 不访问内建 Vault。
 含凭据的 URL（包括路径 token）、所有 query URL 和连接 headers 使用 Vault：
 `PlaywrightVaultSchema` 是以 key 为索引的根 schema，单条记录形如 `{ endpoint, headers? }`。
 `connectTimeoutMs` 默认为 30 秒；保存配置或更换 Vault 记录后需要显式重启插件。

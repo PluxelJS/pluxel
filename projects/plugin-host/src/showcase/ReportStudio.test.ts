@@ -1,4 +1,7 @@
-import { standardServices } from '@pluxel/services'
+import { elysia } from '@pluxel/services/elysia'
+import { commands } from '@pluxel/services/commands'
+import { nodeModules } from '@pluxel/services/node'
+import { workers } from '@pluxel/services/workers'
 import { mkdtemp, rm } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
@@ -13,7 +16,6 @@ import { OtelPlugin } from '@pluxel/plugin-otel'
 import { MemoryRatesBackendPlugin, Rates, RatesBackend, RatesPlugin } from '@pluxel/plugin-rates'
 import { createTestHost } from '@pluxel/test'
 import { S3, S3Plugin } from '@pluxel/plugin-storage'
-import { WretchPlugin } from '@pluxel/plugin-wretch'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { ReportStudioWorkbench } from './ReportStudio.workbench'
 import { ReportStudioPlugin } from './ReportStudio'
@@ -36,9 +38,11 @@ describe('ReportStudioPlugin', () => {
 		const compileMath = vi.spyOn(TypstPlugin.prototype, 'renderSvg')
 		const storageRoot = await mkdtemp(join(tmpdir(), 'pluxel-report-studio-'))
 		temporaryRoots.push(storageRoot)
+		const outboundFetch = vi.fn<typeof globalThis.fetch>()
 		await using host = await createTestHost({
 			workbench: true,
-			services: standardServices(),
+			services: [elysia(), commands(), nodeModules(), workers()],
+			coreConfig: { http: { fetch: outboundFetch } },
 		})
 		await host.commit((change) => {
 			change.catalog.add([
@@ -53,49 +57,48 @@ describe('ReportStudioPlugin', () => {
 				TakumiMarkdownPlugin,
 				TypstPlugin,
 				S3Plugin,
-				WretchPlugin,
 				OtelPlugin,
 			])
-			change.config.seed(S3Plugin, {
+			change.config.seed(S3Plugin.nodeAddress(), {
 				buckets: [
 					localStorageConfig('drafts', storageRoot, 'drafts'),
 					localStorageConfig('releases', storageRoot, 'releases'),
 				],
 			})
-			change.config.seed(OtelPlugin, {
+			change.config.seed(OtelPlugin.nodeAddress(), {
 				otlp: [],
 				prometheus: { path: '/showcase/metrics' },
 			})
 
 			change.dependencies.setOverride({
-				consumer: CachePlugin,
+				consumer: CachePlugin.nodeAddress(),
 				requirement: CacheBackend,
-				provider: MemoryCacheBackendPlugin,
+				provider: MemoryCacheBackendPlugin.nodeAddress(),
 			})
 			change.dependencies.setOverride({
-				consumer: RatesPlugin,
+				consumer: RatesPlugin.nodeAddress(),
 				requirement: RatesBackend,
-				provider: MemoryRatesBackendPlugin,
+				provider: MemoryRatesBackendPlugin.nodeAddress(),
 			})
 			change.dependencies.setOverride({
-				consumer: ReportStudioPlugin,
+				consumer: ReportStudioPlugin.nodeAddress(),
 				requirement: Cache,
-				provider: CachePlugin,
+				provider: CachePlugin.nodeAddress(),
 			})
 			change.dependencies.setOverride({
-				consumer: ReportStudioPlugin,
+				consumer: ReportStudioPlugin.nodeAddress(),
 				requirement: Rates,
-				provider: RatesPlugin,
+				provider: RatesPlugin.nodeAddress(),
 			})
 			change.dependencies.setOverride({
-				consumer: ReportStudioPlugin,
+				consumer: ReportStudioPlugin.nodeAddress(),
 				requirement: S3,
-				provider: S3Plugin,
+				provider: S3Plugin.nodeAddress(),
 			})
-			change.start(ReportStudioPlugin)
+			change.start(ReportStudioPlugin.nodeAddress())
 		})
 
-		const studio = host.require(ReportStudioPlugin)
+		const studio = host.require(ReportStudioPlugin.nodeAddress())
 		const subscribe = studio.subscribe.bind(studio)
 		const releasePanelSubscriptions = vi.fn()
 		const subscriptionSpy = vi.spyOn(studio, 'subscribe').mockImplementation((listener) => {
@@ -109,12 +112,12 @@ describe('ReportStudioPlugin', () => {
 		})
 		const principal = { provider: 'test', subject: 'report-panels' }
 		using statusPanel = await host.workbench.open({
-			target: ReportStudioPlugin,
+			target: ReportStudioPlugin.nodeAddress(),
 			entry: ReportStudioWorkbench.studioStatus,
 			principal,
 		})
 		using artifactsPanel = await host.workbench.open({
-			target: ReportStudioPlugin,
+			target: ReportStudioPlugin.nodeAddress(),
 			entry: ReportStudioWorkbench.studioArtifacts,
 			principal,
 		})
@@ -129,7 +132,7 @@ describe('ReportStudioPlugin', () => {
 			data: { artifacts: [] },
 		})
 		using studioView = await host.workbench.open({
-			target: ReportStudioPlugin,
+			target: ReportStudioPlugin.nodeAddress(),
 			entry: ReportStudioWorkbench.studio,
 			location: '/architecture-lab',
 			principal,
@@ -158,7 +161,7 @@ describe('ReportStudioPlugin', () => {
 		artifactsPanel[Symbol.dispose]()
 		expect(releasePanelSubscriptions).toHaveBeenCalledTimes(2)
 		subscriptionSpy.mockRestore()
-		const storage = host.require(S3Plugin)
+		const storage = host.require(S3Plugin.nodeAddress())
 		expect(await storage.bucket('drafts').client.getObject(first.objectKey)).not.toBeNull()
 		expect(
 			await storage.bucket('releases').client.getObject(`releases/${first.id}.png`),
@@ -224,6 +227,23 @@ describe('ReportStudioPlugin', () => {
 		} finally {
 			unsubscribe()
 		}
+
+		const cancelProbeBody = vi.fn()
+		outboundFetch
+			.mockResolvedValueOnce(
+				new Response(new ReadableStream({ cancel: cancelProbeBody }), { status: 200 }),
+			)
+			.mockResolvedValueOnce(new Response('upstream unavailable', { status: 503 }))
+		await expect(studioView.api.probeOutboundDto()).resolves.toMatchObject({
+			ok: true,
+			status: 200,
+		})
+		expect(cancelProbeBody).toHaveBeenCalledOnce()
+		await expect(studioView.api.probeOutboundDto()).resolves.toMatchObject({
+			ok: false,
+			message: 'upstream unavailable',
+		})
+		expect(outboundFetch).toHaveBeenCalledTimes(2)
 		await expect(studio.generate({ title: '', engine: 'canvas' })).rejects.toThrow(
 			'title must not be empty',
 		)

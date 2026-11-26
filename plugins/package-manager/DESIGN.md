@@ -1,51 +1,35 @@
-# Package Manager 插件设计
+# Package Manager 安装与恢复
 
-## 所有权与消费
+`PackageManagerPlugin` 在 Node 宿主中解析 npm 包并发布 ESM 入口。`PackageManagerConfig` 定义部署策略；持久化的 `published-installation.json` 记录当前选中的安装。Host 只消费发布的入口，Workbench、Commands 和本地插件方法共用同一个 store。目录来源、兼容性检查、级联安装和查看器见[插件市场设计](../../engineering/PLUGIN_MARKET.md)。
 
-`PackageManagerConfig` 是导出的部署 schema，与 Plugin 的 `configs.use()` 共用；Host config/env/file 优先级只拥有部署策略。
-持久化安装清单和发布 revision 属于业务状态，不反向覆盖配置。公共 `snapshot/install/remove` 与 Commands 在无 Workbench 时完整可用；
-Workbench target 仅投影同一 store，不是配置或安装操作的唯一入口。registry/auth/proxy 保留 pnpm 原生输入契约，不另建普通 secret 配置。
+## 准备与确认
 
-`/market` 和 `/packages` 两个 Direct View 通过同一 `PackageManagerApi` factory 绑定同一 Store，每个打开项独立拥有 RPC root 和 renderer query resources。资源定义由一个工厂按 descriptor 建立，不能跨 open 共享查询缓存。市场浏览的 `./marketplace` 导出仅依赖 React、无导入的 market DTO 和公共 HTTP client，不引入 Mantine、Workbench 或 CapnWeb；Workbench adapter 与公开 UI 不在同一导出依赖图。
+`prepareInstall` 和 `prepareMarketInstall` 用 pnpm 物化完整依赖图。每个 store 最多保留一份内存预览，有效期为十分钟。预览绑定候选目录、基础 revision、精确版本、SRI 和文件摘要。确认时重新核对候选字节并提交，跳过再次下载和运行构建脚本。停止插件、替换候选或提交其他安装变更都会使旧预览失效。
 
-市场 UI 的搜索、分页和所选坐标只有一个 React 所有者；`MarketplaceData` 的四个稳定读取组件只提供当前查询状态，通过 render children 投影结果。使用组件 slot 保持 React hook 静态调用，不能在 props 中动态传 hook。Workbench adapter 复用原有 per-open queryFamily；独立网页自行拥有 HTTP 请求、取消和晚到结果清理。`onPrepare` 是宿主显式授予的能力，缺省只浏览，不建立第二套安装或收藏服务。
+预览按实际要发布或补发的 wrapper 检查影响，也计入待撤回的旧入口。安装器从实际包的 `pluxel.control` 读取并校验清单快照，只用本包根入口声明推算导出变化。Host 提供已接纳定义的来源、默认节点和 fork 的运行状态，以及 Core 已解析的直接 required/optional 消费者。无清单、其他包的重导出、多个来源共用和来源未报告的定义分别保留未知变化。应用固定 import 已拥有同名包，或候选声明的定义已由本次发布之外的动态来源提供时，准备和立即安装都返回 `SOURCE_CONFLICT`。独立 store 的 `plan.hostImpact` 和 `plan.dependencyReview` 均为 `null`。
 
-Plugin 拥有 pnpm acquisition、配置、安装记录、单写者 lock、commands 和可选 Direct View。Host 只消费普通 ESM wrapper；不读取安装私有状态。init 在任何 native/文件/UI 副作用前用 requirePluginSource 校验 rootDir/entries，返回 next-start/live 事实。Native 下次新进程启动扫描；Vite 独立报告目录事务与 lifecycle。
+控制清单的可选文件 `dependencies.json` 由编译器从本代 lowering 生成，每个可判定的具体定义记录包含 Part 的 required/optional 引用、提供的抽象 token 及可判定的 fork 能力。安装器按清单核对该文件的长度与摘要。缺文件或摘要错误会拒绝声明了该文件的制品；早期清单和未能静态判定的定义允许正常审阅，明确报告缺失项。
+
+Host 将整批候选根声明与保留的来源合并，在同一已提交快照上运行与接纳共用的策略求解。它保留当前 auto-start、会话意图、fork、provider default 和 consumer override。`dependencyReview` 比较策略选中节点的 required 绑定及新增、解除的协调问题，能定位间接受阻的消费者。对尚未启用的候选也列出预计目录中没有 provider 的 required 和 optional 引用。来源归属、依赖或当前 fork 的支持情况不确定时，返回 `incomplete` 和原因；角色冲突返回 `invalid`。`liveRejections` 使用在线接纳的同一判据。若列表非空，按这些声明在线替换会保留原 catalog。候选包首次重导出的外部定义不在自有根清单中，可能改变预测中的缺项、绑定或拒绝原因，只有加载入口时才能发现。
+
+目标 Host 接纳制品并执行节点生命周期。同一份插件依赖声明可以对应不同的启动结果。例如 Otel 根据节点配置决定是否向 `ElysiaApp` 注册 Prometheus 路由。启动时缺少所需服务会进入该节点的生命周期报告，Workbench 在安装审阅中指出查询位置。[Otel 预览与启动对照](../../engineering/records/host-deployment.md#otel-安装预览与启动2026-11-25)
+
+确认先复核候选字节，在原子保存安装选择的 rename 提交前，同步复核 catalog/policy revision 和相关节点、依赖、来源。过期或事实改变返回 `INVALID_PLAN`。Host 正在处理或已排队的图变更返回 `HOST_GRAPH_BUSY`，本次候选释放。若另一个入口在审阅期间损坏，修复需要扩大原范围，此时返回 `INVALID_PLAN`。保存成功后只操作审阅过的入口，回执按包核对实际发布或撤回结果。保存之后的来源接纳、节点启动或阻塞继续由 Host 报告。[Host 来源事实](../../engineering/HOST.md)
+
+pnpm 负责 registry、凭据、代理和下载。默认忽略构建脚本、允许列表为空，最短发布时间为 24 小时。启用脚本时需显式列出可运行脚本的包名，准备阶段就可能执行这些脚本。受管请求支持 npm 包名及版本、范围或 dist-tag。[公开配置和调用方式](../../docs/plugins/package-manager.md)
 
 ## 不可变安装与发布
 
-市场和直接安装由同一个 Plugin 拥有。`markets: []` 默认不进行目录请求；market client 只访问部署方配置的 base URL，页面只能提交连接 ID。公共 HTTP 的读取有 timeout、响应大小与 DTO 校验边界，禁止重定向；错误不退化为空目录，也不影响直接安装。Worker 是独立项目，不要求消费端启动 Pluxel Host 服务端。
+每次安装在私有的 `revisions/<uuid>` 下写入 manifest、lockfile、node_modules 链接和内部入口。pnpm 全局虚拟存储位于 `slots/`，通过复制导入包字节。包图指纹包含 pnpm v9 锁文件中的 resolution、peer、optional 和可达依赖，另对实际文件计算摘要。图和字节都未改变的包复用原物理目录和内部入口，保证不同顶层插件借用同一个依赖实例。无法验证依赖图、已复用目录的字节或路径发生变化时，发布失败。[安装实现](src/store.ts)
 
-交互安装先 `prepareInstall` / `prepareMarketInstall`，再 `confirmInstall`。准备使用相同 pnpm engine 完整物化私有 revision，保留 registry/auth/proxy 语义，不另建 npm resolver。每 store 只保留一个内存候选，10 分钟有效；候选 ID、selection revision、固定版本、SRI 和图/字节绑定。确认重新核对文件再提交，不执行第二次 acquisition。停止、替换候选或其他安装 mutation 使旧预览失效；候选不是跨进程持久任务。
+保存新的安装记录后，store 逐项原子替换 `entries/` 下的公开入口。确认回执的 `succeeded` 限于成功的请求包，`published` 与 `withdrawn` 报告审阅范围内达到目标状态的入口，包括其他包的入口修复及待撤回项。保存前失败时两个入口列表均为空；保存后若部分发布失败，store 逐个读取审阅过的入口，只有与安装记录一致的发布或撤回项才进入对应列表。快照只为与当前记录一致的包返回 `entryFile`。卸载后仍待撤回的入口由目录内容推导为 `pendingRemovals`；重试这些入口只需撤回文件。旧 revision、slot、资源和制品保留到离线维护，以便已有进程完成工作。
 
-市场包身份为 registry + name；官方标记、分类和标签消费市场自身的管理事实，不根据 scope 或 provenance 推断。列表筛选、renderer query key、版本选择、精确发行和安装准备保留同一 registry。公开查询省略来源时明确选择公共 npm；安装准备必须显式携带来源，不能从不可用私有包回退公共同名包。客户端不持有管理密钥，受保护来源由市场访问控制决定是否可读。
+## 写者与生命周期
 
-包概览与可安装发行是不同事实：`marketPackage` 允许只观察过元数据的包显示 registry README、许可和声明仓库，`indexedVersions: 0` 不产生安装入口。Workbench 先读概览，打开版本页才查询已校验发行；发行 README 来自已校验 archive。两处 README 复用 browser-safe mdast/GFM 到 React 的渲染器：不注入 HTML、不加载包声明的图片，只允许 HTTP(S)/mailto 绝对链接，相对链接保留文字，表格和代码块在局部横向滚动。来源 stars 仅消费带观测时间的实际缓存，声明仓库和官方标记不赋予 provenance verified 状态。
+初始化先用 `requirePluginSource` 核对部署的来源目录。store 通过原子创建 `.writer` 获得跨进程写权限；已有写者时返回 `PACKAGE_STORE_WRITER_CONFLICT`。启动会核对安装记录、路径边界、内部入口、slot 字节和公开入口。异常退出留下的锁由操作者离线核实并清除。原生引擎调用前还会核对调度环境中的首个非空 workspace-dir 与实际安装目录，避免写入调用方的工作区。
 
-市场选择由后端读取精确发行，核对 pnpm registry、lockfile SRI 和实际 package.json name/version；市场 tarball URL 不进入 acquisition。pnpm 的 scoped registry 优先于 default，来源不一致在 acquisition 之前拒绝；相同来源复用原生认证和代理配置。确认后的顶层选择固定为精确版本，原请求范围保留在预览。准备允许显式策略授权的构建脚本，故不承诺只读。当前预览覆盖受管包图变化，不冒充完整 Host Plugin/fork 生命周期预检。
-
-每次 mutation 将完整 manifest 交给一次 pnpm install，私有 revisions/<uuid> 保存 manifest/lockfile/node_modules 链接和 inner entries。global virtual store 位于 root/slots，copy 导入包字节；相同 resolution、peer context 和依赖图复用同一物理 slot，A/B 不会因安装批次得到两份共同 P。
-
-pnpm v9 graph fingerprint 包含 resolution、peer、optional 和可达依赖；实际 slot 闭包字节再做摘要。图与字节未变时必须保留同一物理路径与旧 inner entry，改变了就拒绝。图变化的包使用新 inner entry。未知图不做保守全量重发，明确拒绝。
-
-published-installation.json 是当前安装选择的唯一 authority；准备失败保持原记录。保存新记录后逐项原子交换公开 entries/<encoded-name>.mjs，撤回 stale wrapper。不是 batch atomic：IO 失败后按实际 wrapper 比对给出部分成功回执；snapshot 的 entryFile 只有与当前 authority 一致时存在；pendingRemovals 从 entries 中已离开选择的残留入口推导，UI 提供显式撤回重试，不另存恢复清单。下一 mutation 可以重试发布；显式 remove 也接受已从安装选择移除但仍残留公开 wrapper 的包，仅重试撤回时不重新执行 pnpm。混合新卸载与撤回重试按所有涉及条目的实际文件给出回执。initialize 不修复错误合同。
-
-卸载只移除公开 wrapper。旧 revisions、slots、资源和制品一直保留到明确离线维护；close 撤回 mutation/publication 并等待已接纳 native install 真实结算，随后释放 writer。不存在启动迁移或自动 GC。
-
-## 写者与恢复
-
-原生引擎调用前校验首个非空 pnpm/npm workspace-dir 环境覆盖与显式 dir 一致；冲突直接拒绝，不允许调度环境把私有 revision 安装指向 Host 工作区，也不全局修改进程环境。原生集成测试在独立 worker 中清除调度覆盖，另用子进程与临时旁工作区回归四种拼写、空值与优先级、匹配目录及旁工作区字节不变。
-
-目录内 mkdir .writer 原子获得跨进程单写者 ownership；EEXIST 返回 PACKAGE_STORE_WRITER_CONFLICT，其余 IO 错误保持原生错误。异常退出的遗留 lock 只能由操作者离线核对并删除。启动验证 index、物理 containment、inner entries、slot bytes 和公开 wrapper；旧布局与不一致内容明确失败，不静默迁移或重新发布。
-
-## 能力与回执
-
-package.install/remove commands、Plugin 方法和每次打开的 owner-bound Workbench target 复用同一 store。初始化、mutation 和 snapshot 共用串行队列，snapshot 不混合两次提交的事实；关闭同步撤销 admission，等待已开始初始化/安装和同一次 writer 释放，缓存句柄也不能继续读取。调用时捕获输入数组，排队期间调用方修改原数组不改变操作目标。关闭 Workbench 不影响安装。停止 Plugin 撤回 commands/View、abort target 和安装 admission；持久文件不因 generation cleanup 删除。
-
-succeeded 表示 wrapper 已发布，failed 保留 INVALID_SPEC/INSTALL_FAILED/REMOVE_FAILED，绝不表示实际 Plugin 已运行。Vite catalog、native next-start 与 auto-start/session intent 是另外的事实。public snapshot 不返回 registry/auth/proxy/raw native event；native acquisition 错误使用经过挑选的领域消息。
-
-默认忽略 scripts、空 allowBuilds 和 24 小时 minimum release age。放宽 scripts 必须同时显式配置非空 exact allow-list。只接纳 canonical registry package name 与版本/range/dist-tag；alias/path/URL/Git 属于其他 producer。
+初始化、安装变更与快照共用串行队列。调用时捕获请求，卸载时在写队列里核对审阅的 revision。每个 Workbench 文档拥有自己的查询和 RPC 资源，关闭文档后已接纳的安装继续执行。插件关闭时拒绝新操作，等待已接纳的原生安装和写锁释放。发布成功表示入口已就绪，Vite 的即时接纳、原生宿主的下次启动和插件运行状态分别由 Host 报告。
 
 ## 验证入口
 
-store.test 验证发布失败/取消/未知图与未变条目；immutable-installation.test 使用真实 registry tarballs、pnpm global slots、原生 fresh process 和固定 PackageManagerPlugin 的生产 Vite，覆盖 A/B/P 身份、wrapper/运行代/Node 制品精度、普通 ESM 更新、HTTP/WebSocket、工厂失败恢复、跨进程写者与关闭。pnpm-engine 的 local registry 用原生新进程验证发布与消费分离；隔离 plugin tests 只证明业务边界。
+[Store 测试](tests/store.test.ts)覆盖图变化、预览失效和部分发布恢复。[不可变安装测试](tests/immutable-installation.test.ts)用真实 registry 归档、pnpm slot 和生产 Vite 检查共享实例、入口更新和制品。[原生引擎测试](tests/pnpm-engine.test.ts)验证新进程对发布和撤回的接纳；[环境隔离测试](tests/workspace-environment.test.ts)验证 workspace-dir 覆盖的优先级及隔离。

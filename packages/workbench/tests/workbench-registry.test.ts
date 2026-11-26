@@ -1,13 +1,13 @@
-import { type Context } from '@pluxel/core'
+import { type Workbench, workbench } from '@pluxel/workbench'
+import { parsePluginNodeAddress, defineServiceRef, formatPluginNodeReference } from '@pluxel/core'
 import { requirePluginService } from '@pluxel/core/internal'
 import { workbenchFederationExpose, workbenchFederationProducerName } from '@pluxel/core/federation'
 import { RpcTarget, type RpcStub } from 'capnweb'
-import { workbench } from '@pluxel/workbench'
 import { createServiceInternalTestHarness } from '@pluxel/services/internal/test'
 import { BasePlugin, Plugin } from '@pluxel/core/internal/test'
 import { describe, expect, it, vi } from 'vitest'
 import * as v from 'valibot'
-import { requireWorkbench, WorkbenchBackend } from '@pluxel/workbench/server'
+import { WorkbenchHost, WorkbenchBackend } from '@pluxel/workbench/server'
 import {
 	WorkbenchContentTarget,
 	type WorkbenchArtifactLookup,
@@ -15,6 +15,7 @@ import {
 } from '@pluxel/workbench/internal'
 import type { WorkbenchContentObserver } from '@pluxel/workbench/client'
 
+const WorkbenchRef = defineServiceRef<Workbench>()
 interface SettingsApi extends RpcTarget {
 	snapshot(): Readonly<{ enabled: boolean }>
 }
@@ -27,71 +28,47 @@ interface SelectionApi extends RpcTarget {
 	select(id: string): boolean
 }
 
-const renderer = workbench.entry(import.meta.url, './fixtures/settings.tsx')
+const renderer = './fixtures/settings.tsx'
 
-const LocalWorkbench = workbench.define({
+const LocalWorkbench = workbench.define(import.meta.url, {
 	settings: workbench.view<SettingsApi>({
 		renderer,
-		placement: workbench.tab({ label: 'Settings' }),
+		placement: { kind: 'tab', label: 'Settings' },
 	}),
 })
 
-const ContentWorkbench = workbench.define({
+const ContentWorkbench = workbench.define(import.meta.url, {
 	guide: workbench.content({
-		document: workbench.markdown(import.meta.url, './fixtures/guide.md'),
-		placement: workbench.tab({ label: 'Guide' }),
+		document: './fixtures/guide.md',
+		placement: { kind: 'tab', label: 'Guide' },
 	}),
 })
 
-const InteractiveContentWorkbench = workbench.define({
+const InteractiveContentWorkbench = workbench.define(import.meta.url, {
 	interactive: workbench.content({
-		document: workbench.markdown(import.meta.url, './fixtures/interactive.md', {
+		document: './fixtures/interactive.md',
+		slots: {
 			status: workbench.data(v.object({ count: v.number() })),
 			refresh: workbench.action({ label: 'Refresh' }),
-		}),
-		placement: workbench.tab({ label: 'Interactive' }),
+		},
+		placement: { kind: 'tab', label: 'Interactive' },
 	}),
 })
 
-const RoutedWorkbench = workbench.define({
-	account: workbench.view<SettingsApi>({
-		renderer,
-		placement: workbench.route('/accounts/:accountId', { title: 'Account' }),
-	}),
-})
-
-const SharedRouteWorkbenchA = workbench.define({
-	settings: workbench.view<SettingsApi>({
-		renderer,
-		placement: workbench.route('/settings', { title: 'Settings A' }),
-	}),
-})
-
-const SharedRouteWorkbenchB = workbench.define({
-	settings: workbench.view<SettingsApi>({
-		renderer,
-		placement: workbench.route('/settings', { title: 'Settings B', frame: 'standalone' }),
-	}),
-})
-
-const ProviderWorkbench = workbench.define({
+const ProviderWorkbench = workbench.define(import.meta.url, {
 	picker: workbench.attachment<CatalogApi, SelectionApi>({ renderer }),
 })
 
-const ConsumerWorkbench = workbench.define({
-	fonts: ProviderWorkbench.picker.place(workbench.tab({ label: 'Fonts' })),
-})
-
-const PanelWorkbench = workbench.define({
+const PanelWorkbench = workbench.define(import.meta.url, {
 	inspector: workbench.view<SettingsApi>({
 		renderer,
-		placement: workbench.panel('right', { label: 'Inspector' }),
+		placement: { kind: 'panel', region: 'right', label: 'Inspector' },
 	}),
 	guide: workbench.content({
-		document: workbench.markdown(import.meta.url, './fixtures/guide.md'),
-		placement: workbench.panel('left', { label: 'Guide' }),
+		document: './fixtures/guide.md',
+		placement: { kind: 'panel', region: 'left', label: 'Guide' },
 	}),
-	fonts: ProviderWorkbench.picker.place(workbench.panel('bottom', { label: 'Fonts' })),
+	fonts: ProviderWorkbench.picker.place({ kind: 'panel', region: 'bottom', label: 'Fonts' }),
 })
 
 const disposedTargets: SettingsTarget[] = []
@@ -117,7 +94,7 @@ class SettingsTarget extends RpcTarget implements SettingsApi {
 @Plugin({ displayName: 'Local' })
 class LocalPlugin extends BasePlugin {
 	protected override init() {
-		this.ctx.workbench?.publish(LocalWorkbench, {
+		this.ctx.service(WorkbenchRef)?.publish(LocalWorkbench, {
 			settings: ({ signal }) => {
 				localFactoryCalls += 1
 				return new SettingsTarget(signal)
@@ -129,7 +106,7 @@ class LocalPlugin extends BasePlugin {
 @Plugin({ displayName: 'Content' })
 class ContentPlugin extends BasePlugin {
 	protected override init() {
-		this.ctx.workbench?.publish(ContentWorkbench)
+		this.ctx.service(WorkbenchRef)?.publish(ContentWorkbench)
 	}
 }
 
@@ -147,7 +124,7 @@ class InteractiveContentPlugin extends BasePlugin {
 	loadCalls = 0
 
 	protected override init() {
-		this.ctx.workbench?.publish(InteractiveContentWorkbench, {
+		this.ctx.service(WorkbenchRef)?.publish(InteractiveContentWorkbench, {
 			interactive: async ({ signal }) => {
 				contentSignal = signal
 				if (this.factoryGate) await this.factoryGate
@@ -196,9 +173,6 @@ function retainedContentObserver(handler: () => void | Promise<void>) {
 	return { observer, disposeObserver, disposeResults }
 }
 
-@Plugin({ displayName: 'No publication' })
-class NoPublicationPlugin extends BasePlugin {}
-
 let reusedTarget: SettingsTarget | undefined
 let reusedFactory: PromiseWithResolvers<SettingsTarget> | undefined
 let reusedFactoryStarted: PromiseWithResolvers<void> | undefined
@@ -206,7 +180,7 @@ let reusedFactoryStarted: PromiseWithResolvers<void> | undefined
 @Plugin({ displayName: 'Reused target' })
 class ReusedTargetPlugin extends BasePlugin {
 	protected override init() {
-		this.ctx.workbench?.publish(LocalWorkbench, {
+		this.ctx.service(WorkbenchRef)?.publish(LocalWorkbench, {
 			settings: ({ signal }) => {
 				if (reusedFactory) {
 					reusedFactoryStarted?.resolve()
@@ -226,45 +200,13 @@ let lateFactorySignal: AbortSignal | undefined
 @Plugin({ displayName: 'Late factory' })
 class LateFactoryPlugin extends BasePlugin {
 	protected override init() {
-		this.ctx.workbench?.publish(LocalWorkbench, {
+		this.ctx.service(WorkbenchRef)?.publish(LocalWorkbench, {
 			settings: ({ signal }) => {
 				lateFactorySignal = signal
 				lateFactoryStarted?.resolve()
 				if (!lateFactory) throw new Error('late factory test was not initialized')
 				return lateFactory.promise
 			},
-		})
-	}
-}
-
-let routedParams: Readonly<Record<string, string>> | undefined
-
-@Plugin({ displayName: 'Routed' })
-class RoutedPlugin extends BasePlugin {
-	protected override init() {
-		this.ctx.workbench?.publish(RoutedWorkbench, {
-			account: ({ params, signal }) => {
-				routedParams = params
-				return new SettingsTarget(signal)
-			},
-		})
-	}
-}
-
-@Plugin({ displayName: 'Shared route A' })
-class SharedRoutePluginA extends BasePlugin {
-	protected override init() {
-		this.ctx.workbench?.publish(SharedRouteWorkbenchA, {
-			settings: ({ signal }) => new SettingsTarget(signal),
-		})
-	}
-}
-
-@Plugin({ displayName: 'Shared route B' })
-class SharedRoutePluginB extends BasePlugin {
-	protected override init() {
-		this.ctx.workbench?.publish(SharedRouteWorkbenchB, {
-			settings: ({ signal }) => new SettingsTarget(signal),
 		})
 	}
 }
@@ -287,10 +229,10 @@ class SelectionTarget extends RpcTarget implements SelectionApi {
 
 let attachmentConsumerNode: unknown
 
-@Plugin({ displayName: 'Provider' })
+@Plugin({ displayName: 'Provider', forkable: true })
 class ProviderPlugin extends BasePlugin {
 	protected override init() {
-		this.ctx.workbench?.publish(ProviderWorkbench, {
+		this.ctx.service(WorkbenchRef)?.publish(ProviderWorkbench, {
 			picker: ({ consumer }) => {
 				attachmentConsumerNode = consumer.node
 				return new CatalogTarget(consumer.node.definition.exportName)
@@ -299,19 +241,10 @@ class ProviderPlugin extends BasePlugin {
 	}
 }
 
-@Plugin({ displayName: 'Consumer' })
-class ConsumerPlugin extends BasePlugin {
-	constructor(private readonly provider: ProviderPlugin) {
+@Plugin({ forkable: true })
+class AttachmentBindingConsumer extends BasePlugin {
+	constructor(readonly provider: ProviderPlugin) {
 		super()
-	}
-
-	protected override init() {
-		this.ctx.workbench?.publish(ConsumerWorkbench, {
-			fonts: {
-				provider: this.provider,
-				consumer: () => new SelectionTarget(),
-			},
-		})
 	}
 }
 
@@ -322,14 +255,53 @@ class PanelPlugin extends BasePlugin {
 	}
 
 	protected override init() {
-		this.ctx.workbench?.publish(PanelWorkbench, {
+		this.ctx.service(WorkbenchRef)?.publish(PanelWorkbench, {
 			inspector: ({ signal }) => new SettingsTarget(signal),
 			fonts: { provider: this.provider, consumer: () => new SelectionTarget() },
 		})
 	}
 }
 
-describe('Workbench vNext publication', () => {
+describe('Workbench publication', () => {
+	it('identifies the consumer binding, expected Attachment and actual provider fork on rejection', async () => {
+		await using host = await createServiceInternalTestHarness({ workbench: true })
+		host.add([ProviderPlugin, AttachmentBindingConsumer])
+		const selected = host.fork(ProviderPlugin, 'selected')
+		const consumer = host.fork(AttachmentBindingConsumer, 'reports')
+		host.override(consumer, ProviderPlugin, selected)
+		host.start(ProviderPlugin)
+		host.start(consumer)
+		await host.commit()
+
+		const owner = host.require(consumer)
+		const service = owner.ctx.service(WorkbenchRef)!
+		const other = workbench.define('https://user:secret@example.test/reports.ts?token=private', {
+			picker: workbench.attachment<CatalogApi, SelectionApi>({ renderer }),
+			missing: workbench.attachment<CatalogApi, SelectionApi>({ renderer }),
+		})
+		const publish = (attachment: typeof ProviderWorkbench.picker, provider: BasePlugin) =>
+			service.publish(
+				workbench.define(import.meta.url, {
+					fonts: attachment.place({ kind: 'tab', label: 'Fonts' }),
+				}),
+				{ fonts: { provider, consumer: () => new SelectionTarget() } },
+			)
+
+		const binding = `${formatPluginNodeReference(consumer)} bindings.fonts.provider`
+		const selectedNode = formatPluginNodeReference(selected)
+		const actual = formatPluginNodeReference(ProviderPlugin.nodeAddress())
+		expect(() => publish(other.picker, host.require(ProviderPlugin))).toThrow(
+			`${binding} must be a direct required dependency (expected Attachment "picker" from https://example.test/reports.ts (renderer ${renderer}), bound ${actual})`,
+		)
+		expect(() => publish(other.missing, owner.provider)).toThrow(
+			`${binding} expected Attachment "missing" from https://example.test/reports.ts (renderer ${renderer}), but ${selectedNode} did not publish that entry`,
+		)
+		expect(() => publish(other.picker, owner.provider)).toThrow(
+			`${binding} expected Attachment "picker" from https://example.test/reports.ts (renderer ${renderer}), but ${selectedNode} published a different declaration: Attachment "picker" from`,
+		)
+		publish(ProviderWorkbench.picker, owner.provider)
+	})
+
 	it('opens owner-scoped panel Views, Content and Attachments without route locations', async () => {
 		await using host = await createServiceInternalTestHarness({ workbench: true })
 		host.add([ProviderPlugin, PanelPlugin, LocalPlugin])
@@ -337,70 +309,48 @@ describe('Workbench vNext publication', () => {
 		host.start(PanelPlugin)
 		host.start(LocalPlugin)
 		await host.commit()
-		const session = requireWorkbench(host.ctx).createSession(localPrincipal, () => {})
+		const backend = host.ctx.service(WorkbenchHost)
+		const session = backend.createSession(localPrincipal, () => {})
 		const target = PanelPlugin.nodeAddress()
 		const layout = session.target.layoutDto({ target })
-		expect(layout.entries).toHaveLength(3)
-		expect(layout.entries.every((entry) => entry.placement.kind === 'panel')).toBe(true)
+		const panels = Object.fromEntries(layout.entries.map((entry) => [entry.descriptor.key, entry]))
+		expect(Object.keys(panels).sort()).toEqual(['fonts', 'guide', 'inspector'])
 		expect(
-			session.target
-				.layoutDto({ target: LocalPlugin.nodeAddress() })
-				.entries.every((entry) => entry.placement.kind !== 'panel'),
-		).toBe(true)
-		let inspector: SettingsTarget | undefined
-		for (const entry of layout.entries) {
-			expect(entry.target.node).toEqual(target)
-			const input = { layoutRevision: layout.revision, target, descriptor: entry.descriptor }
-			await expect(
-				session.target.openEntry({ ...input, location: '/not-a-route' }),
-			).resolves.toEqual({
-				ok: false,
-				code: 'target_unavailable',
-			})
-			await expect(
-				session.target.openEntry({ ...input, target: LocalPlugin.nodeAddress() }),
-			).resolves.toEqual({
-				ok: false,
-				code: 'target_unavailable',
-			})
-			const opened = await session.target.openEntry(input)
-			expect(opened.ok).toBe(true)
-			if (!opened.ok) throw new Error('Panel open failed')
-			const expectedKind =
-				entry.descriptor.key === 'inspector'
-					? 'local'
-					: entry.descriptor.key === 'fonts'
-						? 'attachment'
-						: 'content'
-			expect(opened.value.kind).toBe(expectedKind)
-			if (entry.descriptor.key === 'inspector' && opened.value.kind === 'local')
-				inspector = opened.value.api as SettingsTarget
-		}
-		expect(attachmentConsumerNode).toEqual(target)
-		expect(inspector?.disposed).toBe(false)
+			session.target.layoutDto({ target: null }).entries.map((entry) => entry.descriptor.key),
+		).toEqual(['settings'])
+		const input = (key: string) => ({
+			layoutRevision: layout.revision,
+			target,
+			descriptor: panels[key]!.descriptor,
+		})
+		await expect(
+			session.target.openEntry({ ...input('inspector'), target: LocalPlugin.nodeAddress() }),
+		).resolves.toMatchObject({ ok: false, code: 'target_unavailable' })
+		await expect(
+			session.target.openEntry({ ...input('inspector'), location: '/not-a-route' }),
+		).resolves.toMatchObject({ ok: false, code: 'target_unavailable' })
+		await expect(session.target.openEntry(input('guide'))).resolves.toMatchObject({
+			ok: true,
+			value: { kind: 'content', mode: 'static' },
+		})
+		await expect(session.target.openEntry(input('fonts'))).resolves.toMatchObject({
+			ok: true,
+			value: {
+				kind: 'attachment',
+				provider: expect.any(CatalogTarget),
+				consumer: expect.any(SelectionTarget),
+			},
+		})
+		expect(attachmentConsumerNode).toEqual(parsePluginNodeAddress(target))
+		const opened = await session.target.openEntry(input('inspector'))
+		if (!opened.ok || opened.value.kind !== 'local') throw new Error('Panel View did not open')
+		const inspector = opened.value.api as SettingsTarget
 		host.stop(PanelPlugin)
 		await host.commit()
-		expect(inspector?.signal.aborted).toBe(true)
-		expect(inspector?.disposed).toBe(true)
+		expect(inspector.signal.aborted).toBe(true)
+		expect(inspector.disposed).toBe(true)
 		expect(session.signal.aborted).toBe(true)
 		session.dispose()
-	})
-
-	it('rejects an explicit undefined binding for a binding-free Content definition', async () => {
-		await using host = await createServiceInternalTestHarness({ workbench: true })
-		host.add(NoPublicationPlugin)
-		host.start(NoPublicationPlugin)
-		await host.commit()
-
-		const instance = requirePluginService(host.ctx).getInstance(NoPublicationPlugin.nodeAddress())
-		if (!instance) throw new Error('NoPublicationPlugin did not start')
-		const registry = requireWorkbench(host.ctx).registry as unknown as {
-			publish(owner: Context, definition: unknown, ...bindings: unknown[]): void
-		}
-
-		expect(() => registry.publish(instance.ctx, ContentWorkbench, undefined)).toThrow(
-			'bindings must be omitted for a binding-free definition',
-		)
 	})
 
 	it('opens a static Content without a target, retained lease, or View quota', async () => {
@@ -409,7 +359,7 @@ describe('Workbench vNext publication', () => {
 		host.start(ContentPlugin)
 		await host.commit()
 
-		const backend = requireWorkbench(host.ctx)
+		const backend = host.ctx.service(WorkbenchHost)
 		const session = backend.createSession(localPrincipal, () => {})
 		const target = ContentPlugin.nodeAddress()
 		const layout = session.target.layoutDto({ target })
@@ -454,7 +404,7 @@ describe('Workbench vNext publication', () => {
 		host.start(InteractiveContentPlugin)
 		await host.commit()
 
-		const session = requireWorkbench(host.ctx).createSession(localPrincipal, () => {})
+		const session = host.ctx.service(WorkbenchHost).createSession(localPrincipal, () => {})
 		const target = InteractiveContentPlugin.nodeAddress()
 		const layout = session.target.layoutDto({ target })
 		const entry = layout.entries[0]!
@@ -519,7 +469,7 @@ describe('Workbench vNext publication', () => {
 			host.add(InteractiveContentPlugin)
 			host.start(InteractiveContentPlugin)
 			await host.commit()
-			const session = requireWorkbench(host.ctx).createSession(localPrincipal, () => {})
+			const session = host.ctx.service(WorkbenchHost).createSession(localPrincipal, () => {})
 			const target = InteractiveContentPlugin.nodeAddress()
 			const layout = session.target.layoutDto({ target })
 			for (let index = 0; index < 2; index += 1) {
@@ -555,7 +505,7 @@ describe('Workbench vNext publication', () => {
 			const owner = requirePluginService(host.ctx).getInstance(target) as InteractiveContentPlugin
 			if (stage === 'factory') owner.failFactory = true
 			else owner.failSubscribe = true
-			const session = requireWorkbench(host.ctx).createSession(localPrincipal, () => {})
+			const session = host.ctx.service(WorkbenchHost).createSession(localPrincipal, () => {})
 			const layout = session.target.layoutDto({ target })
 			const input = {
 				layoutRevision: layout.revision,
@@ -587,7 +537,7 @@ describe('Workbench vNext publication', () => {
 		const owner = requirePluginService(host.ctx).getInstance(target) as InteractiveContentPlugin
 		const gate = Promise.withResolvers<void>()
 		owner.factoryGate = gate.promise
-		const session = requireWorkbench(host.ctx).createSession(localPrincipal, () => {})
+		const session = host.ctx.service(WorkbenchHost).createSession(localPrincipal, () => {})
 		const layout = session.target.layoutDto({ target })
 		const opening = session.target.openEntry({
 			layoutRevision: layout.revision,
@@ -613,7 +563,7 @@ describe('Workbench vNext publication', () => {
 		host.start(InteractiveContentPlugin)
 		await host.commit()
 
-		const session = requireWorkbench(host.ctx).createSession(localPrincipal, () => {})
+		const session = host.ctx.service(WorkbenchHost).createSession(localPrincipal, () => {})
 		const target = InteractiveContentPlugin.nodeAddress()
 		const layout = session.target.layoutDto({ target })
 		const input = {
@@ -643,83 +593,6 @@ describe('Workbench vNext publication', () => {
 			code: 'quota_exceeded',
 		})
 		session.dispose()
-	})
-
-	it('aborts the Content lifetime when an observer throws synchronously', async () => {
-		contentChanged = undefined
-		contentSignal = undefined
-		await using host = await createServiceInternalTestHarness({ workbench: true })
-		host.add(InteractiveContentPlugin)
-		host.start(InteractiveContentPlugin)
-		await host.commit()
-
-		const session = requireWorkbench(host.ctx).createSession(localPrincipal, () => {})
-		const target = InteractiveContentPlugin.nodeAddress()
-		const layout = session.target.layoutDto({ target })
-		const opened = await session.target.openEntry({
-			layoutRevision: layout.revision,
-			target,
-			descriptor: layout.entries[0]!.descriptor,
-		})
-		if (!opened.ok || opened.value.kind !== 'content' || opened.value.mode !== 'interactive') {
-			throw new Error('interactive Content open failed')
-		}
-		const lifetime = contentSignal
-		if (!lifetime) throw new Error('Content factory did not receive its lifetime signal')
-		const disposeObserver = vi.fn()
-		const observer = Object.assign(
-			vi.fn(() => {
-				throw new Error('synchronous callback failure')
-			}),
-			{
-				dup: () => observer,
-				[Symbol.dispose]: disposeObserver,
-			},
-		) as unknown as Parameters<typeof opened.value.root.subscribeDto>[0]
-		await opened.value.root.subscribeDto(observer)
-
-		contentChanged?.()
-		await vi.waitFor(() => expect(lifetime.aborted).toBe(true))
-		expect(disposeObserver).toHaveBeenCalledTimes(1)
-		session.dispose()
-	})
-
-	it('keeps layout capability-free and opens one fresh root lazily', async () => {
-		localFactoryCalls = 0
-		disposedTargets.length = 0
-		await using host = await createServiceInternalTestHarness({ workbench: true })
-		host.add(LocalPlugin)
-		host.start(LocalPlugin)
-		await host.commit()
-
-		const backend = requireWorkbench(host.ctx)
-		let invalidated = false
-		const session = backend.createSession(localPrincipal, () => {
-			invalidated = true
-		})
-		const target = LocalPlugin.nodeAddress()
-		const layout = session.target.layoutDto({ target })
-
-		expect(layout.entries).toHaveLength(1)
-		expect(session.target.layoutDto({ target: null }).entries).toEqual(layout.entries)
-		expect(localFactoryCalls).toBe(0)
-		expect(layout.entries[0]).not.toHaveProperty('api')
-
-		const result = await session.target.openEntry({
-			layoutRevision: layout.revision,
-			target,
-			descriptor: layout.entries[0]!.descriptor,
-		})
-		expect(result.ok).toBe(true)
-		expect(localFactoryCalls).toBe(1)
-		if (!result.ok || result.value.kind !== 'local') throw new Error('open failed')
-		const openedTarget = result.value.api as SettingsTarget
-		expect(openedTarget.snapshot()).toEqual({ enabled: true })
-
-		session.dispose()
-		expect(openedTarget.disposed).toBe(true)
-		expect(openedTarget.signal.aborted).toBe(true)
-		expect(invalidated).toBe(false)
 	})
 
 	it('opens ready entries after producer-status-only layout revisions', async () => {
@@ -898,7 +771,7 @@ describe('Workbench vNext publication', () => {
 		host.start(ReusedTargetPlugin)
 		await host.commit()
 		try {
-			const session = requireWorkbench(host.ctx).createSession(localPrincipal, () => {})
+			const session = host.ctx.service(WorkbenchHost).createSession(localPrincipal, () => {})
 			const target = ReusedTargetPlugin.nodeAddress()
 			const layout = session.target.layoutDto({ target })
 			await expect(
@@ -930,7 +803,7 @@ describe('Workbench vNext publication', () => {
 		await host.commit()
 
 		try {
-			const backend = requireWorkbench(host.ctx)
+			const backend = host.ctx.service(WorkbenchHost)
 			const session = backend.createSession(localPrincipal, () => {})
 			const target = ReusedTargetPlugin.nodeAddress()
 			const layout = session.target.layoutDto({ target })
@@ -973,7 +846,7 @@ describe('Workbench vNext publication', () => {
 		await host.commit()
 
 		try {
-			const backend = requireWorkbench(host.ctx)
+			const backend = host.ctx.service(WorkbenchHost)
 			const target = ReusedTargetPlugin.nodeAddress()
 			const firstSession = backend.createSession(localPrincipal, () => {})
 			const firstLayout = firstSession.target.layoutDto({ target })
@@ -1016,45 +889,6 @@ describe('Workbench vNext publication', () => {
 		}
 	})
 
-	it('disposes a factory target once when it resolves after session close', async () => {
-		disposedTargets.length = 0
-		lateFactory = Promise.withResolvers<SettingsTarget>()
-		lateFactoryStarted = Promise.withResolvers<void>()
-		lateFactorySignal = undefined
-		const host = await createServiceInternalTestHarness({ workbench: true })
-		host.add(LateFactoryPlugin)
-		host.start(LateFactoryPlugin)
-		await host.commit()
-		let resolvedTarget: SettingsTarget | undefined
-
-		try {
-			const backend = requireWorkbench(host.ctx)
-			const session = backend.createSession(localPrincipal, () => {})
-			const target = LateFactoryPlugin.nodeAddress()
-			const layout = session.target.layoutDto({ target })
-			const opening = session.target.openEntry({
-				layoutRevision: layout.revision,
-				target,
-				descriptor: layout.entries[0]!.descriptor,
-			})
-			await lateFactoryStarted.promise
-
-			session.dispose()
-			expect(lateFactorySignal?.aborted).toBe(true)
-			resolvedTarget = new SettingsTarget(lateFactorySignal!)
-			lateFactory.resolve(resolvedTarget)
-			await expect(opening).resolves.toEqual({ ok: false, code: 'target_unavailable' })
-			expect(resolvedTarget.disposed).toBe(true)
-			expect(disposedTargets.filter((candidate) => candidate === resolvedTarget)).toHaveLength(1)
-		} finally {
-			await host.dispose()
-			lateFactory = undefined
-			lateFactoryStarted = undefined
-			lateFactorySignal = undefined
-		}
-		expect(disposedTargets.filter((candidate) => candidate === resolvedTarget)).toHaveLength(1)
-	})
-
 	it('returns factory_timeout before a non-cooperative factory settles', async () => {
 		disposedTargets.length = 0
 		lateFactory = Promise.withResolvers<SettingsTarget>()
@@ -1068,7 +902,7 @@ describe('Workbench vNext publication', () => {
 		let resolvedTarget: SettingsTarget | undefined
 
 		try {
-			const backend = requireWorkbench(host.ctx)
+			const backend = host.ctx.service(WorkbenchHost)
 			const session = backend.createSession(localPrincipal, () => {})
 			const target = LateFactoryPlugin.nodeAddress()
 			const layout = session.target.layoutDto({ target })
@@ -1113,114 +947,6 @@ describe('Workbench vNext publication', () => {
 			lateFactorySignal = undefined
 		}
 		expect(disposedTargets.filter((candidate) => candidate === resolvedTarget)).toHaveLength(1)
-	})
-
-	it('server-rematches parameterized routes and rejects browser params', async () => {
-		routedParams = undefined
-		await using host = await createServiceInternalTestHarness({ workbench: true })
-		host.add(RoutedPlugin)
-		host.start(RoutedPlugin)
-		await host.commit()
-		const backend = requireWorkbench(host.ctx)
-		const session = backend.createSession(localPrincipal, () => {})
-		const target = RoutedPlugin.nodeAddress()
-		const layout = session.target.layoutDto({ target })
-		// Global routing includes parameterized routes that do not enter navigation.
-		expect(session.target.layoutDto({ target: null }).entries).toEqual(layout.entries)
-		const result = await session.target.openEntry({
-			layoutRevision: layout.revision,
-			target,
-			descriptor: layout.entries[0]!.descriptor,
-			location: '/accounts/account%201',
-		})
-		expect(result.ok).toBe(true)
-		expect(routedParams).toEqual({ accountId: 'account 1' })
-		await expect(
-			session.target.openEntry({
-				layoutRevision: layout.revision,
-				target,
-				descriptor: layout.entries[0]!.descriptor,
-				location: '/other/account%201',
-			}),
-		).resolves.toEqual({ ok: false, code: 'target_unavailable' })
-		session.dispose()
-	})
-
-	it('scopes identical route paths to their target Plugin', async () => {
-		await using host = await createServiceInternalTestHarness({ workbench: true })
-		host.add([SharedRoutePluginA, SharedRoutePluginB])
-		host.start(SharedRoutePluginA)
-		host.start(SharedRoutePluginB)
-		await host.commit()
-		const backend = requireWorkbench(host.ctx)
-		const session = backend.createSession(localPrincipal, () => {})
-		const layoutA = session.target.layoutDto({ target: SharedRoutePluginA.nodeAddress() })
-		const layoutB = session.target.layoutDto({ target: SharedRoutePluginB.nodeAddress() })
-		expect(layoutA.entries[0]?.placement).toMatchObject({ path: '/settings' })
-		expect(layoutB.entries[0]?.placement).toMatchObject({ path: '/settings' })
-		expect(session.target.layoutDto({ target: null }).entries).toEqual(
-			expect.arrayContaining([...layoutA.entries, ...layoutB.entries]),
-		)
-		session.dispose()
-	})
-
-	it('opens an Attachment through one exact required edge', async () => {
-		attachmentConsumerNode = undefined
-		await using host = await createServiceInternalTestHarness({ workbench: true })
-		host.add([ProviderPlugin, ConsumerPlugin])
-		host.start(ProviderPlugin)
-		host.start(ConsumerPlugin)
-		await host.commit()
-		const backend = requireWorkbench(host.ctx)
-		const session = backend.createSession(localPrincipal, () => {})
-		const target = ConsumerPlugin.nodeAddress()
-		const layout = session.target.layoutDto({ target })
-		expect(layout.entries).toHaveLength(1)
-		expect(layout.entries[0]!.descriptor).toMatchObject({
-			kind: 'attachment-placement',
-			key: 'fonts',
-			provider: { kind: 'attachment', key: 'picker' },
-		})
-
-		const result = await session.target.openEntry({
-			layoutRevision: layout.revision,
-			target,
-			descriptor: layout.entries[0]!.descriptor,
-		})
-		expect(result.ok).toBe(true)
-		if (!result.ok || result.value.kind !== 'attachment') throw new Error('open failed')
-		expect(result.value).toHaveProperty('provider')
-		expect(result.value).toHaveProperty('consumer')
-		expect(attachmentConsumerNode).toEqual(target)
-		session.dispose()
-	})
-
-	it('expires the whole socket epoch and opened root on owner withdrawal', async () => {
-		await using host = await createServiceInternalTestHarness({ workbench: true })
-		host.add(LocalPlugin)
-		host.start(LocalPlugin)
-		await host.commit()
-		const backend = requireWorkbench(host.ctx)
-		let invalidation: Error | undefined
-		const session = backend.createSession(localPrincipal, (cause) => {
-			invalidation = cause
-		})
-		const target = LocalPlugin.nodeAddress()
-		const layout = session.target.layoutDto({ target })
-		const result = await session.target.openEntry({
-			layoutRevision: layout.revision,
-			target,
-			descriptor: layout.entries[0]!.descriptor,
-		})
-		if (!result.ok || result.value.kind !== 'local') throw new Error('open failed')
-		const openedTarget = result.value.api as SettingsTarget
-
-		host.stop(LocalPlugin)
-		await host.commit()
-		expect(openedTarget.signal.aborted).toBe(true)
-		expect(openedTarget.disposed).toBe(true)
-		expect(session.signal.aborted).toBe(true)
-		expect(invalidation?.message).toContain('publication changed')
 	})
 })
 

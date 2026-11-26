@@ -3,21 +3,27 @@ import { useHotkeys } from '@mantine/hooks'
 import { type PluginNodeAddress } from '@pluxel/core'
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { type FieldNode } from 'valibot-form'
-import type { ConfigPatch } from '@pluxel/services/management/client'
+import type { ConfigPatch, ConfigValidationErrors } from '@pluxel/services/management/client'
 
 import { useRuntimeManagementClient } from '../../../runtime'
 import { PLUGIN_DETAIL_HOTKEYS } from '../../workbench/shortcuts'
 import { ConfigTabContent } from './ConfigTab'
 import { useConfigForms, type ConfigSectionForm, type ConfigFormState } from './useConfigForms'
 import { ConfigActionDock } from './components/ConfigActionDock'
-import { buildEditableConfigPatch, editableConfigPaths } from './presentationAdapter'
+import { editableConfigPaths } from 'valibot-form/web'
 import { type PluginConfigSection, type PluginConfigSnapshot } from './usePluginConfig'
 import { useConfigSave } from './useConfigSave'
-import { mapConfigValidationErrors, mountedFieldNames } from '../../forms/serverValidation'
+import {
+	mapConfigValidationErrors,
+	mountedFieldNames,
+	ValidationSummary,
+} from '../../forms/serverValidation'
 import { useOptionalWorkbenchDocument } from '../../workbench/document'
 import { useOptionalWorkspaceSession } from '../../workbench/workspaceContext'
+import { applyConfigSources } from './presentationAdapter'
 
-const EMPTY_CONFIG_SECTIONS: readonly PluginConfigSection[] = []
+const EMPTY_INPUT: Record<string, unknown> = {}
+const EMPTY_SUMMARY: readonly string[] = []
 const EMPTY_FORM_STATE: ConfigFormState = {
 	dirty: false,
 	canSubmit: false,
@@ -27,11 +33,10 @@ const EMPTY_FORM_STATE: ConfigFormState = {
 type ConfigFormProps = {
 	owner: PluginNodeAddress
 	displayName: string
-	fields: readonly FieldNode[]
 	snapshot: PluginConfigSnapshot
 	active?: boolean
 	onDirtyChange?: (dirty: boolean) => void
-	sections?: readonly PluginConfigSection[]
+	sections: readonly PluginConfigSection[]
 }
 
 type SectionItem = {
@@ -40,58 +45,78 @@ type SectionItem = {
 	path: readonly string[]
 	fields: readonly FieldNode[]
 	savedValue: Record<string, unknown>
-	initialValue: Record<string, unknown>
 }
 
 export function ConfigForm(props: ConfigFormProps) {
-	const sections = props.sections ?? EMPTY_CONFIG_SECTIONS
-	const identity = `${JSON.stringify(props.owner)}\0${(sections.length > 0
-		? sections
-		: [{ path: [] }]
-	)
-		.map((section) => section.path.join('.'))
-		.join('\0')}`
-	return <ConfigFormInstance key={identity} {...props} sections={sections} />
+	const identity = JSON.stringify([props.owner, props.sections.map(({ path }) => path)])
+	return <ConfigFormInstance key={identity} {...props} />
 }
 
 function ConfigFormInstance({
 	owner,
 	displayName,
-	fields,
 	snapshot,
 	active = true,
 	onDirtyChange,
 	sections,
-}: ConfigFormProps & { sections: readonly PluginConfigSection[] }) {
+}: ConfigFormProps) {
 	const management = useRuntimeManagementClient()
 	const readOnly = snapshot.readonly
 	const [editingRevision, setEditingRevision] = useState(snapshot.managedRevision)
+	const latestRevision = useRef(snapshot.managedRevision)
 	const document = useOptionalWorkbenchDocument()
 	const workspace = useOptionalWorkspaceSession()
 	const { mutateAsync: saveConfig, isPending: saving, variables } = useConfigSave({ owner })
 	const savingRef = useRef(false)
 	const saveRevision = useRef(0)
-	const visibleSections = useMemo<readonly PluginConfigSection[]>(
-		() => (sections.length > 0 ? sections : [{ path: [], fields, fieldName: '' }]),
-		[fields, sections],
-	)
 	const sectionItems = useMemo<SectionItem[]>(
 		() =>
-			visibleSections.map((section) => {
-				const savedValue = recordAtPath(snapshot.managedInput ?? {}, section.path)
-				return {
-					key: sectionKey(section.path),
-					label: sectionLabel(section.path),
-					path: section.path,
-					fields: section.fields,
-					savedValue,
-					initialValue: savedValue,
-				}
-			}),
-		[snapshot.managedInput, visibleSections],
+			sections
+				.filter(({ fields }) => fields.length > 0)
+				.map((section) => {
+					const savedValue = recordAtPath(snapshot.managedInput ?? EMPTY_INPUT, section.path)
+					return {
+						key: JSON.stringify(section.path),
+						label: sectionLabel(section.path),
+						path: section.path,
+						fields: applyConfigSources(
+							section.fields,
+							snapshot.sources,
+							section.path,
+							snapshot.effectiveInput,
+							snapshot.ok ? snapshot.config : undefined,
+						),
+						savedValue,
+					}
+				}),
+		[snapshot, sections],
 	)
 	const [activeKey, setActiveKey] = useState(sectionItems[0]?.key ?? '')
-	const { formStates, forms, registerForm } = useConfigForms()
+	const { formStates, forms, states, registerForm } = useConfigForms()
+	const [validationSummary, setValidationSummary] = useState(EMPTY_SUMMARY)
+	const clearSummary = useCallback(() => setValidationSummary(EMPTY_SUMMARY), [])
+	const showValidation = useCallback(
+		(errors: ConfigValidationErrors, submitted: ReadonlySet<string>) => {
+			const registered = forms.get()
+			const { fieldsBySection, summary } = mapConfigValidationErrors(
+				errors,
+				sections.map(({ path }) => {
+					const key = JSON.stringify(path)
+					const form = submitted.has(key) ? registered[key]?.form : undefined
+					return { key, path, mounted: form && mountedFieldNames(form) }
+				}),
+			)
+			for (const [key, fields] of fieldsBySection)
+				registered[key]?.form.setErrorMap({ onServer: { fields } } as never)
+			setValidationSummary(summary)
+		},
+		[forms, sections],
+	)
+	const clearValidation = useCallback(() => {
+		clearSummary()
+		for (const { form } of Object.values(forms.get()))
+			form.setErrorMap({ onServer: { fields: {} } } as never)
+	}, [clearSummary, forms])
 
 	useEffect(() => {
 		if (sectionItems.some((section) => section.key === activeKey)) return
@@ -101,11 +126,20 @@ function ConfigFormInstance({
 	const dirtySections = sectionItems.filter((section) => formStates[section.key]?.dirty)
 	const dirtyLabels = dirtySections.map((section) => section.label)
 	useEffect(() => {
-		if (dirtySections.length === 0) setEditingRevision(snapshot.managedRevision)
-	}, [dirtySections.length, snapshot.managedRevision])
+		latestRevision.current = snapshot.managedRevision
+	}, [snapshot.managedRevision])
+	useEffect(() => {
+		if (dirtySections.length === 0 && !saving) setEditingRevision(latestRevision.current)
+	}, [dirtySections.length, saving, snapshot.managedRevision])
 	const activeSection = sectionItems.find((section) => section.key === activeKey) ?? sectionItems[0]
 	const resolvedActiveKey = activeSection?.key ?? ''
 	const activeState = formStates[resolvedActiveKey] ?? EMPTY_FORM_STATE
+	const activeBaseline = forms.get()[resolvedActiveKey]?.baseline
+	const canRestoreInheritance = Boolean(
+		activeSection &&
+		activeBaseline &&
+		editableConfigPaths(activeSection.fields, activeBaseline).length > 0,
+	)
 	const canSaveAll = dirtySections.every((section) => {
 		const state = formStates[section.key]
 		return Boolean(state?.canSubmit && !state.submitting)
@@ -131,18 +165,22 @@ function ConfigFormInstance({
 		if (activeState.submitting || saving) return
 		const bridge = forms.get()[resolvedActiveKey]
 		if (!bridge || !activeSection) return
-		bridge.reset(activeSection.initialValue)
-	}, [activeSection, activeState.submitting, forms, resolvedActiveKey, saving])
+		clearSummary()
+		bridge.reset()
+	}, [activeSection, activeState.submitting, clearSummary, forms, resolvedActiveKey, saving])
 
 	const restoreInheritance = useCallback(async () => {
 		if (readOnly || savingRef.current || activeState.submitting || !activeSection) return
 		const bridge = forms.get()[resolvedActiveKey]
 		if (!bridge) return
 		const submitted = bridge.form.state.values
-		const paths = editableConfigPaths(activeSection.fields, activeSection.path)
+		const paths = editableConfigPaths(activeSection.fields, bridge.baseline).map((path) =>
+			activeSection.path.concat(path),
+		)
 		if (paths.length === 0) return
 		savingRef.current = true
 		saveRevision.current++
+		clearValidation()
 		try {
 			await saveConfig({
 				request: () =>
@@ -150,16 +188,14 @@ function ConfigFormInstance({
 				all: false,
 				sectionCount: 1,
 				onValidation: (errors) => {
-					if (bridge.form.state.values === submitted)
-						bridge.form.setErrorMap({
-							onServer: mapConfigValidationErrors(
-								errors,
-								mountedFieldNames(bridge.form),
-								activeSection.path,
-							),
-						} as never)
+					if (
+						forms.get()[resolvedActiveKey]?.form === bridge.form &&
+						bridge.form.state.values === submitted
+					)
+						showValidation(errors, new Set([resolvedActiveKey]))
 				},
 				onSaved: (result) => {
+					latestRevision.current = result.managedRevision
 					setEditingRevision(result.managedRevision)
 					if (forms.get()[resolvedActiveKey]?.form === bridge.form)
 						bridge.acceptSaved(
@@ -177,6 +213,7 @@ function ConfigFormInstance({
 	}, [
 		activeSection,
 		activeState.submitting,
+		clearValidation,
 		editingRevision,
 		forms,
 		management.config,
@@ -184,6 +221,7 @@ function ConfigFormInstance({
 		readOnly,
 		resolvedActiveKey,
 		saveConfig,
+		showValidation,
 	])
 
 	// Both native section submits and the save-all action enter the same transaction.
@@ -192,21 +230,21 @@ function ConfigFormInstance({
 			if (readOnly || savingRef.current) return
 			const submitted = sectionItems.flatMap((section) => {
 				const bridge = forms.get()[section.key]
-				return bridge ? [{ section, bridge, state: bridge.form.state }] : []
+				return bridge
+					? [{ section, bridge, state: bridge.form.state, patch: bridge.changes.get() }]
+					: []
 			})
 			const targets =
 				key === undefined ? submitted : submitted.filter(({ section }) => section.key === key)
-			const dirty = targets.filter(({ state }) => state.isDirty)
-			if (dirty.length === 0 || dirty.some(({ state }) => !state.canSubmit && !state.isSubmitting))
+			const writes = targets.filter(({ patch }) => patch.set || patch.remove?.length)
+			if (
+				writes.length === 0 ||
+				writes.some(({ state }) => !state.canSubmit && !state.isSubmitting)
+			)
 				return
 			// Native submits compete for the synchronous guard; save-all waits for their validation.
 			if (key === undefined && submitted.some(({ state }) => state.isSubmitting)) return
-			const patches = dirty.map(({ section, bridge, state }) => ({
-				section,
-				patch: buildEditableConfigPatch(section.fields, state.values, bridge.baseline),
-			}))
-			const patch = buildCombinedConfigPatch(patches)
-			if (!patch.set && !patch.remove?.length) return
+			const patch = buildCombinedConfigPatch(writes)
 			const unchanged = () =>
 				targets.every(
 					({ section, bridge, state }) =>
@@ -217,27 +255,20 @@ function ConfigFormInstance({
 				management.config.patch(owner, patch, { expectedManagedRevision: editingRevision })
 			savingRef.current = true
 			saveRevision.current++
-			for (const { bridge } of targets)
-				bridge.form.setErrorMap({ onServer: { fields: {} } } as never)
+			clearValidation()
 			try {
 				await saveConfig({
 					request,
 					all: key === undefined,
-					sectionCount: dirty.length,
+					sectionCount: writes.length,
 					onValidation: (errors) => {
 						if (!unchanged()) return
-						for (const { section, bridge } of targets)
-							bridge.form.setErrorMap({
-								onServer: mapConfigValidationErrors(
-									errors,
-									mountedFieldNames(bridge.form),
-									section.path,
-								),
-							} as never)
+						showValidation(errors, new Set(writes.map(({ section }) => section.key)))
 					},
 					onSaved: (result) => {
+						latestRevision.current = result.managedRevision
 						setEditingRevision(result.managedRevision)
-						for (const { section, bridge, state } of dirty) {
+						for (const { section, bridge, state } of targets) {
 							if (forms.get()[section.key]?.form === bridge.form)
 								bridge.acceptSaved(
 									recordAtPath(result.managedInput ?? {}, section.path),
@@ -253,7 +284,17 @@ function ConfigFormInstance({
 				saveRevision.current++
 			}
 		},
-		[editingRevision, forms, management, owner, readOnly, saveConfig, sectionItems],
+		[
+			clearValidation,
+			editingRevision,
+			forms,
+			management,
+			owner,
+			readOnly,
+			saveConfig,
+			sectionItems,
+			showValidation,
+		],
 	)
 	const saveAll = useCallback(() => save(), [save])
 	const saveRef = useRef(saveAll)
@@ -279,13 +320,13 @@ function ConfigFormInstance({
 					revision++
 				}
 				return {
-					hasUnsavedChanges: Object.values(forms.get()).some(({ form }) => form.state.isDirty),
+					hasUnsavedChanges: Object.values(states.get()).some(({ dirty }) => dirty),
 					token: `${revision}:${saveRevision.current}`,
 				}
 			},
 			save: () => saveRef.current(),
 		}
-	}, [forms])
+	}, [forms, states])
 	useEffect(() => {
 		if (!document) return
 		document.state.editor = editor
@@ -349,6 +390,7 @@ function ConfigFormInstance({
 			<Text size="xs" c="dimmed">
 				表单编辑保存输入。未设置的字段继续继承声明或插件默认值。
 			</Text>
+			<ValidationSummary messages={validationSummary} />
 			{active ? (
 				<Box className="plx-pluginWorkbench__configToolbar">
 					<ConfigActionDock
@@ -359,6 +401,7 @@ function ConfigFormInstance({
 						hasMultipleSections={sectionItems.length > 1}
 						savingScope={saving ? (variables?.all ? 'all' : 'current') : undefined}
 						canSaveAll={canSaveAll}
+						canRestoreInheritance={canRestoreInheritance}
 						sectionOptions={sectionItems.map((section) => ({
 							value: section.key,
 							label: `${section.label}${formStates[section.key]?.dirty ? ' •' : ''}`,
@@ -380,7 +423,9 @@ function ConfigFormInstance({
 						active={active && isActive}
 						displayName={displayName}
 						isVisible={isActive}
+						saving={saving}
 						onSubmit={save}
+						onDraftChange={clearSummary}
 						registerForm={registerForm}
 						section={section}
 					/>
@@ -394,14 +439,18 @@ function ConfigSectionPane({
 	active,
 	displayName,
 	isVisible,
+	saving,
 	onSubmit,
+	onDraftChange,
 	registerForm,
 	section,
 }: {
 	active: boolean
 	displayName: string
 	isVisible: boolean
+	saving: boolean
 	onSubmit: (key: string) => Promise<void>
+	onDraftChange: () => void
 	registerForm: (key: string, form: ConfigSectionForm) => () => void
 	section: SectionItem
 }) {
@@ -422,20 +471,18 @@ function ConfigSectionPane({
 		>
 			<ConfigTabContent
 				onSubmit={onSubmit}
+				onDraftChange={onDraftChange}
 				displayName={displayName}
 				fields={section.fields}
 				savedValue={section.savedValue}
-				path={section.path}
+				saving={saving}
+				tabKey={section.key}
 				showToc={active}
 				scrollHost={scrollHost}
 				registerForm={registerForm}
 			/>
 		</ScrollArea>
 	)
-}
-
-function sectionKey(path: readonly string[]): string {
-	return path.join('.') || 'config'
 }
 
 function sectionLabel(path: readonly string[]): string {
@@ -445,9 +492,9 @@ function sectionLabel(path: readonly string[]): string {
 function recordAtPath(record: Record<string, unknown>, path: readonly string[]) {
 	let value: unknown = record
 	for (const segment of path) {
-		value = isRecord(value) ? value[segment] : undefined
+		value = isRecord(value) && Object.hasOwn(value, segment) ? value[segment] : undefined
 	}
-	return isRecord(value) ? value : {}
+	return isRecord(value) ? value : EMPTY_INPUT
 }
 
 function buildCombinedConfigPatch(

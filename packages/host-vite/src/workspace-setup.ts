@@ -3,10 +3,10 @@ import { existsSync, readFileSync } from 'node:fs'
 import { dirname, resolve } from 'node:path'
 import { promisify } from 'node:util'
 import { safeReadManifest } from '@pluxel/rolldown/workspace/fs'
+import { loadWorkspaceInfo } from '@pluxel/rolldown/workspace/info'
 
 // The project CLI uses these boundaries for installed executable lookup.
 const projectBoundaries = [
-	'.git',
 	'pnpm-workspace.yaml',
 	'pnpm-lock.yaml',
 	'package-lock.json',
@@ -21,6 +21,7 @@ export async function checkDevelopmentWorkspace(start: string): Promise<void> {
 	let root: string | undefined
 	let cliOwner: string | undefined
 	let boundary: string | undefined
+	let gitContainer: { directory: string; configuredRoot: string | undefined } | undefined
 	for (;;) {
 		const manifest = await safeReadManifest(directory)
 		const configured =
@@ -31,13 +32,29 @@ export async function checkDevelopmentWorkspace(start: string): Promise<void> {
 			Object.hasOwn(manifest?.dependencies ?? {}, '@pluxel/cli') ||
 			Object.hasOwn(manifest?.devDependencies ?? {}, '@pluxel/cli')
 		if (declaresCli) cliOwner ??= directory
-		if (projectBoundaries.some((marker) => existsSync(resolve(directory, marker)))) {
+		const hasGitMarker = existsSync(resolve(directory, '.git'))
+		if (
+			projectBoundaries.some((marker) => existsSync(resolve(directory, marker))) ||
+			(hasGitMarker && (manifest || configured || !cliOwner))
+		) {
 			boundary = directory
 			break
 		}
+		if (hasGitMarker) gitContainer ??= { directory, configuredRoot: root }
 		const parent = dirname(directory)
 		if (parent === directory) break
 		directory = parent
+	}
+	if (gitContainer) {
+		// A Git checkout can contain packages owned by an enclosing pnpm workspace.
+		const workspace =
+			boundary && existsSync(resolve(boundary, 'pnpm-workspace.yaml'))
+				? await loadWorkspaceInfo(boundary)
+				: undefined
+		if (!workspace?.packageDirs.some((member) => resolve(member) === cliOwner)) {
+			boundary = gitContainer.directory
+			root = gitContainer.configuredRoot
+		}
 	}
 	if (!root && !cliOwner) return
 	// A CLI dependency selects an executable; only a configured root or project boundary

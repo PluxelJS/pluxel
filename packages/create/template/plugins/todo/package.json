@@ -22,6 +22,7 @@
 		"@example/audit-plugin": "workspace:*",
 		"@pluxel/cli": "catalog:pluxel",
 		"@pluxel/core": "catalog:pluxel",
+		"@pluxel/host": "catalog:pluxel",
 		"@pluxel/test": "catalog:pluxel",
 		"tinybase": "catalog:backend",
 		"typescript": "catalog:tooling",
@@ -31,10 +32,14 @@
 	"peerDependencies": {
 		"@example/audit-plugin": "*",
 		"@pluxel/core": "catalog:pluxel",
+		"@pluxel/host": "catalog:pluxel",
 		"tinybase": "catalog:backend"
 	},
 	"peerDependenciesMeta": {
 		"@example/audit-plugin": {
+			"optional": true
+		},
+		"@pluxel/host": {
 			"optional": true
 		}
 	},

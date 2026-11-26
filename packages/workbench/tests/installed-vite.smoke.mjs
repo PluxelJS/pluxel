@@ -22,7 +22,7 @@ const hook = registerHooks({
 })
 const { vitePreset } = await import('@pluxel/services/vite')
 const { workbenchArtifacts } = await import('../dist/vite.mjs')
-const { requireWorkbench, createWorkbenchArtifactHandler } = await import('../dist/server.mjs')
+const { WorkbenchHost, createWorkbenchArtifactHandler } = await import('../dist/server.mjs')
 const { readHostRecentUpdates } = await import('@pluxel/host/internal')
 const diagnostics = []
 let server, instance
@@ -36,7 +36,7 @@ const until = async (predicate) => {
 						instance
 							? {
 									catalog: instance.catalog(),
-									layout: requireWorkbench(instance.ctx).registry.getLayout({
+									layout: instance.ctx.service(WorkbenchHost).registry.getLayout({
 										definition: instance.catalog().entries[0].address,
 										variant: 'default',
 									}),
@@ -53,6 +53,13 @@ const until = async (predicate) => {
 	}
 }
 const write = (name, source) => writeFile(join(root, name), source)
+function viewSource(marker) {
+	return `import { createWorkbenchRenderer } from '@pluxel/workbench/react'
+import { UI } from './definition'
+const page = createWorkbenchRenderer(UI.page)
+export default page.render(function View() { return ${JSON.stringify(marker)} })
+`
+}
 try {
 	await mkdir(join(root, 'node_modules/@pluxel'), { recursive: true })
 	await mkdir(join(root, 'node_modules/@mantine'), { recursive: true })
@@ -85,23 +92,20 @@ try {
 		}),
 	)
 	await write('guide.md', '# First guide\n')
-	await write(
-		'view.ts',
-		"import { useWorkbench } from '@pluxel/workbench/react';import { UI } from './definition';export default function View(){useWorkbench(UI.page);return 'first renderer'}\n",
-	)
+	await write('view.ts', viewSource('first renderer'))
 	await write(
 		'definition.ts',
 		`import { workbench } from '@pluxel/workbench';
-export const UI = workbench.define({
- guide: workbench.content({document: workbench.markdown(import.meta.url,'./guide.md'),placement: workbench.tab({label:'Guide'})}),
- page: workbench.view({renderer:workbench.entry(import.meta.url,'./view.ts'),placement:workbench.tab({label:'Page'})})
+export const UI = workbench.define(import.meta.url, {
+ guide: workbench.content({document: './guide.md',placement: { kind: 'tab',label:'Guide'}}),
+ page: workbench.view({renderer:'./view.ts',placement:{ kind: 'tab',label:'Page'}})
 });`,
 	)
 	await write(
 		'plugin.ts',
 		`import { BasePlugin, Plugin } from '@pluxel/core';import { Workbench } from '@pluxel/workbench';import { RpcTarget } from 'capnweb';import { UI } from './definition';
 class Page extends RpcTarget {released=false;value(){return 42}isReleased(){return this.released}[Symbol.dispose](){this.released=true}}
-@Plugin() export class Viewer extends BasePlugin {init(){this.ctx.require(Workbench).publish(UI,{page:()=>new Page()})}}
+@Plugin() export class Viewer extends BasePlugin {init(){this.ctx.service(Workbench).publish(UI,{page:()=>new Page()})}}
 `,
 	)
 	await symlink(
@@ -109,13 +113,22 @@ class Page extends RpcTarget {released=false;value(){return 42}isReleased(){retu
 		join(root, 'node_modules/capnweb'),
 		'dir',
 	)
+	await mkdir(join(root, 'host'))
 	await write(
-		'app.ts',
-		`import { defineHostApplication } from '@pluxel/host';import { logtape } from '@pluxel/core/config';import { Viewer } from './plugin';import { workbenchService } from '@pluxel/workbench/service';import { workbenchHttp } from '@pluxel/workbench/http';import { elysia } from '@pluxel/services/elysia';
-export default defineHostApplication(({bindings}) => ({plugins:[Viewer],runtime:{logtape:logtape({
+		'host/package.json',
+		JSON.stringify({
+			name: 'fixture-host',
+			type: 'module',
+			dependencies: { capnweb: capnwebPackage.version },
+		}),
+	)
+	await write(
+		'host/app.ts',
+		`import { defineHostApplication } from '@pluxel/host';import { Viewer } from '../plugin';import { workbenchService } from '@pluxel/workbench/service';import { workbenchHttp } from '@pluxel/workbench/http';import { elysia } from '@pluxel/services/elysia';
+export default defineHostApplication(({bindings}) => ({plugins:[{plugin:Viewer,autoStart:true}],coreConfig:{logtape:{input:{
  sinks:{capture:bindings.captureLog},
  loggers:[{category:['pluxel','runtime'],sinks:['capture'],lowestLevel:'error'},{category:['logtape','meta'],lowestLevel:null}]
-},{profile:'fixture'}),state:{autoStart:[Viewer.nodeAddress()]}},services:[elysia(),workbenchService(),workbenchHttp({uiBasePath:'/admin'})]}))`,
+},options:{profile:'fixture'}}},services:[elysia(),workbenchService(),workbenchHttp({uiBasePath:'/admin'})]}))`,
 	)
 	server = await createServer({
 		root,
@@ -124,7 +137,7 @@ export default defineHostApplication(({bindings}) => ({plugins:[Viewer],runtime:
 		server: { port: 0, host: '127.0.0.1' },
 		plugins: [
 			vitePreset({
-				entry: 'app.ts',
+				entry: 'host/app.ts',
 				bindings: { captureLog: (record) => diagnostics.push(record) },
 			}),
 			workbenchArtifacts({ cacheDir: join(root, '.pluxel/artifacts') }),
@@ -147,7 +160,7 @@ export default defineHostApplication(({bindings}) => ({plugins:[Viewer],runtime:
 	await until(
 		() =>
 			instance &&
-			requireWorkbench(instance.ctx).registry.getLayout({
+			instance.ctx.service(WorkbenchHost).registry.getLayout({
 				definition: instance.catalog().entries[0].address,
 				variant: 'default',
 			}).entries.length === 2,
@@ -181,7 +194,7 @@ export default defineHostApplication(({bindings}) => ({plugins:[Viewer],runtime:
 	const shellEntry = await fetch(new URL(entryUrl, origin))
 	assert.equal(shellEntry.status, 200)
 	assert.match(shellEntry.headers.get('content-type') ?? '', /javascript/)
-	const backend = requireWorkbench(instance.ctx)
+	const backend = instance.ctx.service(WorkbenchHost)
 	const original = instance
 	const target = instance.catalog().entries[0].address
 	const address = { definition: target, variant: 'default' }
@@ -262,10 +275,7 @@ export default defineHostApplication(({bindings}) => ({plugins:[Viewer],runtime:
 		'semantic HMR errors reach the selected Host logger',
 	)
 	// A valid semantic plan with an unavailable CSS import fails in the background producer instead.
-	await write(
-		'view.ts',
-		"import './missing.css';import { useWorkbench } from '@pluxel/workbench/react';import { UI } from './definition';export default function View(){useWorkbench(UI.page);return 'unbuildable renderer'}\n",
-	)
+	await write('view.ts', "import './missing.css'\n" + viewSource('unbuildable renderer'))
 	await until(() =>
 		backend.registry
 			.getLayout(address)
@@ -279,10 +289,7 @@ export default defineHostApplication(({bindings}) => ({plugins:[Viewer],runtime:
 		200,
 		'accepted immutable artifacts remain readable after a failed successor',
 	)
-	await write(
-		'view.ts',
-		"import { useWorkbench } from '@pluxel/workbench/react';import { UI } from './definition';export default function View(){useWorkbench(UI.page);return 'second renderer'}\n",
-	)
+	await write('view.ts', viewSource('second renderer'))
 	await until(() =>
 		backend.registry
 			.getLayout({ definition: instance.catalog().entries[0].address, variant: 'default' })

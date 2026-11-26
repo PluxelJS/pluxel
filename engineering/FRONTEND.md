@@ -1,260 +1,178 @@
 # Frontend：会话、状态与资源
 
-Workbench frontend 是一个固定 Shell，既能直接渲染 Content，也能按需加载完整 Plugin applications。业务 HTTP 与 Workbench 正交；
-Workbench 不得成为 Plugin 核心能力的启动前提。
-
-本页维护 Shell 状态、文档身份和资源所有权。交互取舍先读 [Workbench 设计规则](WORKBENCH_DESIGN.md)，操作说明见[工作台使用与排查](../docs/workbench/operations.md)，按风险选择回归见[验收指南](WORKBENCH_FLEXLAYOUT_VALIDATION.md)。
-
-| 本次修改                       | 先定位                                                                                 |
-| ------------------------------ | -------------------------------------------------------------------------------------- |
-| 登录、连接、session 撤回       | [一个 document，一条 session](#一个-document一条-session)                              |
-| 缓存、mutation、订阅           | [三类前端状态](#三类前端状态)、[React state correctness](#react-state-correctness)     |
-| Content/MF 打开与清理          | [Layout 和 entry activation](#layout-和-entry-activation)、[Host facade](#host-facade) |
-| 标签、导航、布局恢复           | [原生工作区与文档路由](#原生工作区与文档路由)                                          |
-| 插件目录、侧栏、日志、配置目录 | [内置编辑器滚动与目录](#内置编辑器滚动与目录)                                          |
+Shell 将一个已认证浏览器会话组织为多个独立文档和上下文工具。FlexLayout Model 拥有几何与标签，Worksplit 协调文档，业务页面拥有输入和资源。交互理由见 [Workbench 设计](WORKBENCH_DESIGN.md)，操作说明见[工作台使用](../docs/workbench/operations.md)。
 
 ## 固定边界
 
-Management client/react 拥有认证会话与管理 DTO；Workbench client/react/federation 拥有 layout/opened handle、per-open renderer 和 activation。Definition、browser-safe projection、MF singleton 与 Bridge contract 统一见 [WORKBENCH](WORKBENCH.md)，本页只记录 Shell 的状态与 UI 所有权。
+Management client/react 拥有认证会话和管理 DTO；Workbench client/react/federation 拥有 layout、opened handle 和 per-open activation。[Workbench 架构](WORKBENCH.md)维护 publication、Content、MF/Bridge 和服务端租约，本页维护 Shell 状态与浏览器资源。
 
 ## 一个 document，一条 session
 
-`client.tsx` 在 module scope 创建 document-unique `RuntimeSessionClient` 和初始 bootstrap promise，避免 React StrictMode
-重复建立 physical WebSocket。`/__pluxel/runtime/session` 上依次完成：
+`client.tsx` 在 module scope 创建唯一 `RuntimeSessionClient` 和 bootstrap promise，React StrictMode 重放不重复建立 WebSocket。`/__pluxel/runtime/session` 依次完成认证 bootstrap、password/TOTP/OIDC challenge 和 authenticated ready，再承载 Management、Workbench、Plugin API、logs follow 与 callbacks。
 
-1. authentication-required bootstrap；
-2. password/TOTP/OIDC challenge；
-3. authenticated ready bootstrap；
-4. Management + Workbench capabilities；
-5. layout/openEntry、Content push、Plugin API、logs follow 和 observer callbacks。
-
-Workbench App 把 Workbench capability 视为硬要求；management-only bootstrap 不能渲染一个“部分可用”的 Shell。
-认证 authority、publication inventory 或 socket epoch 失效时，页面销毁当前 UI 并要求完整 reload。没有 feature reconnect、
-旧 root恢复或备用 API transport。
-
-MF manifest、JS/CSS、字体/图片等静态文件仍走 HTTP；Content plan 随现有 `openEntry()` RPC 返回，不增加 artifact
-HTTP fetch。浏览器提交 single-use ticket 写入 `HttpOnly` cookie 也使用一个 fixed same-origin POST。这些 HTTP 端点不承载
-Management 或 Plugin RPC。
+Shell 要求 bootstrap 包含 Workbench capability。认证、publication inventory 或 socket epoch 失效后销毁当前 UI 并完整 reload。静态 MF/JS/CSS/图片字体通过 HTTP 提供；single-use ticket 通过 same-origin POST 写入 HttpOnly cookie，Content plan 随 `openEntry()` 返回。
 
 ## 三类前端状态
 
-同一个 document 共用一条 Cap’n Web session，不代表所有 React 状态共享 owner、cache 或更新协议。Frontend 按事实分成三层：
+| 状态                      | 生命周期                     | 实现与所有权                                                                   |
+| ------------------------- | ---------------------------- | ------------------------------------------------------------------------------ |
+| Shell local UI            | browser document / workspace | FlexLayout Model、Worksplit 文档协调和 React 局部状态                          |
+| Shell Management snapshot | authenticated session        | Shell 私有 React Query `QueryClient` 缓存 `RuntimeManagementClient` 的本地 DTO |
+| Plugin renderer resource  | 单次 open / Bridge           | `createWorkbenchRenderer()` 创建私有 owner 和 Query Core cache                 |
 
-| 状态                      | 生命周期                       | 实现                                                                         | 不负责                                              |
-| ------------------------- | ------------------------------ | ---------------------------------------------------------------------------- | --------------------------------------------------- |
-| Shell local UI            | document / workspace           | FlexLayout Model、Worksplit 文档协调、React 局部状态                         | RPC cache、capability ownership                     |
-| Shell Management snapshot | authenticated document session | Shell 私有 `@tanstack/react-query` `QueryClient` + `RuntimeManagementClient` | descriptor/scope provenance、per-open root disposal |
-| Plugin renderer resource  | 单次 `openEntry()` / Bridge    | `createWorkbenchRenderer()` 创建的 per-open owner，内部使用 Query Core       | Shell workspace、跨 open cache                      |
+`RuntimeManagementClient` 清理 transport metadata 并释放 Cap’n Web result，领域 parser 验证原树、构造 frozen snapshot，仅不透明叶子独立复制。Query cache 只保存本地数据，不能保存 stub、opened handle 或 subscription。Layout、Content controller、entry activation、workspace draft 由各自 owner 管理。
 
-Shell 不复用 Plugin renderer adapter，也不伪造 descriptor 或 opened owner。`RuntimeManagementClient` 已经负责 Cap’n Web
-result 的 transport 元数据移除与释放；领域 parser 验证原树并直接构造最终 frozen snapshot，只有不透明数据叶子需要独立复制。React Query 只负责本地 DTO 的去重、缓存、竞态隔离、loading/error
-状态和失效。Query cache 中禁止存放 `RpcStub`、opened handle、subscription 或其他需要显式释放的对象。
+Shell 在 `App` 内创建 QueryClient，session epoch 结束时清空。Key 来自 `managementQueryKeys`，使用 canonical node。默认 `retry: false`、`networkMode: 'always'`、`refetchOnReconnect: false`；普通 snapshot 允许 stale window 和 window-focus refresh。
 
-Shell 的 QueryClient 与 authenticated session 同寿命，在 `App` 内创建，session epoch 销毁时整体清空。Query key 统一从
-`managementQueryKeys` 生成，并使用 canonical node identity。默认 `retry: false`、`networkMode: 'always'`、
-`refetchOnReconnect: false`；浏览器 online 状态不能代表现有 WebSocket 可用，socket broken 仍由 session gate 要求完整 reload。
-普通 snapshot 允许 stale window 与 window-focus refresh。Mutation 按实际受影响的 read model 精确失效；若写入结果为
-`unknown` 或 transport 在提交后断开，则先取消旧 fetch，再等待 authoritative refetch，不能让 mutation 前的晚到结果成为最终状态。
-
-共享 transport 也不等于 snapshot 自动实时。当前 Management 普通读取没有统一 change feed，实时一致性来自本地 mutation
-invalidation、显式刷新与 focus freshness；不能用短轮询冒充 WebSocket push。只有具备权威变更源与单调 revision 的领域才应增加
-push invalidation。Plugin snapshot/watch 继续 subscribe-before-read，日志等有序连续流继续使用专用协议、gap recovery 与有界
-buffer；layout、Content controller、entry activation、workspace draft 也不进入 React Query。
+Mutation 精确失效受影响的 read model。结果为 `unknown` 或提交后 transport 断开时，先取消旧 fetch，再等待权威 refetch，防止旧结果覆盖写入。Management 普通读取没有统一 change feed，当前更新来源为本地 mutation、显式刷新和 focus freshness；有权威变更源与单调 revision 的领域可提供 push invalidation。Plugin watch 使用 subscribe-before-read，有序流使用专用协议、gap recovery 和有界 buffer。
 
 ## Layout 和 entry activation
 
-Workbench layout 是 capability-free immutable snapshot。它包含 target、placement、openable identity、owner revisions 和
-discriminated pinned Content/MF reference，不包含 Content plan 或任意 Plugin API dictionary。
+Shell 根据 immutable layout 取得 target、placement、descriptor、owner revision 与 pinned Content/MF reference，再调用 `openEntry(expected layout revision)`。打开和回滚流程由 [Workbench](WORKBENCH.md#session-与打开流程)维护。
 
-Shell 打开页面时执行一个原子 activation：
-
-```text
-current layout entry
-  -> openEntry(expected layout revision)
-  -> static Content: validate portable plan -> Shell render
-  -> interactive Content: validate plan/presentation -> subscribe only when it has data -> Shell render
-  -> federated View: fresh root(s) -> pinned MF/Bridge activation
-```
-
-纯 Markdown Content open 只做短 owner admission；返回 immutable plan 后立即释放，不创建 imperative root、MF/Bridge 或
-server-side opened lease。Interactive Content 保留一个 framework-owned root；Federated View 只有整个 tuple 成功才成为 active：
-
-```text
-target node + owner generation lease
-+ layout/publication revision + descriptor identity
-+ producer build revision + expose
-+ opened root(s) + one Bridge instance
-```
-
-失败 candidate 会 destroy Bridge（若已创建）、关闭 host facade，并 dispose single-owner opened handle。关闭 active
-View 的顺序同样固定为 Bridge destroy → host facade close → opened handle dispose。旧 renderer 不能接新 roots，新 renderer
-也不能接旧 roots。
+一个 federated activation 同时绑定 target node/generation lease、layout/publication revision、descriptor identity、producer build revision/expose、fresh roots 和 Bridge。完整候选成功后才发布 active，旧 renderer 与新 roots 不能交叉使用。关闭和失败清理均按 Bridge destroy → host facade close → opened handle dispose 执行。
 
 ## Renderer
 
-Content renderer 只消费 client boundary 二次验证后的封闭 AST/presentation，并以 React semantic elements 输出。Text 由 React escaping；
-没有 raw HTML、runtime Markdown parser、图片或 Plugin component。Fragment DOM id 用每个 mounted Content 的 `useId()` scope，
-同一文档打开多次也不会碰撞。
+Content renderer 接收二次验证后的 AST/presentation，输出 React semantic elements。Text 由 React escaping，fragment DOM id 使用每次 mount 的 `useId()` scope；Content 不运行 Markdown parser、raw HTML、图片或 Plugin component。
 
-含 data 的 Content 先 subscribe，再按 sequence 接受 callback、manual load 与 action 的 full-state outcome；action-only Content 不创建
-observer。初始失败显示 retry，已有 data 后失败保留值并标记 stale。当前 action control 在 pending 时禁用，跨 control 重叠由 server
-lane 返回 busy；带 `confirm` 文案的 action 先用 host confirm。Dialog/embedded form 复用 Config portable field adapter 与 `AutoForm({ fields })`，server
-validation issues 映射到字段；validation/domain/unexpected failure 保留 draft，成功清理。Content close 后 observer 和 late unary result
-都不能更新 React state。
+含 data 的 Content 先订阅，再按 sequence 接受 callback、manual load 和 action 的完整状态；action-only 无 observer。初次失败显示 retry，已有值后失败标 stale。Pending action 禁用对应 control，跨 control 重叠由 server lane 返回 busy，`confirm` 使用 host confirm。
 
-Renderer 每次 Bridge mount 都有独立 owner 与 cache；Shell 不共享其 QueryClient，也不把 transport-owned capability 放入 React state。公开 resource API、Provider/CSS 与 DTO consumption 见 [renderer resources](../docs/workbench/renderer-resources.md)；其生命周期约束见 [WORKBENCH](WORKBENCH.md#renderer-resource-与撤回)。
+Dialog/embedded form 复用 Config portable field adapter 与 `AutoForm({ fields })`，服务端 validation issues 映射到字段。Validation/domain/unexpected failure 保留 draft，成功清理。关闭后的 observer 和晚到 unary result 不再更新 React。
+
+Federated renderer 每次 Bridge mount 独立持有 owner/cache。公开 resource API 见 [renderer resources](../docs/workbench/renderer-resources.md)，订阅、mutation、portable consumption 与撤回见 [Workbench](WORKBENCH.md#renderer-resource-与撤回)。
 
 ## Host facade
 
-Remote 只得到固定 appearance、feedback、受限 relative navigation、document 状态与显式借用的 unary Management 操作。Navigation/document 不适用时为 null；路径必须通过规范形式校验，dirty/title registration 随 per-open handle 撤销。它不取得 raw socket、MF Runtime、Shell store 或私有 Provider。
+Remote 通过 facade 使用 appearance、feedback、受限 relative navigation、document 状态和显式借用的 unary Management。Navigation/document 不适用时为 null；dirty/title registration 随 per-open handle 撤销。
 
-公开 navigation facade 校验规范路径，不接受 query/hash。目标 frame 由当前完整 committed directory 和 canonical URL 决定，
-不能只检测 `workbench-standalone` 前缀，也不能由 `openDocument()` 强制覆盖成 shell。文档标题和 `meta` 直接写入原生 Model 的
-`name` / `helpText`，检查 Action 回执；View 只在自己首次覆盖时借用当前原生值用于撤销，不能把打开前的过期标题写回新页面。
+传给 `navigate` 或 `openDocument({ path, title })` 的本插件路径必须是无 query/hash 的规范路径。`openDocument({ path, title })` 从当前 owner 的 committed directory 和 canonical URL 解析目标 frame。`openDocument({ plugin, title })` 由 Shell 用节点地址构造内置插件详情路径。`openDocument({ entry, title })` 和侧栏固定项共用 entry link 解析，按当前全局 layout 核对节点、入口键、可用性及具体 location。跨插件路由文档保存带 owner 的 canonical URL。标题与 `meta` 写入原生 Model 的 `name` / `helpText`，检查 Action 回执。View 首次覆盖时借用当前原生值供撤销，不能将打开前的旧标题写回已变更的页面。
 
 ## 原生工作区与文档路由
 
 ### 一个布局所有者
 
-已认证 browser document 持有一个 `WorkspaceSession`；这里的 browser document 不等于工作区标签。Shell 借用 session 中的 Worksplit 实例。FlexLayout Model 是标签、TabSet、TabGroup、Border、顺序、pin、尺寸和最大化的唯一事实来源；Worksplit 拥有文档身份、独立 Router/history、MRU、复用和关闭协调。业务 dirty、revision、draft 和保存结果属于具体文档。禁止第二套 tabs/grid store 或将只读投影反向同步回 Model。
+每个已认证 browser document 持有一个 `WorkspaceSession`。FlexLayout Model 拥有 Tab、TabSet、TabGroup、Border、顺序、pin、尺寸和最大化；Worksplit 拥有文档身份、独立 Router/history、MRU、复用与关闭协调；业务文档拥有 dirty、revision、draft 和保存结果。
 
-每个文档用 `createAppRouter({ history })` 消费同一生成 route tree，history 由 Worksplit 提供并在内存中保存。路由只渲染内容，不递归创建 Shell；Management、Product、Mantine 和 session providers 位于文档 Router 之外。`WorkspaceSession.start()` 通过 `instance.start({ browser })` 取得工作区浏览器地址的唯一写入权；固定工具取得焦点不改变活动文档 URL。宿主拥有创建、启动和最终 dispose，`<Workbench instance>` 只绑定视图。
+每个文档通过 `createAppRouter({ history })` 使用同一生成 route tree，history 由 Worksplit 在内存中提供。路由渲染内容，Management、Product、Mantine 和 session providers 保留在文档 Router 之外。`WorkspaceSession.start()` 调用 `instance.start({ browser })` 取得浏览器地址的唯一写入权，工具焦点不改变活动文档 URL。宿主创建、启动和最终 dispose 实例，`<Workbench instance>` 仅绑定视图。
 
-Plugin route 的 pathname 由该 match 的 `beforeLoad` 保存到 route context，页面显式消费该输入。导航期间旧 match 仍可能显示，不能让它解析 Router 已指向的新目标地址；Shell 与 standalone 使用相同边界。
+Plugin route 在 match 的 `beforeLoad` 中保存 pathname 到 route context。页面读取该值，使导航期间尚在显示的旧 match 仍解析自己的地址；Shell 和 standalone 共用这一实现。
 
 ### 导航与身份
 
-- 普通 Shell 入口交给活动文档注册的 Router 导航，经过离开确认；没有活动文档才创建文档。标签外的“+”复制当前已提交地址，通过 Worksplit duplicate 创建独立 Router 和 opened owner，不复制草稿。
-- 内部 `to`、解析后的 search/hash 与浏览器公开 href 分开。文档地址取 TanStack `publicHref`；不能把带 basepath 的 href 再作为 `to`。恢复的惰性文档也使用同一 Router parser。
-- `frame: standalone` 使用完整页面导航跨越工作区边界；它的 browser Router 与工作区 history 不同时运行。站外链接、下载、修饰键和新窗口行为交给浏览器。
-- 路由 `documentKey` 只声明实际业务身份：配置文档按 canonical 路径与 entry、日志文档按 plugin 筛选复用；其他路由采用原生已接纳路径和 search。`reuse: preserve` 保留匹配文档的当前位置，显式副本使用 `reuse: new`。Shell 保留整个 workspace 一份 preview 的政策，使用 `previewScope: workspace`；publication group 仅组织业务入口，与原生 TabGroup 无关。标题来源是 committed publication、相同 canonical owner 的 displayName 或 compiled route title；不得借用其他 fork 或未发布 owner 的名称。插件配置页完成详情读取后更新为实际插件名。
-- 原生 Model 拥有已提交的名称，复用和恢复不重新投影默认名称。Host/F2 标题更新检查 Action 回执，撤销遵守 [Host facade](#host-facade) 的借用边界。
+- 普通入口通过活动文档 Router 导航并经过离开确认，无活动文档时才新建。标签外的“+”和 duplicate 复制已提交地址与名称，创建独立 Router/opened owner，草稿仍归原文档。
+- 文档公开地址使用 TanStack `publicHref`，内部 `to` 与解析后的 search/hash 分开。带 basepath 的 href 不能再次作为 `to`，惰性恢复使用同一 Router parser。
+- `frame: standalone` 通过完整页面导航切换工作区，独立使用 browser Router。站外链接、下载、修饰键和新窗口交给浏览器。
+- `documentKey` 表达业务身份：配置按 canonical 路径与 entry，日志按 plugin 筛选；其他路由使用原生已接纳 path/search。`reuse: preserve` 保留原位置，副本使用 `reuse: new`；整个工作区使用 `previewScope: workspace` 保留一份 preview。Publication group 只组织业务入口。
+- 标题来自 committed publication、相同 canonical owner 的 displayName 或 compiled route title，插件详情读取后采用实际插件名。Model 拥有已提交名称，复用和恢复不覆盖用户重命名；F2/facade 更新检查 Action 回执，撤销遵守 [Host facade](#host-facade) 的借用边界。
 
-中央文档移动、拆分、pin、分组、折叠和最大化保留内容实例。activation 由原生 React effect 接入 `content.runEffect()`；路由替换、React cleanup 或内容正式关闭结束本次使用期限。Activity 隐藏或 Suspense 的实际 effect 清理遵守 React 边界，不承诺组件状态保留时连接也保留。单文档 Router 错误只影响该文档，允许重试，不卸载全局 Shell。
+中央文档移动、拆分、pin、分组、折叠和最大化保留内容实例。Activation 在 React effect 中接入 `content.runEffect()`，路由替换、effect cleanup 或正式关闭结束该次使用。React Activity/Suspense 可以保留组件状态而清理 effect，连接遵循实际 effect 寿命。单文档 Router 拥有独立 error boundary 和重试入口。
 
-根 `pnpm-workspace.yaml` 接入 Worksplit 的完整四份原生补丁；版本、补丁边界和移除条件由 [Worksplit 原生支持](../vendor/split-like-vscode/docs/navigation-support.md)拥有。根工作区提供唯一依赖安装，`scripts/check-worksplit-native.mjs` 运行库自带检查器验证精确版本、实例和全部补丁文件；构建与开发任务执行该检查。采用的库提交及宿主验收见[本次迁移记录](WORKSPLIT_MIGRATION.md)。
+根 `pnpm-workspace.yaml` 接入 Worksplit 的四份原生补丁；版本、边界和移除条件见 [Worksplit 原生支持](../vendor/split-like-vscode/docs/navigation-support.md)。`scripts/check-worksplit-native.mjs` 由构建/开发任务调用，验证根安装的精确版本、唯一实例和全部补丁。采用版本与宿主证据见 [迁移记录](records/worksplit-adoption.md)。
 
 ### 动作与关闭
 
-Worksplit 提供默认上下文/溢出菜单、键盘操作、popup 关闭与焦点交接。Shell 使用 `menus.transform` 保留中文、插件工具的显隐/尺寸和移动目标，以及在右侧打开副本的业务组合；不再维护菜单会话、复制命令或延迟聚焦链。协调修改经过 `dispatch(Actions...)`，关闭范围通过 `close(target)` 一次预检；拒绝时不逐个删除，已成功的业务保存不因后续拒绝回滚。
+Worksplit 提供上下文/溢出菜单、键盘操作、popup 关闭和焦点交接。Shell 的 `menus.transform` 添加中文、工具显隐/尺寸、移动目标和在右侧打开副本。布局修改经 `dispatch(Actions...)`，批量关闭经 `close(target)` 一次预检；拒绝保留布局，已成功的业务保存仍有效。
 
-`WorkbenchDocumentRoot` 用 `useContent()` 借用 handle，用单一 `useContentController()` 持续拥有离开、保存、标题和焦点。子 renderer 仅在 `content.runEffect(({ signal, defer }) => …)` 中持有资源。表单 `DocumentEditor` 提供真实状态 token 与待确认写入；新编辑和新写入撤销旧批准，保存期间继续输入仍保留。确认允许后，以本次 request 的 `defer` 持有原页面交互暂停，直至原生导航接纳、拒绝或取代；只读页面显式声明 `leave: null`。共享服务、草稿和写入回执仍由业务 owner 拥有。
+`WorkbenchDocumentRoot` 用 `useContent()` 借用 handle，以单一 `useContentController()` 拥有离开、保存、标题和焦点。子 renderer 在 `content.runEffect(({ signal, defer }) => …)` 中获取资源，成功后立即 defer SDK 释放，await 后检查 signal，晚到结果只释放。
 
-`WorkbenchDocumentState` 不汇总资源，不为 React 重放维护资源 Set、detach 或延迟注销。每次获取成功立即 defer SDK 释放；await 后检查 signal，晚到结果只释放、不发布。普通组件局部行为继续使用普通 effect。正常退出调用 `closeWorkspace`，批准后保存其最终快照，再交接页面；外部浏览器遍历交接时直接接管已到达的 entry，不再 push 或手工补 history。`dispose` 仅作最终强制资源清理，`beforeunload` 继续保护未保存输入和待确认写入。
+表单 `DocumentEditor` 提供状态 token 和待确认写入。新编辑/写入撤销旧批准，保存期间继续输入仍保留；批准后用本次 request 的 `defer` 暂停原页面交互，直到导航接纳、拒绝或被取代。只读页面声明 `leave: null`，共享服务、草稿和写入回执仍归业务 owner。
 
-关闭批准前不停止资源。原生移除确认后，Worksplit 固定已知清理集合、停止内容接纳并等待该集合；未完成的 setup 与截取后的资源不延长回执，晚到失败由 `onIssue` 报告。程序 close/dispatch/dispose 的错误归返回值，Shell 的 `WorkspaceSession.check()` 处理；原生 UI 的同一操作由 Worksplit 消费回执并上报一次。standalone surface 没有 Worksplit handle，沿用原生 React/AbortController 使用期限与同一 SDK 释放顺序。完整资源契约由 [Worksplit 资源指南](../vendor/split-like-vscode/docs/resource-lifetimes.md)维护。
+正常退出调用 `closeWorkspace`，批准后保存最终快照再交接页面。外部浏览器遍历直接接管已到达 entry；`dispose` 用于最终强制清理，`beforeunload` 保护未保存输入和待确认写入。普通局部组件继续使用普通 effect，`WorkbenchDocumentState` 不另建资源集合。
 
-工具区域的位置和可达性由 `session.tsx` 约束，见下一节；文档不得移动到工具 Border，菜单和分组操作也不能绕过限制。
+关闭批准前资源继续工作。原生移除确认后固定已知 cleanup 集合、关闭内容接纳并等待集合结算，尚未完成的 setup 与截取后资源不延长回执。晚到失败走 `onIssue`；程序 close/dispatch/dispose 的失败由 `WorkspaceSession.check()` 处理返回值，原生 UI 操作由 Worksplit 消费回执、上报一次。Standalone 使用 React/AbortController 寿命和相同 SDK 释放顺序。完整规则见 [Worksplit 资源指南](../vendor/split-like-vscode/docs/resource-lifetimes.md)。
 
 ### 持久化与恢复
 
-`WorkspaceSnapshotStorage` 保存 Worksplit v2 snapshot：原生 Model 和文档恢复信息。RPC handle、Router、业务 draft、dirty 和服务对象不进入快照。存储 key 的版本由 `snapshot.ts` 的 `workspaceStorageKey()` 定义，并由浏览器 origin 与 UI basepath 隔离；只读当前版本，不双读、双写或运行时迁移旧布局。
+`WorkspaceSnapshotStorage` 保存 Worksplit v2 snapshot：原生 Model 和文档恢复信息。RPC handle、Router、draft、dirty 和服务对象不进入快照。`snapshot.ts` 的 `workspaceStorageKey()` 以版本、浏览器 origin 和 UI basepath 隔离存储，只读取当前版本。
 
-恢复验证 workspace、结构与实际 publication/权限。已保存节点要求明确 `type` 和容器 `children`；不能让 Model 将损坏数据补齐为默认布局。只有源码初始 layout 可以使用原生缺省字段。坏快照保留现场，由用户显式修复或重置；后台恢复的文档惰性打开，不同时发起所有插件的 open RPC。
+恢复校验 workspace、结构、当前 publication 和权限。持久化节点必须显式包含 `type` 与容器 `children`；原生缺省字段只用于源码初始 layout。坏快照保留供显式修复/重置，后台文档惰性打开。
 
-`snapshotRevision` 触发布局保存，普通查询直接读 `instance.model` / containers 而不序列化。连续变化合并写入，`pagehide`、页面隐藏和 teardown 补写；相同序列化结果不重复写盘。读取或结构校验失败不写回默认值。显式恢复默认布局先协调文档关闭与 pin/关闭保护，再显式删除布局存储并完整导航。受保护退出和外部交接使用库在移除前捕获的最终快照，关闭旧 writer 防止较早的定时写覆盖。存储失败需可发现地报告，但不能阻塞普通打开和编辑；不保证浏览器强制终止或存储故障时的持久性。
+`snapshotRevision` 触发合并写入，`pagehide`、隐藏和 teardown 补写，相同序列化结果不重复保存；普通查询直接读 Model。读取/校验失败不写回默认值。恢复默认布局先协调关闭和 pin/关闭保护，再删除布局存储并完整导航。退出与交接使用原生移除前捕获的最终快照，并关闭旧 writer。存储失败可发现地报告，普通打开/编辑继续工作。
 
-Remote 不 import Worksplit、Shell router、布局 store 或宿主私有 Provider。内容使用 CSS Flex/Grid、Mantine 和容器响应式布局，独立页面通过 publication 声明，不再建立第二套宿主分区协议。
+Remote 使用 CSS Flex/Grid、Mantine 和容器响应式布局，独立页面通过 publication 声明，不导入 Worksplit、Shell router、布局 store 或私有 Provider。
 
 ## Module Federation policy
 
-每 document 只有一个 MF Runtime。Shell 建立 fixed shared winners 后才按需加载 exposes；未打开的 View 不请求其 expose，Content-only 不产生 producer。完整 shared、CSS、candidate 与更新契约见 [WORKBENCH](WORKBENCH.md#mf2-与-react-bridge)。Frontend 不实现页内 revision swap 或 old-remote fallback。
+每个 browser document 只有一个 MF Runtime。Shell 建立 fixed shared winners 后按需加载 expose，未打开 View 不请求 expose。Shared、CSS、candidate 和 full reload 规则由 [Workbench](WORKBENCH.md#mf2-与-react-bridge)维护。
 
 ## 内置编辑器滚动与目录
 
 ### 导航和目录
 
-ActivityRail 始终独立于可收起工具区，展示 `navigationItems.ts` 中的内置入口与用户固定的当前 publication 页面。`border_left.config.shortcuts` 是快捷偏好的唯一存储；Host 的 `initialShortcuts` 仅在缺失偏好时初始化，空列表不补种。名称、图标、frame 和可用性从当前全局布局解析，target/entry 身份不回退；失效入口保留移除按钮。插件声明不控制一级位置。`/apps` 聚合 tab 和显式 navigation 的业务 route，使用 navigation label、publication group 和 canonical owner 组织；全局查找还列出未加入常用导航的 route。`/plugins` 进入管理工作区。业务入口与插件管理不按 owner 混为一类，`/apps` 聚合页本身不登记插件 owner。
+ActivityRail 独立于可收起工具区，展示 `navigationItems.ts` 的内置入口与用户固定的 publication 页面。`border_left.config.shortcuts` 是唯一偏好存储，`initialShortcuts` 仅在缺失时初始化，`[]` 保持为空。名称、图标、frame 和可用性从当前 layout 解析，失效 target/entry 保留移除入口。
 
-`PluginNavigation` 在管理工作区呈现唯一 `PluginCatalog`，沿用分组、DnD、多选和管理持久化；中央索引只提供选择提示，不再渲染第二个目录。全局 `WorkspaceNavigation` 是入口查找投影，不拥有管理目录状态。目录高亮比较 canonical plugin route；业务页面高亮同时比较 owner 和精确 entry key。
+点击插件传来的 entry link 时，`workbench/entry-link.ts` 核对链接中的入口键。文档恢复沿用保存的 URL 与当前路由表；同一节点若在新版本把同一路径分配给另一入口，恢复时显示新路由。
+
+`/apps` 展示 tab 与显式 navigation 的业务 route。目录从共享 Plugin Overview 读取已提交的插件组和组内顺序，按 canonical owner 匹配 publication，组内继续显示 publication 分类。固定列读取自己的侧栏顺序。全局查找额外包含其他 route。`/plugins` 使用唯一 `PluginNavigation` / `PluginCatalog`，保持分组、DnD、多选和管理持久化。中央索引只提示选择。`/apps` 本身不登记插件 owner。目录高亮比较 canonical plugin route，业务页同时比较 owner 和 exact entry key。
 
 ### 区域与可见性
 
-| 区域            | 官方工具                                          | 插件扩展                                                 |
-| --------------- | ------------------------------------------------- | -------------------------------------------------------- |
-| `border_left`   | `navigation` 提供目录，默认仅在插件管理展开       | 当前 owner 已打开的 left 面板，独立原生标签              |
-| `border_right`  | `plugin-inspector` 内部只含“插件信息”与“最近日志” | 当前 owner 已打开的 right 面板，与官方工具分开的原生标签 |
-| `border_bottom` | 无                                                | 当前 owner 已打开的 bottom 面板                          |
+| 区域            | 官方工具                                      | 插件扩展                        |
+| --------------- | --------------------------------------------- | ------------------------------- |
+| `border_left`   | `navigation`，默认仅在插件管理展开            | 当前 owner 已打开的 left 面板   |
+| `border_right`  | `plugin-inspector`，内部“插件信息”/“最近日志” | 当前 owner 已打开的 right 面板  |
+| `border_bottom` | 无                                            | 当前 owner 已打开的 bottom 面板 |
 
-中央 TabSet 仅承载文档。官方工具固定且不能关闭或拖动；插件面板可关闭并在声明 region 内排序，不跨 Border、不进入中央。`session.tsx` 的放置策略校验所有动作入口，菜单和分组也不能绕过。左边只有官方目录时隐藏冗余原生标签条，有插件面板时保留原生标签条。
+中央 TabSet 只承载文档。官方工具固定、不可关闭或拖动；插件面板可关闭、在声明 region 内排序。`session.tsx` 对全部动作校验放置，禁止跨 Border 或移入中央。左侧只有官方目录时隐藏重复原生标签条，有插件面板时显示。
 
-`show` 表达区域是否有适用内容，`selected: -1` 表达用户收起偏好。收起仍保留已打开标签，关闭才移除插件面板节点；不能根据声明同步时把用户关闭的面板重新添加。图标/文字模式由左 Border config 保存，官方工具内部选择与插件原生标签选择分开。
+`show` 表达区域有无适用内容，`selected: -1` 表达用户收起。收起保留标签，关闭移除插件节点；声明同步不重新补回已关闭节点。左 Border config 保存图标/文字模式，官方工具内部选择独立于插件原生标签。
 
 ### 插件上下文与面板资源
 
-已渲染的详情/声明路由将 canonical owner 登记到所属 `WorkbenchDocumentState`。面板上下文只读取 Worksplit 活动文档 owner，不从浏览器 URL、displayName 或 provider 猜测。Attachment 匹配 consumer `target.node`；作者声明仍使用原有 `workbench.panel()`，见[上下文面板](../docs/workbench/panels.md)。
+详情/声明路由向所属 `WorkbenchDocumentState` 登记 canonical owner，面板读取 Worksplit 活动文档的 owner。Attachment 使用 consumer `target.node`。作者 API 见 [上下文面板](../docs/workbench/panels.md)。
 
-`PluginPanelDirectory.tsx` 拥有当前 owner 的面板发现与可用性投影，官方信息扩展列表和 `WorkspaceNavigation` 共用它，并通过 `WorkspaceSession.openPanel(entry)` 打开；声明解析、排序、可用性与打开路径不能各写一套。面板默认按需打开，identity 使用 canonical owner 与 descriptor key，重复打开揭示已有原生节点而不创建副本。停止插件的入口不能标成可打开；已保存但声明撤回的节点显示不可用并允许关闭。
+`PluginPanelDirectory.tsx` 统一发现、排序和投影当前 owner 的面板，官方扩展列表和 `WorkspaceNavigation` 共用 `WorkspaceSession.openPanel(entry)`。面板按需打开，canonical owner + descriptor key 确定 identity，重复打开聚焦已有节点。停止插件的入口不可打开，已保存但撤回声明的节点标不可用且可关闭。
 
-`panelTabs.tsx` 定义面板 identity、原生节点与当前声明 activation；`session.tsx` 协调打开、区域策略和 owner 切换。每个 owner 保留其未关闭原生面板的布局。活动节点由 Model 拥有，非活动 owner 布局存于 Border config 的 UI archive。切换 owner 时卸载旧 activation，保存旧 owner 布局并恢复新 owner 的未关闭标签；用户关闭从该布局移除，切回或刷新不能再次自动出现。snapshot 只保存 canonical owner、entry key、region 与 UI 属性，不保存 LayoutEntry、renderer、RPC handle 或旧 producer。恢复 activation 必须重新匹配当前 committed declaration，不能把保存节点当作权限或 publication authority。
+`panelTabs.tsx` 定义 identity、原生节点和 activation，`session.tsx` 协调打开、放置与 owner 切换。活动布局由 Model 拥有，非活动 owner 的未关闭布局保存在 Border config archive。切换时卸载旧 activation、保存其布局并恢复新 owner；关闭会移除保存项。Snapshot 只保存 owner、entry key、region 和 UI 属性，恢复时重新匹配当前 committed declaration。
 
-面板沿用 `WorkbenchEntryView` 的 Content/MF activation，不创建文档 Router/history。上下文只有 Plugin owner，不自动传入当前 bot/会话等实体参数，也不获得中心文档的 `host.document`；实体编辑与草稿归中央文档。原生 Border 的 show、selected 和 owner 决定可见性；隐藏、切换面板、关闭或 owner 变化时释放 opened handle、Bridge 与 observer，再次显示 fresh open。布局恢复不承诺面板草稿保留。
+面板沿用 `WorkbenchEntryView` activation，不创建文档 Router/history，也不取得中央文档的 `host.document` 或 bot/会话参数。隐藏、切换、关闭或 owner 变化释放 Bridge、opened handle 和 observer，再次显示 fresh open；业务实体输入和草稿归中央文档。
 
 ### 日志读取与展示
 
-右侧官方“插件面板”内部的“最近日志”与“插件信息”切换，插件扩展不进入这组内部标签。它拥有当前 owner 的最近 10 条日志；标题、策略和完整页入口固定，仅记录区域滚动。切换标签、收起右侧或 owner 变化时释放订阅。完整日志使用独立 `/logs?plugin=…` 文档，`plugin` 是 canonical reference，保留 fork 身份；显式打开不替换原配置文档。日志文档筛选由其路由拥有，不跟随后来激活的其他插件；`router/logsSearch.ts` 拒绝非法引用，不能静默退回全局日志。
+右侧官方“最近日志”读取当前 owner 最近 10 条，标题、策略和完整页入口固定，仅记录区滚动。切换标签、收起或 owner 变化释放订阅。完整 `/logs?plugin=…` 文档保留 canonical reference/fork 与独立路由筛选；`router/logsSearch.ts` 拒绝非法引用，显式打开保留原配置文档。
 
-日志实现位于 `app/log_viewer/`，按资源、展示和页面组合分层：
+`app/log_viewer/` 按以下所有者拆分：
 
-| 所有者                              | 责任                                                                                                         |
-| ----------------------------------- | ------------------------------------------------------------------------------------------------------------ |
-| `useLogStream` / `logStreamStore`   | 每个读取实例独立订阅与有界缓存；先订阅后读取、epoch 切换隔离、seq 排序去重与缺口恢复；清理后晚到结果不能回写 |
-| `LogRow` / `LogList` / `LogDetails` | 行格式、虚拟化列表和详情/复制；只消费记录和回调，不创建订阅、定义路由或强制停靠宽度                          |
-| `LogPreview`                        | 组合当前插件最近 10 条的读取与紧凑呈现，不携带完整页筛选和详情布局                                           |
-| `LogsPage` / `LogFilters`           | 组合完整阅读、筛选、跟随与按需详情；筛选表单只拥有未应用草稿，路由拥有已应用条件                             |
-| `LogPolicyPopover`                  | 右侧最近日志标题后、完整插件日志页标题后共用的策略入口；消费共享 Management Query cache                      |
+| 实现                                | 责任                                                                 |
+| ----------------------------------- | -------------------------------------------------------------------- |
+| `useLogStream` / `logStreamStore`   | 每实例订阅与有界缓存；先订阅后读、epoch 隔离、seq 排序去重和缺口恢复 |
+| `LogRow` / `LogList` / `LogDetails` | 行、虚拟列表、详情与复制，消费记录和回调                             |
+| `LogPreview`                        | 最近 10 条的读取与紧凑呈现                                           |
+| `LogsPage` / `LogFilters`           | 完整阅读、筛选、跟随与按需详情；路由拥有已应用条件，表单拥有草稿     |
+| `LogPolicyPopover`                  | 两处日志标题旁共用策略入口，消费 Management Query cache              |
 
-缓存和等待绘制的增量都必须有界，不能只有可见列表有限。reset/clear、筛选变化和卸载分别撤销旧读取的提交资格；同一 seq 只能在所属 epoch 中解释。界面区分初次读取、实时接收、空结果与错误，重试重新打开当前读取，不新建 transport。清空仅清理当前读取实例的显示缓存，不删除服务端日志。
+缓存及等待绘制的增量均有界。Clear/reset、筛选变化和卸载撤销旧读取的提交资格，seq 只在所属 epoch 中解释。UI 分开呈现初次读取、实时接收、空和错误；重试重新打开当前读取，clear 只清本地显示。
 
-策略写入与日志订阅使用各自的管理协议。策略 mutation 按 session 串行，执行时读取共享 revision；写入前与成功提交 cache 前取消旧查询，避免不可取消 RPC 的晚到 GET 覆盖新策略。失败先取消旧读取，再执行权威 readback，不用本地乐观值伪装写入成功。
+策略 mutation 按 session 串行，执行时读取共享 revision。写入前和成功提交 cache 前取消旧查询；失败也先取消旧读再做权威 readback，避免晚到 GET 覆盖结果。
 
 ### 文档内编辑和滚动
 
-配置编辑器由插件详情文档拥有。`FormToc` 与 `ContentOutline` 只读取本实例 config anchors / Markdown headings，不扫描其他编辑器或 federated DOM。目录可用性依据实际 anchors，不依据 scrollHeight；没有跨文档目录 claim 或右侧 portal registry。配置目录在编辑器内按需展开，滚动容器必须受所属文档尺寸约束。
+`DocumentTabs` 通过当前文档的 Router 接纳分区切换。出站 HTTP 和认证与安全由父路由持有标签栏，子路由渲染面板内容。只有选中的面板挂载内容，离开时释放该面板拥有的编辑器和订阅。
 
-配置提交、baseline 和晚到结果约束见[配置实现入口](../packages/workbench/shell/src/app/plugins/config/README.md)。交互取舍见 [Workbench 设计](WORKBENCH_DESIGN.md)，视觉状态与密度见[视觉规则](../packages/workbench/shell/color-design.md)。
+配置编辑器归详情文档。`FormToc` / `ContentOutline` 读取本实例 anchors/headings，目录可用性取决于实际 anchors，滚动容器受所属文档尺寸约束；配置目录在编辑器内按需展开。提交、baseline 和晚到结果见[配置实现](../packages/workbench/shell/src/app/plugins/config/README.md)，视觉状态见[视觉规则](../packages/workbench/shell/color-design.md)。
 
 ## React state correctness
 
-- module-scoped session 和 bootstrap promise 保证 StrictMode 不重复连接；
-- Shell 与共享 session providers 在工作区导航时保留；每个文档独立 Router/error boundary，不能用活动 pathname key 重建整棵应用；
-- Plugin detail 表单与视图属于具体文档和 canonical node，相同插件的并行文档不共享 draft；
-- WorkspaceSession 在已认证入口创建，Shell effect replay 不新建实例；最终 teardown dispose Worksplit，结算其中已知内容清理，再释放会话；
-- Content/View activation 的每次 React setup 获得独立使用期限；StrictMode 允许重新获取，旧 setup 的晚到结果通过 defer 清理，不再保留同一次连接；
-- `useRemoteValue` render 只构造本地 store，commit 才订阅/读取；依赖切换隔离 owner，effect replay 复用资源，晚到订阅仍需释放；
-- 跨组件共享事实使用 `subscribe/getSnapshot` store；
-- 空 array/object 和 Context value 保持稳定 identity；
-- Content state 与 remote read 使用 sequence/epoch guard，旧结果不覆盖新 target/route；
-- renderer query/mutation cache 属于 per-open owner，StrictMode replay 不重复 subscription，teardown 后 late result 只释放不提交；
-- structured query key canonicalize 后才进 cache，typed invalidation 只解析当前 renderer scope 的 resource；
-- mutation per-hook single-flight，并在 active owner 中于 settle 后执行预先验证的 invalidation；
-- mutation handler 显式 await/catch 或用 `void` 表达有意忽略；
-- UI state 永不保存已释放的 Cap’n Web proxy。
+跨组件共享数据使用 `subscribe/getSnapshot` store，空 array/object 和 Context value 保持稳定 identity。共享 session/providers 在文档导航时保留；每份 Plugin detail draft 属于具体文档和 canonical node。
+
+Renderer query 的读、缓存和订阅归每次打开的 scope owner。React effect 重放复用同一 owner，关闭后释放晚到的订阅。Content/renderer query 按当前 lease 或 owner 接纳结果。Mutation handler 显式 await/catch 或以 `void` 表达有意忽略。
+
+WorkspaceSession 在已认证入口创建，Shell effect replay 复用实例；最终 teardown 先 dispose Worksplit、结算已知内容，再释放会话。Content/View 的每次 React setup 独立获取资源，旧 setup 的晚到结果经 defer 清理。Renderer cache、key、invalidation 与关闭规则见 [Workbench](WORKBENCH.md#renderer-resource-与撤回)。
 
 ## 实现入口
 
-- `packages/workbench/shell/src/client.tsx`
-- `packages/workbench/shell/src/app/managementQuery.tsx`
-- `packages/workbench/shell/src/workbench/client.ts`
-- `packages/workbench/shell/src/workbench/runtime.tsx`
-- `packages/workbench/shell/src/app/workbench/`
-- `packages/workbench/shell/src/app/workbench/session.tsx`
-- `packages/workbench/shell/src/app/workbench/document.tsx`
-- `packages/workbench/shell/src/app/workbench/snapshot.ts`
-- `packages/workbench/shell/src/app/router/`
-- `packages/services/src/management/web/session/`
-- `packages/workbench/src/workbench/client.ts`
-- `packages/workbench/src/workbench/portable-value.ts`
-- `packages/workbench/src/workbench/react.tsx`
-- `packages/workbench/src/workbench/renderer-scope.tsx`
-- `packages/workbench/src/workbench/react-internal.tsx`
-- `packages/workbench/src/workbench/federation.ts`
-- `packages/workbench/shell/src/app/workbench/WorkbenchContentRenderer.tsx`
+| 修改范围                              | 源码                                                                                    |
+| ------------------------------------- | --------------------------------------------------------------------------------------- |
+| Bootstrap / Management cache          | `packages/workbench/shell/src/client.tsx`、`src/app/managementQuery.tsx`                |
+| Layout / route directory / activation | Shell `src/workbench/`，activation 位于 `runtime.tsx`                                   |
+| 文档 / 放置 / 快照                    | Shell `src/app/workbench/session.tsx`、`document.tsx`、`snapshot.ts`、`src/app/router/` |
+| Content UI                            | Shell `src/app/workbench/WorkbenchContentRenderer.tsx`、`WorkbenchContentController.ts` |
+| Renderer SDK / federation             | `packages/workbench/src/workbench/`                                                     |
+| 认证 / transport                      | `packages/services/src/management/web/session/`                                         |
 
 ## 验证
 
-Shell 测试位于 `packages/workbench/shell/`，client/resource 测试位于 `packages/workbench/tests/`。覆盖 StrictMode 单连接、query cache 不持有 capability、旧请求不覆盖 mutation 后权威快照、每次 open 独立资源、late result 只释放不提交，以及 Bridge → facade → handle 关闭顺序。
+Shell 测试在 `packages/workbench/shell/`，client/resource 测试在 `packages/workbench/tests/`。重点覆盖 StrictMode、DTO cache、晚到结果、每次 open 独立资源，以及 Bridge → facade → handle 释放。
 
-浏览器回归验证真实 session epoch/full reload、MF/React root 隔离、单一 browser history 所有者、多个独立文档 Router、布局持久化、原生菜单/拖拽/分组/焦点与窄窗口可达性。只改纯状态算法时用所属状态模块测试；真实连接、Bridge/CSS 或资源泄漏不能以纯状态测试代替。
-
-按改动选择测试与真实浏览器场景见 [Workbench 验收指南](WORKBENCH_FLEXLAYOUT_VALIDATION.md)。测试入口描述保护范围，既往通过结果不能代替本次变更验证。
+真实浏览器检查 session epoch/full reload、MF/React roots、唯一 browser history、多文档 Router、布局恢复、原生菜单/拖动/分组/焦点与窄窗口可达性。具体场景和已有证据见 [Workbench 验收](WORKBENCH_FLEXLAYOUT_VALIDATION.md)。

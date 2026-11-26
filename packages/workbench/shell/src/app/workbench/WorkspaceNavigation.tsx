@@ -1,6 +1,5 @@
 import {
 	Alert,
-	ActionIcon,
 	Button,
 	Group,
 	Modal,
@@ -10,24 +9,14 @@ import {
 	TextInput,
 	Tooltip,
 } from '@mantine/core'
-import {
-	IconArrowUpRight,
-	IconChevronRight,
-	IconSearch,
-	IconPin,
-	IconPinnedOff,
-} from '@tabler/icons-react'
+import { IconArrowUpRight, IconChevronRight, IconSearch } from '@tabler/icons-react'
 import { useWorkbenchState } from '@worksplit/react'
-import { useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
+import { Fragment, useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
 import { formatPluginNodeRoute } from '@pluxel/core'
-import {
-	readWorkbenchShortcuts,
-	type WorkbenchLayoutEntry,
-	type WorkbenchShortcut,
-} from '@pluxel/workbench/client'
+import { readWorkbenchEntryLink, type WorkbenchEntryLink } from '@pluxel/workbench/client'
 import { buildPluginDetailHref } from '../../workbench/paths'
 import { getWorkbenchDirectoryHref } from '../../workbench/route-directory'
-import { matchWorkbenchRoute } from '../../workbench/routes'
+import { resolveWorkbenchEntryLink } from '../../workbench/entry-link'
 import { useWorkbenchTargetSnapshot } from '../../workbench/runtime'
 import { usePluginOverview } from '../plugins/pluginOverview'
 import { pluginAttention } from '../plugins/pluginOverviewModel'
@@ -36,16 +25,20 @@ import { useWorkbenchNavigation } from './context'
 import { builtinPages } from './navigationItems'
 import { useOptionalWorkspaceSession } from './workspaceContext'
 import type { WorkspaceSession } from './session'
+import { SidebarPinButton } from './SidebarPinButton'
+import { PluginConfigurationButton } from './PluginConfigurationButton'
+import {
+	groupApplicationEntries,
+	groupPublicationEntries,
+	publicationNavigation,
+	type PageEntry,
+} from './applicationCatalog'
 import {
 	panelRegionLabels,
 	panelUnavailable,
 	usePluginPanelDirectory,
 	type PluginPanelDirectoryState,
 } from './PluginPanelDirectory'
-
-type PageEntry = WorkbenchLayoutEntry & {
-	placement: Exclude<WorkbenchLayoutEntry['placement'], { kind: 'panel' }>
-}
 
 /** A Shell-owned workspace action listed by the command palette. */
 export type WorkspaceCommand = Readonly<{
@@ -59,7 +52,7 @@ export type WorkspaceCommand = Readonly<{
 }>
 
 const NO_COMMANDS: readonly WorkspaceCommand[] = []
-const LINK_SELECTOR = '.plx-workspace-navigation__link:not(:disabled)'
+const LINK_SELECTOR = '.plx-workspace-navigation__link:not(:disabled):not([hidden] *)'
 
 /** Arrow keys move between visible entries in render order; Enter on the query runs the first one. */
 function moveFocus(event: KeyboardEvent, container: HTMLElement) {
@@ -69,9 +62,9 @@ function moveFocus(event: KeyboardEvent, container: HTMLElement) {
 	const target = event.target as HTMLElement
 	const index = links.indexOf(target)
 	const input = container.querySelector<HTMLElement>('input')
+	if (index === -1 && target !== input) return
 	event.preventDefault()
 	if (index === -1) {
-		if (target !== input) return
 		links[event.key === 'ArrowDown' ? 0 : links.length - 1]?.focus()
 	} else if (event.key === 'ArrowDown') {
 		links[index + 1]?.focus()
@@ -191,7 +184,7 @@ function NavigationContent({
 	}
 	const togglePin = (entry: PageEntry) => {
 		if (!session) return
-		const shortcut: WorkbenchShortcut = {
+		const shortcut: WorkbenchEntryLink = {
 			target: entry.target.node,
 			entryKey: entry.descriptor.key,
 		}
@@ -237,13 +230,30 @@ function NavigationContent({
 	const visibleBuiltins = (mode === 'all' ? builtinPages : []).filter((page) =>
 		matches(`${page.label} ${page.href} ${page.description}`),
 	)
-	const visibleEntries = entries.filter(
-		(entry) =>
-			(mode === 'all' || entry.placement.kind === 'tab' || Boolean(entry.placement.navigation)) &&
-			matches(
-				`${entry.target.displayName} ${entry.descriptor.key} ${entry.placement.kind === 'tab' ? `${entry.placement.group?.label ?? ''} ${entry.placement.label ?? ''}` : `${entry.placement.navigation?.group?.label ?? ''} ${entry.placement.navigation?.label ?? ''} ${entry.placement.title} ${entry.placement.path}`}`,
+	const catalogGroups = compact ? plugins.overview?.sections : undefined
+	const applicationSections = useMemo(
+		() =>
+			groupApplicationEntries(
+				compact
+					? entries.filter((entry) => entry.placement.kind === 'tab' || entry.placement.navigation)
+					: entries,
+				catalogGroups,
 			),
+		[catalogGroups, compact, entries],
 	)
+	const visibleSections = applicationSections
+		.map(({ key, label: sectionLabel, entries: applications }) => ({
+			key,
+			label: sectionLabel,
+			entries: applications.filter((entry) => {
+				const { label, group } = publicationNavigation(entry)
+				const { placement } = entry
+				return matches(
+					`${sectionLabel ?? ''} ${entry.target.displayName} ${entry.descriptor.key} ${group?.label ?? ''} ${label} ${placement.kind === 'route' ? `${placement.title} ${placement.path}` : ''}`,
+				)
+			}),
+		}))
+		.filter((section) => section.entries.length > 0)
 	const visiblePanels = (panels?.entries ?? []).filter((entry) =>
 		matches(
 			`${entry.placement.label} ${entry.descriptor.key} ${entry.target.displayName} ${panelRegionLabels[entry.placement.region]} 插件扩展`,
@@ -267,25 +277,6 @@ function NavigationContent({
 	const showTool = Boolean(
 		mode === 'all' && onShowNavigation && matches('插件目录 固定工具 navigation'),
 	)
-	const publicationGroups = new Map<
-		string,
-		{ label: string; explicit: boolean; entries: PageEntry[] }
-	>()
-	for (const entry of visibleEntries) {
-		const group =
-			entry.placement.kind === 'tab' ? entry.placement.group : entry.placement.navigation?.group
-		const key = JSON.stringify([buildPluginDetailHref(entry.target.node), group?.id ?? null])
-		let section = publicationGroups.get(key)
-		if (!section) {
-			section = {
-				label: [entry.target.displayName, group?.label].filter(Boolean).join(' · '),
-				explicit: !!group,
-				entries: [],
-			}
-			publicationGroups.set(key, section)
-		}
-		section.entries.push(entry)
-	}
 	const openTool = () => {
 		onShowNavigation?.()
 		onChosen?.()
@@ -293,38 +284,67 @@ function NavigationContent({
 	const selectedRoute = snapshot.directory.routes.find(
 		(candidate) => candidate.entry === routeEntry,
 	)
-	let concreteLocation: URL | undefined
-	if (
-		selectedRoute &&
-		routePath.startsWith('/') &&
-		!routePath.startsWith('//') &&
-		routePath !== selectedRoute.compiled.path
-	) {
+	let concretePage: { link: WorkbenchEntryLink; href: string } | undefined
+	if (selectedRoute) {
 		try {
-			readWorkbenchShortcuts([
-				{
-					target: selectedRoute.entry.target.node,
-					entryKey: selectedRoute.entry.descriptor.key,
-					location: routePath,
-				},
-			])
-			const candidate = new URL(routePath, 'https://workbench.invalid')
-			const params = matchWorkbenchRoute(selectedRoute.compiled, candidate.pathname)
-			if (
-				candidate.origin === 'https://workbench.invalid' &&
-				params &&
-				Object.entries(params).every(([name, value]) => value !== `:${name}`)
-			)
-				concreteLocation = candidate
+			const link = readWorkbenchEntryLink({
+				target: selectedRoute.entry.target.node,
+				entryKey: selectedRoute.entry.descriptor.key,
+				location: routePath,
+			})
+			const { href } = resolveWorkbenchEntryLink(link, snapshot)
+			if (href !== undefined) concretePage = { link, href }
 		} catch {
 			/* Keep malformed paths visibly unavailable for both open and pin. */
 		}
 	}
+	const renderPublications = (pages: readonly PageEntry[]) =>
+		[...groupPublicationEntries(pages)].map(([key, group]) => (
+			<NavigationGroup
+				key={key}
+				hideHeading={compact && !group.explicit && group.entries.length === 1}
+				label={group.label}
+				count={group.entries.length}
+				compact={compact}
+				expanded={Boolean(needle) || !collapsed.has(key)}
+				onToggle={() => toggleGroup(key)}
+			>
+				{group.entries.map((entry) => {
+					const { placement } = entry
+					const { label } = publicationNavigation(entry)
+					const ownerRoute = formatPluginNodeRoute(entry.target.node)
+					const standalone = placement.kind === 'route' && placement.frame === 'standalone'
+					return (
+						<NavigationItem
+							key={`${ownerRoute}:${entry.descriptor.key}`}
+							label={label}
+							compact={compact}
+							detail={`${label}
+${group.label}
+${placement.kind === 'route' ? placement.path : entry.descriptor.key}${standalone ? '\n独立页面' : ''}`}
+							description={
+								standalone ? '独立页面' : placement.kind === 'tab' ? '插件工作页' : placement.title
+							}
+							active={activePluginRoute === ownerRoute && activeEntryKey === entry.descriptor.key}
+							onOpen={() => openEntry(entry)}
+							pinned={session?.isSidebarShortcut({
+								target: entry.target.node,
+								entryKey: entry.descriptor.key,
+							})}
+							onTogglePin={session ? () => togglePin(entry) : undefined}
+							configTarget={compact && session ? entry.target : undefined}
+							standalone={standalone}
+						/>
+					)
+				})}
+			</NavigationGroup>
+		))
 	return (
 		<div ref={container} className="plx-workspace-navigation" data-compact={compact || undefined}>
 			<div className="plx-workspace-navigation__search">
 				<TextInput
-					aria-label="查找工作区入口"
+					aria-label={compact ? '查找应用' : '查找工作区入口'}
+					type={compact ? 'search' : undefined}
 					placeholder={
 						mode === 'publications'
 							? '查找应用'
@@ -428,6 +448,16 @@ function NavigationContent({
 							{plugins.error}
 						</Alert>
 					)}
+					{compact && !plugins.hasSnapshot && plugins.error && (
+						<Alert color="yellow" title="插件分组读取失败">
+							<Group gap="xs">
+								<Text size="xs">{plugins.error}</Text>
+								<Button size="compact-xs" variant="subtle" onClick={() => void plugins.refetch()}>
+									重试
+								</Button>
+							</Group>
+						</Alert>
+					)}
 					{mode === 'all' && plugins.isLoading && (
 						<Text size="xs" role="status" c="dimmed">
 							正在读取插件目录…
@@ -474,57 +504,26 @@ ${status}${attention?.message ? ` · ${attention.message}` : ''}`}
 							{snapshot.error.message}
 						</Alert>
 					)}
-					{[...publicationGroups].map(([key, group]) => (
-						<NavigationGroup
-							key={key}
-							hideHeading={mode === 'publications' && !group.explicit && group.entries.length === 1}
-							label={group.label}
-							count={group.entries.length}
-							compact={compact}
-							expanded={Boolean(needle) || !collapsed.has(key)}
-							onToggle={() => toggleGroup(key)}
-						>
-							{group.entries.map((entry) => {
-								const placement = entry.placement
-								const label =
-									placement.kind === 'tab'
-										? (placement.label ?? entry.descriptor.key)
-										: (placement.navigation?.label ?? placement.title)
-								const standalone = placement.kind === 'route' && placement.frame === 'standalone'
-								return (
-									<NavigationItem
-										key={`${buildPluginDetailHref(entry.target.node)}:${entry.descriptor.key}`}
-										label={label}
-										compact={compact}
-										detail={`${label}
-${group.label}
-${placement.kind === 'route' ? placement.path : entry.descriptor.key}${standalone ? '\n独立页面' : ''}`}
-										description={
-											standalone
-												? '独立页面'
-												: placement.kind === 'tab'
-													? '插件工作页'
-													: placement.title
-										}
-										active={
-											activePluginRoute === formatPluginNodeRoute(entry.target.node) &&
-											activeEntryKey === entry.descriptor.key
-										}
-										onOpen={() => openEntry(entry)}
-										pinned={session?.isSidebarShortcut({
-											target: entry.target.node,
-											entryKey: entry.descriptor.key,
-										})}
-										onTogglePin={session ? () => togglePin(entry) : undefined}
-										standalone={standalone}
-									/>
-								)
-							})}
-						</NavigationGroup>
-					))}
+					{visibleSections.map(({ key, label, entries: applications }) =>
+						label ? (
+							<NavigationGroup
+								key={key}
+								catalogSection
+								label={label}
+								count={applications.length}
+								compact
+								expanded={Boolean(needle) || !collapsed.has(key)}
+								onToggle={() => toggleGroup(key)}
+							>
+								{renderPublications(applications)}
+							</NavigationGroup>
+						) : (
+							<Fragment key={key}>{renderPublications(applications)}</Fragment>
+						),
+					)}
 					{visibleBuiltins.length === 0 &&
 						visiblePlugins.length === 0 &&
-						visibleEntries.length === 0 &&
+						visibleSections.length === 0 &&
 						visiblePanels.length === 0 &&
 						visibleCommands.length === 0 &&
 						!showTool && (
@@ -558,31 +557,17 @@ ${placement.kind === 'route' ? placement.path : entry.descriptor.key}${standalon
 						data-autofocus
 					/>
 					<Button
-						disabled={!concreteLocation}
+						disabled={!concretePage}
 						onClick={() => {
-							if (!routeEntry || routeEntry.placement.kind !== 'route' || !concreteLocation) return
+							if (!concretePage) return
 							if (routeAction === 'pin' && session) {
 								void session
-									.setSidebarShortcut(
-										{
-											target: routeEntry.target.node,
-											entryKey: routeEntry.descriptor.key,
-											location:
-												concreteLocation.pathname + concreteLocation.search + concreteLocation.hash,
-										},
-										true,
-									)
+									.setSidebarShortcut(concretePage.link, true)
 									.then(() => setRouteEntry(undefined))
 									.catch((error: unknown) => session.report(error))
 								return
 							}
-							const href = getWorkbenchDirectoryHref(
-								snapshot.directory,
-								routeEntry.target.node,
-								concreteLocation.pathname,
-								routeEntry.placement.frame,
-							)
-							open(href + concreteLocation.search + concreteLocation.hash)
+							open(concretePage.href)
 							setRouteEntry(undefined)
 						}}
 					>
@@ -607,6 +592,7 @@ function NavigationItem({
 	attention,
 	pinned,
 	onTogglePin,
+	configTarget,
 	shortcut,
 	disabled = false,
 }: {
@@ -622,11 +608,19 @@ function NavigationItem({
 	attention?: string
 	pinned?: boolean
 	onTogglePin?: () => void
+	configTarget?: PageEntry['target']
 	shortcut?: string
 	disabled?: boolean
 }) {
+	const pin = onTogglePin && (
+		<SidebarPinButton label={label} pinned={pinned} onToggle={onTogglePin} />
+	)
 	return (
 		<Group gap={2} wrap="nowrap" className="plx-workspace-navigation__item">
+			{compact && pin}
+			{configTarget && (
+				<PluginConfigurationButton owner={configTarget.node} label={configTarget.displayName} />
+			)}
 			<Tooltip
 				label={detail ?? `${label} · ${description}`}
 				multiline
@@ -679,19 +673,7 @@ function NavigationItem({
 					</span>
 				</Button>
 			</Tooltip>
-			{onTogglePin && (
-				<Tooltip label={pinned ? '取消侧栏固定' : '固定到侧栏'}>
-					<ActionIcon
-						variant={pinned ? 'light' : 'subtle'}
-						size="sm"
-						aria-label={`${pinned ? '取消侧栏固定' : '固定到侧栏'} ${label}`}
-						aria-pressed={pinned}
-						onClick={onTogglePin}
-					>
-						{pinned ? <IconPinnedOff size={14} aria-hidden /> : <IconPin size={14} aria-hidden />}
-					</ActionIcon>
-				</Tooltip>
-			)}
+			{!compact && pin}
 			{compact && attention && (
 				<span className="plx-workspace-navigation__attention" data-tone={statusTone}>
 					{attention}
@@ -703,6 +685,7 @@ function NavigationItem({
 
 function NavigationGroup({
 	hideHeading = false,
+	catalogSection,
 	label,
 	count,
 	compact,
@@ -712,6 +695,7 @@ function NavigationGroup({
 }: {
 	label: string
 	hideHeading?: boolean
+	catalogSection?: boolean
 	count: number
 	compact: boolean
 	expanded: boolean
@@ -719,7 +703,12 @@ function NavigationGroup({
 	children: ReactNode
 }) {
 	return (
-		<section role="group" aria-label={label} className="plx-workspace-navigation__group">
+		<section
+			role="group"
+			aria-label={label}
+			className="plx-workspace-navigation__group"
+			data-catalog-section={catalogSection}
+		>
 			{hideHeading ? null : compact ? (
 				<button
 					type="button"

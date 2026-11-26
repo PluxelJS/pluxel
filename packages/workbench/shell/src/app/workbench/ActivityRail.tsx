@@ -1,22 +1,21 @@
-import {
-	IconLayoutSidebarLeftCollapse,
-	IconLayoutSidebarLeftExpand,
-	IconX,
-} from '@tabler/icons-react'
-import { formatPluginNodeReference } from '@pluxel/core'
+import { IconLayoutSidebarLeftCollapse, IconLayoutSidebarLeftExpand } from '@tabler/icons-react'
 import { Tooltip } from '@mantine/core'
 import { useWorkbenchState } from '@worksplit/react'
-import { useSyncExternalStore } from 'react'
-import { builtinPages } from './navigationItems'
+import { Fragment, useSyncExternalStore } from 'react'
+import { appsPage, builtinPages } from './navigationItems'
 import { useWorkspaceSession } from './workspaceContext'
-import { useWorkbenchNavigation } from './context'
 import { useWorkbenchTargetSnapshot } from '../../workbench/runtime'
-import { resolveSidebarShortcut } from './sidebarShortcuts'
+import { resolveWorkbenchEntryLink, sidebarShortcutId } from '../../workbench/entry-link'
 import { WorkbenchEntryIcon } from './WorkbenchEntryIcon'
+import { RouterLinkAdapter } from '../router/RouterLinkAdapter'
+
+const railPages = [
+	...builtinPages.filter((page) => page !== appsPage && page.href !== '/security/audit'),
+	appsPage,
+]
 
 export function ActivityRail({ onShowPlugins }: { onShowPlugins: () => void }) {
 	const session = useWorkspaceSession()
-	const navigation = useWorkbenchNavigation()
 	const snapshot = useWorkbenchTargetSnapshot(null)
 	const mode = useWorkbenchState(session.workbench, () => session.navigationMode())
 	const active = useWorkbenchState(session.workbench, () => session.workbench.getActiveDocument())
@@ -29,7 +28,7 @@ export function ActivityRail({ onShowPlugins }: { onShowPlugins: () => void }) {
 	useWorkbenchState(session.workbench, (state) => state.revision)
 	const shortcuts = session.sidebarShortcuts().map((shortcut) => ({
 		shortcut,
-		resolved: resolveSidebarShortcut(shortcut, snapshot.layout, snapshot.directory),
+		resolved: resolveWorkbenchEntryLink(shortcut, snapshot),
 	}))
 	const shortcutActive = shortcuts.some(
 		({ resolved }) => resolved.href !== undefined && active?.href === `${base}${resolved.href}`,
@@ -37,76 +36,80 @@ export function ActivityRail({ onShowPlugins }: { onShowPlugins: () => void }) {
 	return (
 		<nav className="plx-activity" data-mode={mode} aria-label="工作区入口">
 			<div className="plx-activity__items">
-				{builtinPages.map(({ href, label, icon: Icon }) => {
+				{railPages.map(({ href, label, icon: Icon }) => {
+					const path = `${base}${href}`
 					const current =
 						href === '/plugins'
 							? workspace === 'plugins' || pathname === `${base}/plugins`
 							: href === '/apps'
 								? (workspace === 'apps' && !shortcutActive) || pathname === `${base}/apps`
-								: pathname === `${base}${href}` || (href === '/' && pathname === base)
+								: pathname === path ||
+									(href === '/' ? pathname === base : pathname.startsWith(`${path}/`))
+					const props = {
+						className: 'plx-activity__item',
+						'aria-label': label,
+						'aria-current': current ? ('page' as const) : undefined,
+					}
+					const content = (
+						<>
+							<Icon size={20} stroke={1.7} aria-hidden />
+							{expanded && <span>{label}</span>}
+						</>
+					)
 					return (
-						<Tooltip key={href} label={label} position="right" disabled={expanded}>
-							<button
-								type="button"
-								className="plx-activity__item"
-								aria-label={label}
-								aria-current={current ? 'page' : undefined}
-								onClick={href === '/plugins' ? onShowPlugins : () => navigation.navigate(href)}
-							>
-								<Icon size={20} stroke={1.7} aria-hidden />
-								{expanded && <span>{label}</span>}
-							</button>
-						</Tooltip>
+						<Fragment key={href}>
+							{href === '/apps' && (
+								<div className="plx-activity__divider" role="separator" aria-label="应用入口" />
+							)}
+							<Tooltip label={label} position="right" disabled={expanded}>
+								{href === '/plugins' ? (
+									<button type="button" {...props} onClick={onShowPlugins}>
+										{content}
+									</button>
+								) : (
+									<RouterLinkAdapter to={href} {...props}>
+										{content}
+									</RouterLinkAdapter>
+								)}
+							</Tooltip>
+						</Fragment>
 					)
 				})}
-				{shortcuts.length > 0 && (
-					<div className="plx-activity__divider" role="separator" aria-label="已固定应用" />
-				)}
 				{shortcuts.map(({ shortcut, resolved }) => {
 					const href = resolved.href
 					const current = href !== undefined && active?.href === `${base}${href}`
+					const props = {
+						className: 'plx-activity__item',
+						'aria-label': resolved.label,
+						'aria-current': current ? ('page' as const) : undefined,
+					}
+					const content = (
+						<>
+							<WorkbenchEntryIcon icon={resolved.icon} />
+							{expanded && <span>{resolved.label}</span>}
+						</>
+					)
 					return (
-						<div
-							key={JSON.stringify([formatPluginNodeReference(shortcut.target), shortcut.entryKey])}
-							className="plx-activity__shortcut"
+						<Tooltip
+							key={sidebarShortcutId(shortcut)}
+							label={
+								resolved.unavailable
+									? `${resolved.label} · ${resolved.unavailable}`
+									: resolved.label
+							}
+							position="right"
+							disabled={expanded && !resolved.unavailable}
 						>
-							<Tooltip
-								label={
-									resolved.unavailable
-										? `${resolved.label} · ${resolved.unavailable}`
-										: resolved.label
-								}
-								position="right"
-								disabled={expanded && !resolved.unavailable}
-							>
-								<button
-									type="button"
-									className="plx-activity__item"
-									aria-label={resolved.label}
-									aria-current={current ? 'page' : undefined}
-									aria-disabled={!href || undefined}
-									onClick={() => {
-										if (href) navigation.navigate(href)
-									}}
-								>
-									<WorkbenchEntryIcon icon={resolved.icon} />
-									{expanded && <span>{resolved.label}</span>}
+							{href ? (
+								<RouterLinkAdapter to={href} {...props}>
+									{content}
+								</RouterLinkAdapter>
+							) : (
+								<button type="button" {...props} aria-disabled="true">
+									{content}
 								</button>
-							</Tooltip>
-							<button
-								type="button"
-								className="plx-activity__remove"
-								aria-label={`取消侧栏固定 ${resolved.label}`}
-								title="取消侧栏固定"
-								onClick={() =>
-									void session
-										.setSidebarShortcut(shortcut, false)
-										.catch((error: unknown) => session.report(error))
-								}
-							>
-								<IconX size={12} aria-hidden />
-							</button>
-						</div>
+							)}
+						</Tooltip>
 					)
 				})}
 			</div>

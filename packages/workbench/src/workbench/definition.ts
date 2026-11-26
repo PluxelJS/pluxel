@@ -1,94 +1,48 @@
 import type { BasePlugin, PluginNodeAddress } from '@pluxel/core'
 import type { GenericSchema, GenericSchemaAsync, InferOutput } from 'valibot'
 import type { RpcTarget } from 'capnweb'
+import type { WorkbenchEntryLink } from './client-protocol.ts'
 
-const DEFINITION = Symbol('pluxel.workbench.definition')
-const DESCRIPTOR = Symbol('pluxel.workbench.descriptor')
-const RENDERER_ENTRY = Symbol('pluxel.workbench.renderer-entry')
-const MARKDOWN_DOCUMENT = Symbol('pluxel.workbench.markdown-document')
+import {
+	assertExactKeys,
+	isPlainRecord,
+	parseWorkbenchPlacement,
+	parseWorkbenchSourcePath,
+	requiredUtf8Text,
+	type WorkbenchPlacement,
+	type WorkbenchPlacementInput,
+} from './entry-options.ts'
+export type {
+	WorkbenchGroup,
+	WorkbenchIcon,
+	WorkbenchNavigation,
+	WorkbenchPanelPlacement,
+	WorkbenchPlacement,
+	WorkbenchPlacementInput,
+	WorkbenchRoutePlacement,
+	WorkbenchTabPlacement,
+} from './entry-options.ts'
+
+const definitions = new WeakMap<object, WorkbenchDefinitionMetadata>()
+const descriptors = new WeakMap<object, 'unbound' | WorkbenchDescriptorMetadata>()
 const DATA_SLOT = Symbol('pluxel.workbench.content-data')
 const ACTION_SLOT = Symbol('pluxel.workbench.content-action')
 const canonicalContentSlots = new WeakSet<object>()
 
 const ENTRY_KEY = /^[A-Za-z][A-Za-z0-9_]*$/
-const GROUP_ID = /^[A-Za-z][A-Za-z0-9._-]{0,63}$/
-const ROUTE_PARAMETER = /^[A-Za-z][A-Za-z0-9_]*$/
-const ROUTE_LITERAL_SEGMENT = /^[A-Za-z0-9][A-Za-z0-9._~-]*$/
 const RESERVED_ENTRY_KEYS = new Set(['__proto__', 'constructor', 'prototype', 'then'])
 
 declare const apiType: unique symbol
 declare const consumerApiType: unique symbol
-declare const definitionEntries: unique symbol
+declare const declarationType: unique symbol
+declare const definitionType: unique symbol
+declare const definedEntryType: unique symbol
 
-export const WORKBENCH_ICONS = Object.freeze({
-	Api: 'api',
-	BrandDiscord: 'brand-discord',
-	BrandTelegram: 'brand-telegram',
-	Building: 'building',
-	ChartBar: 'chart-bar',
-	CloudUpload: 'cloud-upload',
-	History: 'history',
-	MessageChatbot: 'message-chatbot',
-	PlugConnected: 'plug-connected',
-	Receipt: 'receipt',
-	Search: 'search',
-	Settings: 'settings',
-	ShieldLock: 'shield-lock',
-	TestPipe: 'test-pipe',
-	TextRecognition: 'text-recognition',
-	Typography: 'typography',
-	Users: 'users',
-} as const)
+interface Declaration {
+	readonly [declarationType]: true
+}
 
-export type WorkbenchIcon = (typeof WORKBENCH_ICONS)[keyof typeof WORKBENCH_ICONS]
-
-const WORKBENCH_ICON_VALUES = new Set<string>(Object.values(WORKBENCH_ICONS))
-
-export type WorkbenchGroup = Readonly<{
-	id: string
-	label: string
-	icon?: WorkbenchIcon
-}>
-
-export type WorkbenchTabPlacement = Readonly<{
-	kind: 'tab'
-	label?: string
-	icon?: WorkbenchIcon
-	group?: WorkbenchGroup
-	order: number
-}>
-
-export type WorkbenchNavigation = Readonly<{
-	label: string
-	group?: WorkbenchGroup
-}>
-
-export type WorkbenchRoutePlacement = Readonly<{
-	kind: 'route'
-	path: string
-	title: string
-	icon?: WorkbenchIcon
-	navigation?: WorkbenchNavigation
-	frame: 'shell' | 'standalone'
-	order: number
-}>
-
-export type WorkbenchPanelPlacement = Readonly<{
-	kind: 'panel'
-	region: 'left' | 'right' | 'bottom'
-	label: string
-	icon?: WorkbenchIcon
-	order: number
-}>
-
-export type WorkbenchPlacement =
-	| WorkbenchTabPlacement
-	| WorkbenchRoutePlacement
-	| WorkbenchPanelPlacement
-
-export type WorkbenchRendererEntry = Readonly<{
-	readonly [RENDERER_ENTRY]: WorkbenchRendererEntryMetadata
-}>
+export type WorkbenchDefinedEntry<Entry = unknown> = Entry & Readonly<{ [definedEntryType]: true }>
 
 export type WorkbenchContentSchema = GenericSchema | GenericSchemaAsync
 
@@ -114,11 +68,10 @@ export type WorkbenchContentSlot =
 
 export type WorkbenchContentSlotMap = Readonly<Record<string, WorkbenchContentSlot>>
 
-export interface WorkbenchMarkdownDocument<Slots extends WorkbenchContentSlotMap = {}> {
-	readonly [MARKDOWN_DOCUMENT]: WorkbenchMarkdownDocumentMetadata<Slots>
-}
-
-type DescriptorBrand<Api extends RpcTarget, ConsumerApi extends RpcTarget | never = never> = {
+type DescriptorBrand<
+	Api extends RpcTarget,
+	ConsumerApi extends RpcTarget | never = never,
+> = Declaration & {
 	/** @internal Invariant phantom types; no property is emitted at runtime. */
 	readonly [apiType]: (value: Api) => Api
 	/** @internal Invariant phantom types; no property is emitted at runtime. */
@@ -127,14 +80,15 @@ type DescriptorBrand<Api extends RpcTarget, ConsumerApi extends RpcTarget | neve
 
 export type WorkbenchView<Api extends RpcTarget> = Readonly<{
 	kind: 'view'
-	renderer: WorkbenchRendererEntry
+	renderer: string
 	placement: WorkbenchPlacement
 }> &
 	DescriptorBrand<Api>
 
-export interface WorkbenchContent<Slots extends WorkbenchContentSlotMap = {}> {
+export interface WorkbenchContent<Slots extends WorkbenchContentSlotMap = {}> extends Declaration {
 	readonly kind: 'content'
-	readonly document: WorkbenchMarkdownDocument<Slots>
+	readonly document: string
+	readonly slots: Slots
 	readonly placement: WorkbenchPlacement
 }
 
@@ -143,8 +97,8 @@ export type WorkbenchAttachment<
 	ConsumerApi extends RpcTarget | never = never,
 > = Readonly<{
 	kind: 'attachment'
-	renderer: WorkbenchRendererEntry
-	place(placement: WorkbenchPlacement): WorkbenchAttachmentPlacement<ProviderApi, ConsumerApi>
+	renderer: string
+	place(placement: WorkbenchPlacementInput): WorkbenchAttachmentPlacement<ProviderApi, ConsumerApi>
 }> &
 	DescriptorBrand<ProviderApi, ConsumerApi>
 
@@ -153,7 +107,7 @@ export type WorkbenchAttachmentPlacement<
 	ConsumerApi extends RpcTarget | never = never,
 > = Readonly<{
 	kind: 'attachment-placement'
-	provider: WorkbenchAttachment<ProviderApi, ConsumerApi>
+	provider: WorkbenchAttachment<ProviderApi, ConsumerApi> & WorkbenchDefinedEntry
 	placement: WorkbenchPlacement
 }> &
 	DescriptorBrand<ProviderApi, ConsumerApi>
@@ -163,17 +117,19 @@ export type WorkbenchEntry = Readonly<{
 }>
 
 /** @internal Existential descriptor shapes used across the fixed Workbench entries. */
-export type WorkbenchRenderableDescriptor =
-	| Readonly<{
-			kind: 'view'
-			renderer: WorkbenchRendererEntry
-			placement: WorkbenchPlacement
-	  }>
-	| Readonly<{
-			kind: 'attachment'
-			renderer: WorkbenchRendererEntry
-			place(placement: WorkbenchPlacement): WorkbenchEntry
-	  }>
+export type WorkbenchRenderableDescriptor = WorkbenchDefinedEntry &
+	(
+		| Readonly<{
+				kind: 'view'
+				renderer: string
+				placement: WorkbenchPlacement
+		  }>
+		| Readonly<{
+				kind: 'attachment'
+				renderer: string
+				place(placement: WorkbenchPlacementInput): WorkbenchEntry
+		  }>
+	)
 
 /** @internal Extracts the invariant API brand without comparing it to `any`. */
 export type WorkbenchDescriptorApi<Descriptor> =
@@ -198,10 +154,16 @@ export type WorkbenchDescriptorConsumerApi<Descriptor> =
 export type WorkbenchEntryMap = Readonly<Record<string, WorkbenchEntry>>
 
 export type WorkbenchDefinition<Entries extends WorkbenchEntryMap> = Readonly<{
-	[Key in keyof Entries]: Entries[Key]
+	[Key in keyof Entries]: WorkbenchDefinedEntry<
+		Entries[Key] extends { readonly kind: 'attachment' }
+			? WorkbenchAttachment<
+					WorkbenchDescriptorApi<Entries[Key]>,
+					WorkbenchDescriptorConsumerApi<Entries[Key]>
+				>
+			: Entries[Key]
+	>
 }> & {
-	/** @internal Inference marker; no property is emitted at runtime. */
-	readonly [definitionEntries]?: Entries
+	readonly [definitionType]: true
 }
 
 export type AnyWorkbenchDefinition = WorkbenchDefinition<WorkbenchEntryMap>
@@ -322,45 +284,59 @@ export type WorkbenchPublishBindings<Definition extends AnyWorkbenchDefinition> 
 		? readonly []
 		: readonly [bindings: WorkbenchBindings<Definition>]
 
+type WorkbenchLinkKey<Definition extends AnyWorkbenchDefinition> = {
+	[Key in keyof Definition & string]: Definition[Key] extends { readonly kind: 'attachment' }
+		? never
+		: Key
+}[keyof Definition & string]
+
+/** A handle to one Plugin generation's published definition. */
+export interface WorkbenchPublication<Definition extends AnyWorkbenchDefinition> {
+	/**
+	 * Link to a tab or route on this node. For a parameterized route, supply
+	 * the original string for each named segment. Tabs and static routes keep
+	 * the entry key so links can follow changes to the declared path.
+	 */
+	link(
+		key: WorkbenchLinkKey<Definition>,
+		params?: Readonly<Record<string, string>>,
+	): WorkbenchEntryLink
+}
+
 export interface PluginWorkbench {
 	publish<const Definition extends AnyWorkbenchDefinition>(
 		definition: Definition,
 		...bindings: WorkbenchPublishBindings<Definition>
-	): void
+	): WorkbenchPublication<Definition>
 }
 
-export type WorkbenchDescriptorMetadata =
+type WorkbenchEntryDeclaration =
 	| Readonly<{
 			kind: 'view'
-			key: string
-			renderer: WorkbenchRendererEntry
+			renderer: string
 			placement: WorkbenchPlacement
 	  }>
 	| Readonly<{
 			kind: 'attachment'
-			key: string
-			renderer: WorkbenchRendererEntry
+			renderer: string
 	  }>
 	| Readonly<{
 			kind: 'attachment-placement'
-			key: string
 			provider: Extract<WorkbenchRenderableDescriptor, { kind: 'attachment' }>
 			placement: WorkbenchPlacement
 	  }>
 	| Readonly<{
 			kind: 'content'
-			key: string
-			document: WorkbenchMarkdownDocument
+			document: string
+			slots: WorkbenchContentSlotMap
 			placement: WorkbenchPlacement
 	  }>
 
+export type WorkbenchDescriptorMetadata = WorkbenchEntryDeclaration &
+	Readonly<{ key: string; moduleUrl: string }>
+
 export type WorkbenchDefinitionMetadata = Readonly<{
 	entries: readonly WorkbenchDescriptorMetadata[]
-}>
-
-export type WorkbenchRendererEntryMetadata = Readonly<{
-	moduleUrl: string
-	entryPath: string
 }>
 
 export type WorkbenchContentDataMetadata = Readonly<{
@@ -379,39 +355,6 @@ export type WorkbenchContentActionMetadata = Readonly<{
 export type WorkbenchContentSlotMetadata =
 	| WorkbenchContentDataMetadata
 	| WorkbenchContentActionMetadata
-
-export type WorkbenchMarkdownDocumentMetadata<
-	Slots extends WorkbenchContentSlotMap = WorkbenchContentSlotMap,
-> = Readonly<{
-	moduleUrl: string
-	sourcePath: string
-	slots: Slots
-}>
-
-function rendererEntry(moduleUrl: string | URL, entryPath: string): WorkbenchRendererEntry {
-	const declarationUrl = parseModuleUrl('entry', moduleUrl)
-	const path = parseModuleRelativePath('entry', 'entryPath', entryPath)
-	return Object.freeze({
-		[RENDERER_ENTRY]: Object.freeze({ moduleUrl: declarationUrl, entryPath: path }),
-	})
-}
-
-function markdown<const Slots extends WorkbenchContentSlotMap = {}>(
-	moduleUrl: string | URL,
-	sourcePath: string,
-	slots?: Slots,
-): WorkbenchMarkdownDocument<Slots> {
-	const declarationUrl = parseModuleUrl('markdown', moduleUrl)
-	const path = parseModuleRelativePath('markdown', 'sourcePath', sourcePath)
-	const normalizedSlots = normalizeContentSlots(slots ?? Object.freeze({})) as Slots
-	return Object.freeze({
-		[MARKDOWN_DOCUMENT]: Object.freeze({
-			moduleUrl: declarationUrl,
-			sourcePath: path,
-			slots: normalizedSlots,
-		}),
-	})
-}
 
 function data<Schema extends WorkbenchContentSchema>(schema: Schema): WorkbenchContentData<Schema> {
 	assertValibotSchema('data', schema)
@@ -480,312 +423,117 @@ function action(input?: {
 }
 
 function view<Api extends RpcTarget>(input: {
-	renderer: WorkbenchRendererEntry
-	placement: WorkbenchPlacement
+	renderer: string
+	placement: WorkbenchPlacementInput
 }): WorkbenchView<Api> {
 	assertExactKeys('view', input, ['renderer', 'placement'])
-	assertRendererEntry(input?.renderer)
-	assertPlacement(input?.placement)
 	return descriptor({
 		kind: 'view',
-		renderer: input.renderer,
-		placement: input.placement,
+		renderer: parseWorkbenchSourcePath('renderer', input.renderer),
+		placement: parseWorkbenchPlacement(input.placement),
 	}) as WorkbenchView<Api>
 }
 
+function content(input: {
+	document: string
+	placement: WorkbenchPlacementInput
+	slots?: never
+}): WorkbenchContent<{}>
 function content<const Slots extends WorkbenchContentSlotMap>(input: {
-	document: WorkbenchMarkdownDocument<Slots>
-	placement: WorkbenchPlacement
-}): WorkbenchContent<Slots> {
-	assertExactKeys('content', input, ['document', 'placement'])
-	assertMarkdownDocument(input?.document)
-	assertPlacement(input?.placement)
+	document: string
+	slots: Slots
+	placement: WorkbenchPlacementInput
+}): WorkbenchContent<Slots>
+function content(input: {
+	document: string
+	slots?: WorkbenchContentSlotMap
+	placement: WorkbenchPlacementInput
+}): WorkbenchContent<WorkbenchContentSlotMap> {
+	assertExactKeys('content', input, ['document', 'slots', 'placement'])
 	return descriptor({
 		kind: 'content',
-		document: input.document,
-		placement: input.placement,
-	})
+		document: parseWorkbenchSourcePath('document', input.document),
+		slots: normalizeContentSlots(Object.hasOwn(input, 'slots') ? input.slots : {}),
+		placement: parseWorkbenchPlacement(input.placement),
+	}) as WorkbenchContent<WorkbenchContentSlotMap>
 }
 
 function attachment<
 	ProviderApi extends RpcTarget,
 	ConsumerApi extends RpcTarget | never = never,
->(input: { renderer: WorkbenchRendererEntry }): WorkbenchAttachment<ProviderApi, ConsumerApi> {
+>(input: { renderer: string }): Omit<WorkbenchAttachment<ProviderApi, ConsumerApi>, 'place'> {
 	assertExactKeys('attachment', input, ['renderer'])
-	assertRendererEntry(input?.renderer)
-	return createAttachment<ProviderApi, ConsumerApi>(input.renderer)
+	return descriptor({
+		kind: 'attachment',
+		renderer: parseWorkbenchSourcePath('renderer', input.renderer),
+	}) as Omit<WorkbenchAttachment<ProviderApi, ConsumerApi>, 'place'>
 }
 
-function createAttachment<ProviderApi extends RpcTarget, ConsumerApi extends RpcTarget | never>(
-	renderer: WorkbenchRendererEntry,
-	metadata: true | WorkbenchDescriptorMetadata = true,
-): WorkbenchAttachment<ProviderApi, ConsumerApi> {
-	let value: WorkbenchAttachment<ProviderApi, ConsumerApi>
-	const place = (placement: WorkbenchPlacement) => {
-		assertPlacement(placement)
-		return descriptor({
-			kind: 'attachment-placement',
-			provider: value,
-			placement,
-		}) as WorkbenchAttachmentPlacement<ProviderApi, ConsumerApi>
-	}
-	value = descriptor({ kind: 'attachment', renderer, place }, metadata) as WorkbenchAttachment<
-		ProviderApi,
-		ConsumerApi
-	>
-	return value
+function defineAttachment(metadata: Extract<WorkbenchDescriptorMetadata, { kind: 'attachment' }>) {
+	const provider = descriptor(
+		{
+			kind: 'attachment' as const,
+			renderer: metadata.renderer,
+			place(placement: WorkbenchPlacementInput): WorkbenchEntry {
+				return descriptor({
+					kind: 'attachment-placement',
+					provider,
+					placement: parseWorkbenchPlacement(placement),
+				})
+			},
+		},
+		metadata,
+	)
+	return provider
 }
 
-function define<const Entries extends WorkbenchEntryMap>(
-	input: Entries,
-): WorkbenchDefinition<Entries> {
+function define<
+	const Entries extends Readonly<
+		Record<
+			string,
+			WorkbenchEntryDeclaration & Declaration & { readonly [definedEntryType]?: never }
+		>
+	>,
+>(moduleUrl: string | URL, input: Entries): WorkbenchDefinition<Entries> {
+	const owner = parseModuleUrl(moduleUrl)
 	if (!isPlainRecord(input)) {
 		throw new TypeError('[workbench] define(): entries must be a plain record')
 	}
-
-	const output: Record<string, WorkbenchEntry> = Object.create(null)
-	const metadata: WorkbenchDescriptorMetadata[] = []
-	for (const [key, rawDescriptor] of Object.entries(input)) {
-		assertEntryKey(key)
-		const entry = cloneDefinitionEntry(key, rawDescriptor)
-		output[key] = entry.descriptor
-		metadata.push(entry.metadata)
+	if (Object.keys(input).length === 0) {
+		throw new TypeError('[workbench] define(): entries must not be empty')
 	}
 
-	Object.defineProperty(output, DEFINITION, {
-		value: Object.freeze({
-			entries: Object.freeze(metadata),
-		} satisfies WorkbenchDefinitionMetadata),
-		enumerable: false,
-	})
+	const output: Record<string, WorkbenchEntry> = Object.create(null)
+	const entries: WorkbenchDescriptorMetadata[] = []
+	for (const [key, raw] of Object.entries(input)) {
+		assertEntryKey(key)
+		const existing = descriptors.get(raw)
+		if (!existing) {
+			throw new TypeError('[workbench] definition contains an invalid entry descriptor')
+		}
+		if (existing !== 'unbound') {
+			throw new TypeError(
+				`[workbench] define(): entry "${key}" already belongs to a Workbench definition`,
+			)
+		}
+		const metadata = Object.freeze({ ...raw, key, moduleUrl: owner })
+		entries.push(metadata)
+		output[key] =
+			metadata.kind === 'attachment' ? defineAttachment(metadata) : descriptor({ ...raw }, metadata)
+	}
+
+	definitions.set(output, Object.freeze({ entries: Object.freeze(entries) }))
 	return Object.freeze(output) as WorkbenchDefinition<Entries>
 }
 
-function cloneDefinitionEntry(
-	key: string,
-	raw: unknown,
-): Readonly<{ descriptor: WorkbenchEntry; metadata: WorkbenchDescriptorMetadata }> {
-	const source = readDescriptor(raw)
-	switch (source.kind) {
-		case 'view': {
-			const viewDescriptor = source as WorkbenchView<any>
-			const metadata = Object.freeze({
-				kind: 'view' as const,
-				key,
-				renderer: viewDescriptor.renderer,
-				placement: viewDescriptor.placement,
-			})
-			const value = descriptor(
-				{
-					kind: 'view',
-					renderer: viewDescriptor.renderer,
-					placement: viewDescriptor.placement,
-				},
-				metadata,
-			) as WorkbenchView<any>
-			return {
-				descriptor: value,
-				metadata,
-			}
-		}
-		case 'attachment': {
-			const attachmentDescriptor = source as WorkbenchAttachment<any, any>
-			const metadata = Object.freeze({
-				kind: 'attachment' as const,
-				key,
-				renderer: attachmentDescriptor.renderer,
-			})
-			const value = createAttachment<any, any>(attachmentDescriptor.renderer, metadata)
-			return {
-				descriptor: value,
-				metadata,
-			}
-		}
-		case 'attachment-placement': {
-			const placement = source as WorkbenchAttachmentPlacement<any, any>
-			const provider = assertDefinedAttachment(placement.provider)
-			const metadata = Object.freeze({
-				kind: 'attachment-placement' as const,
-				key,
-				provider,
-				placement: placement.placement,
-			})
-			const value = descriptor(
-				{
-					kind: 'attachment-placement',
-					provider,
-					placement: placement.placement,
-				},
-				metadata,
-			) as WorkbenchAttachmentPlacement<any, any>
-			return {
-				descriptor: value,
-				metadata,
-			}
-		}
-		case 'content': {
-			const contentDescriptor = source as WorkbenchContent
-			const metadata = Object.freeze({
-				kind: 'content' as const,
-				key,
-				document: contentDescriptor.document,
-				placement: contentDescriptor.placement,
-			})
-			const value = descriptor(
-				{
-					kind: 'content',
-					document: contentDescriptor.document,
-					placement: contentDescriptor.placement,
-				},
-				metadata,
-			) as WorkbenchContent
-			return {
-				descriptor: value,
-				metadata,
-			}
-		}
-	}
-}
-
-function tab(
-	input: Readonly<{
-		label?: string
-		icon?: WorkbenchIcon
-		group?: WorkbenchGroup
-		order?: number
-	}> = {},
-): WorkbenchTabPlacement {
-	assertExactKeys('tab', input, ['label', 'icon', 'group', 'order'])
-	return Object.freeze({
-		kind: 'tab',
-		...(input.label === undefined ? {} : { label: requiredText('tab', 'label', input.label, 256) }),
-		...(input.icon === undefined ? {} : { icon: readWorkbenchIcon(input.icon) }),
-		...(input.group === undefined ? {} : { group: normalizeGroup('tab', input.group) }),
-		order: finiteOrder('tab', input.order),
-	})
-}
-
-export function panel(
-	region: WorkbenchPanelPlacement['region'],
-	input: Readonly<{ label: string; icon?: WorkbenchIcon; order?: number }>,
-): WorkbenchPanelPlacement {
-	if (region !== 'left' && region !== 'right' && region !== 'bottom') {
-		throw new TypeError('[workbench] panel(): region must be left, right, or bottom')
-	}
-	assertExactKeys('panel', input, ['label', 'icon', 'order'])
-	return Object.freeze({
-		kind: 'panel',
-		region,
-		label: requiredText('panel', 'label', input.label, 256),
-		...(input.icon === undefined ? {} : { icon: readWorkbenchIcon(input.icon) }),
-		order: finiteOrder('panel', input.order),
-	})
-}
-
-function route(
-	path: string,
-	input: Readonly<{
-		title: string
-		icon?: WorkbenchIcon
-		navigation?: false | WorkbenchNavigation
-		frame?: 'shell' | 'standalone'
-		order?: number
-	}>,
-): WorkbenchRoutePlacement {
-	assertExactKeys('route', input, ['title', 'icon', 'navigation', 'frame', 'order'])
-	const normalizedPath = normalizeRoutePath(path)
-	const parameterized = routeParameterNames(normalizedPath).length > 0
-	if (parameterized && input.navigation !== undefined && input.navigation !== false) {
-		throw new TypeError('[workbench] route(): parameterized routes cannot enter navigation')
-	}
-	const navigation =
-		input.navigation !== undefined && input.navigation !== false
-			? normalizeNavigation(input.navigation)
-			: undefined
-	return Object.freeze({
-		kind: 'route',
-		path: normalizedPath,
-		title: requiredText('route', 'title', input.title, 256),
-		...(input.icon === undefined ? {} : { icon: readWorkbenchIcon(input.icon) }),
-		...(navigation === undefined ? {} : { navigation }),
-		frame: input.frame ?? 'shell',
-		order: finiteOrder('route', input.order),
-	})
-}
-
-function normalizeNavigation(input: WorkbenchNavigation): WorkbenchNavigation {
-	assertExactKeys('route.navigation', input, ['label', 'group'])
-	return Object.freeze({
-		label: requiredText('route.navigation', 'label', input.label, 256),
-		...(input.group === undefined
-			? {}
-			: { group: normalizeGroup('route.navigation', input.group) }),
-	})
-}
-
-function normalizeGroup(api: string, input: WorkbenchGroup): WorkbenchGroup {
-	assertExactKeys(`${api}.group`, input, ['id', 'label', 'icon'])
-	return Object.freeze({
-		id: requiredGroupId(api, input.id),
-		label: requiredText(`${api}.group`, 'label', input.label, 256),
-		...(input.icon === undefined ? {} : { icon: readWorkbenchIcon(input.icon) }),
-	})
-}
-
-function descriptor<T extends object>(
-	value: T,
-	metadata: true | WorkbenchDescriptorMetadata = true,
-): T {
-	Object.defineProperty(value, DESCRIPTOR, { value: metadata, enumerable: false })
+function descriptor<T extends object>(value: T, metadata?: WorkbenchDescriptorMetadata): T {
+	descriptors.set(value, metadata ?? 'unbound')
 	return Object.freeze(value)
-}
-
-function readDescriptor(value: unknown): WorkbenchEntry {
-	if (!value || typeof value !== 'object' || !(value as Record<PropertyKey, unknown>)[DESCRIPTOR]) {
-		throw new TypeError('[workbench] definition contains an invalid entry descriptor')
-	}
-	return value as WorkbenchEntry
-}
-
-function assertDefinedAttachment(
-	value: unknown,
-): Extract<WorkbenchRenderableDescriptor, { kind: 'attachment' }> {
-	const attachmentDescriptor = readDescriptor(value)
-	if (attachmentDescriptor.kind !== 'attachment') {
-		throw new TypeError('[workbench] attachment placement has an invalid provider descriptor')
-	}
-	const metadata = (attachmentDescriptor as unknown as Record<PropertyKey, unknown>)[DESCRIPTOR]
-	if (!metadata || typeof metadata !== 'object') {
-		throw new TypeError(
-			'[workbench] attachment must belong to a Workbench definition before it can be placed',
-		)
-	}
-	return attachmentDescriptor as Extract<WorkbenchRenderableDescriptor, { kind: 'attachment' }>
-}
-
-function assertRendererEntry(value: unknown): asserts value is WorkbenchRendererEntry {
-	if (
-		!value ||
-		typeof value !== 'object' ||
-		!(value as Record<PropertyKey, unknown>)[RENDERER_ENTRY]
-	) {
-		throw new TypeError('[workbench] renderer must be created by workbench.entry()')
-	}
-}
-
-function assertMarkdownDocument(value: unknown): asserts value is WorkbenchMarkdownDocument {
-	if (
-		!value ||
-		typeof value !== 'object' ||
-		!(value as Record<PropertyKey, unknown>)[MARKDOWN_DOCUMENT]
-	) {
-		throw new TypeError('[workbench] document must be created by workbench.markdown()')
-	}
 }
 
 function normalizeContentSlots(input: unknown): WorkbenchContentSlotMap {
 	if (!isPlainRecord(input)) {
-		throw new TypeError('[workbench] markdown(): slots must be a plain record')
+		throw new TypeError('[workbench] content(): slots must be a plain record')
 	}
 	const output: Record<string, WorkbenchContentSlot> = Object.create(null)
 	for (const [key, slot] of Object.entries(input)) {
@@ -799,7 +547,7 @@ function normalizeContentSlots(input: unknown): WorkbenchContentSlotMap {
 function readContentSlotMetadata(value: unknown): WorkbenchContentSlotMetadata {
 	if (!value || typeof value !== 'object' || !canonicalContentSlots.has(value)) {
 		throw new TypeError(
-			'[workbench] markdown(): every slot must be created by workbench.data() or action()',
+			'[workbench] content(): every slot must be created by workbench.data() or action()',
 		)
 	}
 	const record = value as Record<PropertyKey, unknown>
@@ -827,7 +575,7 @@ function readContentSlotMetadata(value: unknown): WorkbenchContentSlotMetadata {
 		})
 	}
 	throw new TypeError(
-		'[workbench] markdown(): every slot must be created by workbench.data() or action()',
+		'[workbench] content(): every slot must be created by workbench.data() or action()',
 	)
 }
 
@@ -848,49 +596,20 @@ function assertValibotSchema(
 	}
 }
 
-function assertPlacement(value: unknown): asserts value is WorkbenchPlacement {
-	if (!value || typeof value !== 'object') {
-		throw new TypeError(
-			'[workbench] placement must be created by workbench.tab(), route(), or panel()',
-		)
-	}
-	const kind = (value as { kind?: unknown }).kind
-	if ((kind !== 'tab' && kind !== 'route' && kind !== 'panel') || !Object.isFrozen(value)) {
-		throw new TypeError(
-			'[workbench] placement must be created by workbench.tab(), route(), or panel()',
-		)
-	}
-}
-
-function parseModuleUrl(api: 'entry' | 'markdown', input: string | URL): string {
+function parseModuleUrl(input: string | URL): string {
 	let url: URL
 	try {
-		url = new URL(String(input))
+		url = new URL(input)
 	} catch (cause) {
-		throw new TypeError(`[workbench] ${api}(): moduleUrl must be an absolute URL`, { cause })
+		throw new TypeError('[workbench] define(): moduleUrl must be an absolute URL', { cause })
 	}
 	if (url.protocol !== 'file:' && url.protocol !== 'http:' && url.protocol !== 'https:') {
-		throw new TypeError(`[workbench] ${api}(): moduleUrl must use file:, http: or https:`)
+		throw new TypeError('[workbench] define(): moduleUrl must use file:, http: or https:')
 	}
 	if (url.href.length > 8_192) {
-		throw new TypeError(`[workbench] ${api}(): moduleUrl exceeds the supported length`)
+		throw new TypeError('[workbench] define(): moduleUrl exceeds the supported length')
 	}
 	return url.href
-}
-
-function parseModuleRelativePath(
-	api: 'entry' | 'markdown',
-	field: 'entryPath' | 'sourcePath',
-	input: unknown,
-): string {
-	const path = requiredText(api, field, input, 2_048)
-	if (!path.startsWith('./') && !path.startsWith('../')) {
-		throw new TypeError(`[workbench] ${api}(): ${field} must be module-relative`)
-	}
-	if (path.includes('\\') || path.includes('?') || path.includes('#')) {
-		throw new TypeError(`[workbench] ${api}(): ${field} must not contain \\, ? or #`)
-	}
-	return path
 }
 
 function assertEntryKey(key: string): void {
@@ -899,147 +618,22 @@ function assertEntryKey(key: string): void {
 	}
 }
 
-function normalizeRoutePath(path: string): string {
-	const value = requiredText('route', 'path', path, 2_048)
-	if (value.includes('?') || value.includes('#') || value.includes('\\')) {
-		throw new TypeError('[workbench] route(): path must not contain \\, ? or #')
-	}
-	const normalized = `/${value.replaceAll(/^\/+|\/+$/g, '')}`
-	if (normalized === '/') throw new TypeError('[workbench] route(): path must not be root')
-	if (normalized.includes('//')) {
-		throw new TypeError('[workbench] route(): path must not contain empty segments')
-	}
-	for (const segment of normalized.split('/').slice(1)) {
-		if (segment.startsWith(':')) continue
-		if (!ROUTE_LITERAL_SEGMENT.test(segment) || segment === '.' || segment === '..') {
-			throw new TypeError(`[workbench] route(): invalid literal route segment "${segment}"`)
-		}
-	}
-	routeParameterNames(normalized)
-	return normalized
-}
-
-/** @internal Browser protocol validation only. */
-export function readWorkbenchRoutePath(value: unknown): string {
-	if (typeof value !== 'string') {
-		throw new TypeError('[workbench] route path must be a string')
-	}
-	const normalized = normalizeRoutePath(value)
-	if (normalized !== value) {
-		throw new TypeError('[workbench] route path must be canonical')
-	}
-	return normalized
-}
-
-function routeParameterNames(path: string): readonly string[] {
-	const names: string[] = []
-	const seen = new Set<string>()
-	for (const segment of path.split('/').slice(1)) {
-		if (!segment.startsWith(':')) continue
-		const name = segment.slice(1)
-		if (!ROUTE_PARAMETER.test(name)) {
-			throw new TypeError(`[workbench] route(): invalid route parameter "${segment}"`)
-		}
-		if (seen.has(name)) {
-			throw new TypeError(`[workbench] route(): duplicate route parameter "${name}"`)
-		}
-		seen.add(name)
-		names.push(name)
-	}
-	return names
-}
-
-function finiteOrder(api: string, value: number | undefined): number {
-	if (value === undefined) return 0
-	if (!Number.isFinite(value)) throw new TypeError(`[workbench] ${api}(): order must be finite`)
-	return value
-}
-
-function requiredGroupId(api: string, value: unknown): string {
-	const id = requiredText(`${api}.group`, 'id', value, 64)
-	if (!GROUP_ID.test(id)) {
-		throw new TypeError(`[workbench] ${api}.group: id has an invalid format`)
-	}
-	return id
-}
-
-export function readWorkbenchIcon(value: unknown): WorkbenchIcon {
-	if (typeof value !== 'string' || !WORKBENCH_ICON_VALUES.has(value)) {
-		throw new TypeError('[workbench] icon is not part of the fixed Workbench icon set')
-	}
-	return value as WorkbenchIcon
-}
-
-function requiredText(api: string, field: string, value: unknown, max: number): string {
-	if (
-		typeof value !== 'string' ||
-		value.length === 0 ||
-		value.length > max ||
-		value.trim() !== value
-	) {
-		throw new TypeError(
-			`[workbench] ${api}(): ${field} must be non-empty without surrounding whitespace`,
-		)
-	}
-	return value
-}
-
-function requiredUtf8Text(api: string, field: string, value: unknown, maxBytes: number): string {
-	const text = requiredText(api, field, value, maxBytes)
-	if (new TextEncoder().encode(text).byteLength > maxBytes) {
-		throw new TypeError(`[workbench] ${api}(): ${field} exceeds ${maxBytes} UTF-8 bytes`)
-	}
-	return text
-}
-
-function assertExactKeys(api: string, value: unknown, allowed: readonly string[]): void {
-	if (!isPlainRecord(value))
-		throw new TypeError(`[workbench] ${api}(): options must be a plain record`)
-	const extras = Object.keys(value).filter((key) => !allowed.includes(key))
-	if (extras.length > 0) {
-		throw new TypeError(`[workbench] ${api}(): unsupported option "${extras[0]}"`)
-	}
-}
-
-function isPlainRecord(value: unknown): value is Record<string, unknown> {
-	if (!value || typeof value !== 'object' || Array.isArray(value)) return false
-	const prototype = Object.getPrototypeOf(value)
-	return prototype === Object.prototype || prototype === null
-}
-
 /** @internal Toolchain/server lowering only. */
 export function readWorkbenchDefinition(
 	definition: AnyWorkbenchDefinition,
 ): WorkbenchDefinitionMetadata {
-	const metadata = (definition as unknown as Record<PropertyKey, unknown>)[DEFINITION]
-	if (!metadata || typeof metadata !== 'object') {
-		throw new TypeError('[workbench] invalid Workbench definition')
-	}
-	return metadata as WorkbenchDefinitionMetadata
+	const metadata = definitions.get(definition)
+	if (!metadata) throw new TypeError('[workbench] invalid Workbench definition')
+	return metadata
 }
 
 /** @internal Toolchain/server lowering only. */
 export function readWorkbenchDescriptor(entry: WorkbenchEntry): WorkbenchDescriptorMetadata {
-	readDescriptor(entry)
-	const metadata = (entry as unknown as Record<PropertyKey, unknown>)[DESCRIPTOR]
-	if (metadata && typeof metadata === 'object') return metadata as WorkbenchDescriptorMetadata
-	throw new TypeError('[workbench] descriptor is not owned by a Workbench definition')
-}
-
-/** @internal Toolchain lowering only. */
-export function readWorkbenchRendererEntry(
-	entry: WorkbenchRendererEntry,
-): WorkbenchRendererEntryMetadata {
-	assertRendererEntry(entry)
-	return entry[RENDERER_ENTRY]
-}
-
-/** @internal Toolchain lowering only. */
-export function readWorkbenchMarkdownDocument(
-	document: WorkbenchMarkdownDocument,
-): WorkbenchMarkdownDocumentMetadata {
-	assertMarkdownDocument(document)
-	return document[MARKDOWN_DOCUMENT]
+	const metadata = descriptors.get(entry)
+	if (!metadata) throw new TypeError('[workbench] invalid entry descriptor')
+	if (metadata === 'unbound')
+		throw new TypeError('[workbench] descriptor is not owned by a Workbench definition')
+	return metadata
 }
 
 /** @internal Runtime publication compiler only. */
@@ -1052,12 +646,6 @@ export const workbench = Object.freeze({
 	view,
 	content,
 	attachment,
-	entry: rendererEntry,
-	markdown,
 	data,
 	action,
-	tab,
-	route,
-	panel,
-	icons: WORKBENCH_ICONS,
 })

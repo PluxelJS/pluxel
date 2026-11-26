@@ -21,21 +21,3 @@ export function diagnosticPosition(diagnostic: TypstDiagnostic): SourcePosition 
 			}
 		: undefined
 }
-
-export function sourceOffset(source: string, position: SourcePosition): number | undefined {
-	if (
-		!Number.isSafeInteger(position.line) ||
-		position.line < 1 ||
-		!Number.isSafeInteger(position.column)
-	)
-		return undefined
-	const lines = source.split('\n')
-	const line = lines[position.line - 1]
-	if (line === undefined || position.column < 1 || position.column > line.length + 1)
-		return undefined
-	return (
-		lines.slice(0, position.line - 1).reduce((sum, text) => sum + text.length + 1, 0) +
-		position.column -
-		1
-	)
-}

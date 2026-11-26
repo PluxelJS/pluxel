@@ -3,9 +3,9 @@ title: 文件系统存储（FS）
 description: 通过 ctx.fs() 访问专属文件目录，使用标准的 Promise 文件操作与原子化写入。
 ---
 
-对于需要读写大文件、二进制媒体或导出文档的插件，Pluxel 提供了开箱即用的虚拟文件系统能力。通过 `this.ctx.fs()`，插件能够获取一个与自身强绑定的文件系统句柄，底层由 [ZenFS](https://zenfs.dev/) 驱动并兼容标准的 Node.js `fs.promises` API。
+需要保存二进制媒体、导出文档等文件时，插件通过 `ctx.fs()` 借用所属节点的目录。支持文件的 Host 返回绑定到该目录的 ZenFS `fs.promises` 句柄。Node 和嵌入式入口默认挂载内存，应用可按部署环境挂载本地磁盘或 IndexedDB。文件操作的支持范围由所选后端决定。 [选择文件后端](../host/configuration.md#选择文件后端)
 
-宿主可根据部署环境将底层存储挂载为纯内存（InMemory）、本地磁盘（Passthrough）或浏览器存储（IndexedDB）。
+需要跨 Host 重开保留文件时，调用 `ctx.fs({ durable: true, writable: true })`。Host 检查覆盖插件目录的挂载及其子挂载。缺少持久性声明时收到 `ENOTSUP`，挂载只读且要求可写时收到 `EROFS`。Cloudflare Worker Host 没有插件文件后端，普通 `ctx.fs()` 也会以 `ENOTSUP` 拒绝。能接受单个根寿命的结构化数据可保存到 TinyBase。 [跨平台宿主契约](../host/runtime-portability.md)
 
 ## 访问目录与写入文件
 
@@ -17,21 +17,19 @@ import { writeFileAtomic } from '@pluxel/core/fs'
 
 @Plugin()
 export class ReportsPlugin extends BasePlugin {
-	async saveReport(reportName: string, bytes: Uint8Array): Promise<void> {
-		// 1. 获取专属文件系统句柄
+	async saveLatestReport(bytes: Uint8Array): Promise<void> {
 		const files = await this.ctx.fs({ durable: true, writable: true })
 
-		// 2. 使用安全原子写入，防止意外写入中断导致文件损坏
-		await writeFileAtomic(files, `reports/${reportName}.bin`, bytes)
+		await writeFileAtomic(files, 'reports/latest.bin', bytes)
 	}
 }
 ```
 
-`writeFileAtomic` 会先写入临时文件，再通过原子重命名（rename）完成目标替换，能够有效防止写入中途崩溃导致残缺文件。
+`writeFileAtomic` 写完并关闭同目录的临时文件，再用后端的 `rename` 替换目标文件。替换的原子性取决于该后端，断电后的落盘保证取决于存储介质及其同步策略。
 
 ## 常用文件操作
 
-获取到的 `files` 句柄提供了与 Node.js `fs.promises` 一致的标准方法：
+常用操作可直接通过句柄调用。
 
 ```ts
 // 读取文件
@@ -49,7 +47,7 @@ try {
 const entries = await files.readdir('reports', { withFileTypes: true })
 for (const entry of entries) {
 	if (entry.isFile()) {
-		console.log('Found report:', entry.name)
+		this.ctx.logger.info('Found report', { name: entry.name })
 	}
 }
 ```

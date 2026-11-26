@@ -48,23 +48,38 @@ export function attachDispose<T extends Unsubscribe>(unsub: T): T {
 
 export const noopSubscription: Unsubscribe = attachDispose((() => {}) as Unsubscribe)
 
-export function withAbortSignal(signal: AbortSignal | undefined, sub: Unsubscribe): Unsubscribe {
-	if (!signal) return sub
+const subscriptions = new WeakMap<Unsubscribe, Subscription>()
 
-	let settled = false
-	const abortUnsub = () => {
-		if (settled) return
-		settled = true
-		signal.removeEventListener('abort', abortUnsub)
-		sub()
+/** One removable occurrence, independent of the listener function's identity. */
+export class Subscription {
+	readonly unsubscribe: Unsubscribe = attachDispose(() => this.remove?.(this))
+	private observers?: (() => void)[]
+
+	constructor(
+		private remove?: (subscription: Subscription) => void,
+		private signal?: AbortSignal,
+	) {
+		subscriptions.set(this.unsubscribe, this)
+		signal?.addEventListener('abort', this.unsubscribe, { once: true })
 	}
-	signal.addEventListener('abort', abortUnsub, { once: true })
 
-	const wrappedSub: Unsubscribe = (() => {
-		if (settled) return
-		settled = true
-		signal.removeEventListener('abort', abortUnsub)
-		sub()
-	}) as Unsubscribe
-	return attachDispose(wrappedSub)
+	observeEnd(observer: () => void): void {
+		if (!this.remove) observer()
+		else (this.observers ??= []).push(observer)
+	}
+
+	end(): void {
+		this.remove = undefined
+		this.signal?.removeEventListener('abort', this.unsubscribe)
+		this.signal = undefined
+		const observers = this.observers
+		this.observers = undefined
+		if (observers) for (const observer of observers) observer()
+	}
+}
+
+/** @internal Used by owners to release their cleanup registration when the work ends. */
+export function observeSubscriptionEnd(unsubscribe: Unsubscribe, observer: () => void): void {
+	if (unsubscribe === noopSubscription) observer()
+	else subscriptions.get(unsubscribe)?.observeEnd(observer)
 }

@@ -19,13 +19,17 @@
 			"@pluxel/source": "./src/index.ts",
 			"default": "./dist/index.mjs"
 		},
-		"./console": {
-			"@pluxel/source": "./src/console.ts",
-			"default": "./dist/console.mjs"
+		"./hmr": {
+			"@pluxel/source": "./src/hmr.ts",
+			"default": "./dist/hmr.mjs"
 		},
 		"./internal": {
 			"@pluxel/source": "./src/internal.ts",
 			"default": "./dist/internal.mjs"
+		},
+		"./modules": {
+			"@pluxel/source": "./src/modules.ts",
+			"default": "./dist/modules.mjs"
 		},
 		"./run": {
 			"@pluxel/source": "./src/run.ts",
@@ -36,8 +40,9 @@
 	"publishConfig": {
 		"exports": {
 			".": "./dist/index.mjs",
-			"./console": "./dist/console.mjs",
+			"./hmr": "./dist/hmr.mjs",
 			"./internal": "./dist/internal.mjs",
+			"./modules": "./dist/modules.mjs",
 			"./run": "./dist/run.mjs",
 			"./package.json": "./package.json"
 		},
@@ -56,9 +61,11 @@
 	},
 	"devDependencies": {
 		"@logtape/logtape": "catalog:dev",
+		"@pluxel/agent-sdk": "workspace:*",
 		"@pluxel/core": "workspace:*",
 		"@pluxel/host": "workspace:*",
 		"@pluxel/test": "workspace:*",
+		"capnweb": "catalog:prod",
 		"react": "catalog:frontend",
 		"react-dom": "catalog:frontend",
 		"typescript": "catalog:dev",
@@ -66,6 +73,7 @@
 	},
 	"peerDependencies": {
 		"@pluxel/core": "workspace:^",
-		"@pluxel/host": "workspace:^"
+		"@pluxel/host": "workspace:^",
+		"capnweb": "catalog:prod"
 	}
 }

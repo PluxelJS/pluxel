@@ -1,7 +1,8 @@
+import type { Workbench } from '@pluxel/workbench'
 import { assertWorkbenchDto, createWorkbenchWatch } from '@pluxel/workbench/server'
 // Direct Workbench demo: one definition, fresh Cap'n Web roots, Plugin-owned watch semantics.
 
-import { BasePlugin, Plugin } from '@pluxel/core'
+import { BasePlugin, Plugin, defineServiceRef } from '@pluxel/core'
 import { RpcTarget } from 'capnweb'
 import {
 	PluginWithUIWorkbench,
@@ -11,6 +12,7 @@ import {
 	type PluginWithUISnapshot,
 } from './PluginWithUI.workbench'
 
+const WorkbenchRef = defineServiceRef<Workbench>()
 const MAX_EVENT_HISTORY = 80
 const MAX_EVENT_MESSAGE_LENGTH = 1_000
 const MAX_COUNTER_DELTA = 1_000
@@ -26,7 +28,7 @@ export class PluginWithUI extends BasePlugin {
 
 	override init(): void {
 		this.appendEvent('system', 'Direct Cap’n Web Workbench View 已就绪。')
-		this.ctx.workbench?.publish(PluginWithUIWorkbench, {
+		this.ctx.service(WorkbenchRef)?.publish(PluginWithUIWorkbench, {
 			overview: ({ signal }) => new PluginWithUITarget(this, signal),
 			events: ({ signal }) => new PluginWithUITarget(this, signal),
 			dashboard: ({ signal }) => new PluginWithUITarget(this, signal),

@@ -25,7 +25,7 @@
 			"default": "./dist/browser.mjs"
 		},
 		"./document": {
-			"@pluxel/hmr": "./src/document/project.ts",
+			"@pluxel/hmr": "./src/document/index.ts",
 			"default": "./dist/document.mjs"
 		},
 		"./document/react": {
@@ -43,10 +43,6 @@
 		"./source/library": {
 			"@pluxel/hmr": "./src/source/library.ts",
 			"default": "./dist/source/library.mjs"
-		},
-		"./template": {
-			"@pluxel/hmr": "./src/template.ts",
-			"default": "./dist/template.mjs"
 		},
 		"./tiptap": {
 			"@pluxel/hmr": "./src/tiptap/index.ts",
@@ -76,6 +72,11 @@
 		"./tiptap/style.css": {
 			"@pluxel/hmr": "./src/tiptap/style.css",
 			"default": "./dist/tiptap/style.css"
+		},
+		"./control": {
+			"types": "./dist/control/index.d.mts",
+			"import": "./dist/control/index.mjs",
+			"default": "./dist/control/index.mjs"
 		}
 	},
 	"publishConfig": {
@@ -87,7 +88,6 @@
 			"./source": "./dist/source.mjs",
 			"./source/browser": "./dist/source/browser.mjs",
 			"./source/library": "./dist/source/library.mjs",
-			"./template": "./dist/template.mjs",
 			"./tiptap": "./dist/tiptap.mjs",
 			"./tiptap/document": "./dist/tiptap/document.mjs",
 			"./tiptap/document/react": "./dist/tiptap/document/react.mjs",
@@ -95,7 +95,12 @@
 			"./wasm": "./dist/wasm.mjs",
 			"./package.json": "./package.json",
 			"./source/parser.wasm": "./dist/source/typst_ast_bg.wasm",
-			"./tiptap/style.css": "./dist/tiptap/style.css"
+			"./tiptap/style.css": "./dist/tiptap/style.css",
+			"./control": {
+				"types": "./dist/control/index.d.mts",
+				"import": "./dist/control/index.mjs",
+				"default": "./dist/control/index.mjs"
+			}
 		}
 	},
 	"scripts": {
@@ -162,6 +167,7 @@
 	},
 	"peerDependencies": {
 		"@pluxel/core": "workspace:^",
+		"@pluxel/host": "workspace:^",
 		"@pluxel/plugin-fonts": "workspace:^",
 		"@pluxel/services": "workspace:^",
 		"@tiptap/core": "catalog:frontend",
@@ -181,6 +187,9 @@
 		"react-dom": "catalog:frontend"
 	},
 	"peerDependenciesMeta": {
+		"@pluxel/host": {
+			"optional": true
+		},
 		"@tiptap/extension-mathematics": {
 			"optional": true
 		},
@@ -236,6 +245,7 @@
 		},
 		"artifactRoot": "dist",
 		"nodeArtifacts": true,
-		"workbenchArtifacts": true
+		"workbenchArtifacts": true,
+		"control": "./dist/control/manifest.json"
 	}
 }

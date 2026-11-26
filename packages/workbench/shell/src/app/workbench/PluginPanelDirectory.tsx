@@ -50,46 +50,42 @@ export function PluginPanelDirectory() {
 	return session ? <ConnectedDirectory session={session} /> : null
 }
 function ConnectedDirectory({ session }: { session: WorkspaceSession }) {
-	const directory = usePluginPanelDirectory(session)
-	if (!directory.owner) return null
+	const { owner, snapshot, entries, running } = usePluginPanelDirectory(session)
+	if (!owner || (snapshot.state === 'ready' && !snapshot.error && entries.length === 0)) return null
 	return (
-		<Paper withBorder p="sm" shadow="none" bg="var(--plx-raised)">
-			<Stack gap="xs" component="section" aria-label="插件扩展">
-				<Text size="sm" fw={600}>
+		<Paper component="section" aria-label="插件扩展" withBorder p="xs" bg="var(--plx-raised)">
+			<Stack gap={4}>
+				<Text component="h2" size="sm" fw={600} m={0}>
 					插件扩展
 				</Text>
-				{directory.snapshot.error ? (
+				{snapshot.error ? (
 					<Alert color="red" title="扩展读取失败">
-						{directory.snapshot.error.message}
+						{snapshot.error.message}
 					</Alert>
 				) : null}
-				{directory.snapshot.state === 'loading' ? (
+				{snapshot.state === 'loading' ? (
 					<Text size="xs" c="dimmed" role="status">
 						正在读取扩展…
 					</Text>
 				) : null}
-				{directory.entries.length === 0 && directory.snapshot.state === 'ready' ? (
-					<Text size="xs" c="dimmed">
-						当前插件没有可用扩展
-					</Text>
-				) : null}
-				{directory.entries.map((entry) => {
-					const unavailable = panelUnavailable(entry, directory.running)
+				{entries.map((entry) => {
+					const unavailable = panelUnavailable(entry, running)
 					const opened = session.isPanelOpen(entry)
 					return (
 						<Group key={entry.descriptor.key} justify="space-between" gap="xs" wrap="nowrap">
-							<Stack gap={0} style={{ minWidth: 0 }}>
-								<Text size="sm" truncate="end" title={entry.placement.label}>
+							<Group gap={6} style={{ minWidth: 0, flex: 1 }}>
+								<Text size="sm" truncate="end" title={entry.placement.label} maw="100%">
 									{entry.placement.label}
 								</Text>
 								<Text size="xs" c="dimmed">
 									{panelRegionLabels[entry.placement.region]}
 									{opened ? ' · 已打开' : ''}
 								</Text>
-							</Stack>
+							</Group>
 							<Button
 								size="compact-xs"
 								variant="subtle"
+								style={{ flexShrink: 0 }}
 								disabled={!!unavailable}
 								aria-label={`${unavailable ?? (opened ? '显示' : '打开')} ${entry.placement.label}`}
 								onClick={() => {

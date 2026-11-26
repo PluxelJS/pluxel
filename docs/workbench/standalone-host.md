@@ -7,6 +7,8 @@ description: 使用模块化服务，在自定义宿主中手动装配 Workbench
 
 ## 宿主端服务装配
 
+安装 Workbench 的 Node/Vite 应用在应用入口所属包的 `dependencies.capnweb` 声明 Host 使用的精确版本，或指向该版本的 pnpm catalog。应用实际能解析的版本也须匹配。托管加载器按应用的物理入口检查，因此 Vite root 可以位于单独的浏览器包。直接调用 `startHost(application)` 或 `createHost(options)` 时，装配方在构建阶段核对该依赖。
+
 在应用入口中挂载 `workbenchService()`：
 
 ```ts
@@ -16,15 +18,12 @@ import { workbenchService } from '@pluxel/workbench/service'
 import { ViewerPlugin } from './viewer'
 
 export default defineHostApplication(() => ({
-	plugins: [ViewerPlugin],
+	plugins: [{ plugin: ViewerPlugin, autoStart: true }],
 	services: [workbenchService()],
-	policy: {
-		autoStart: [ViewerPlugin.nodeAddress()],
-	},
 }))
 ```
 
-插件代码无需任何修改，继续使用标准的 `this.ctx.workbench?.publish()`。如果宿主没有挂载 `workbenchService()`，可选链 `?.` 会安全跳过，保证业务插件能独立在无头环境下运行。
+插件代码无需任何修改，继续使用标准的 `this.ctx.service(WorkbenchRef)?.publish()`。如果宿主没有挂载 `workbenchService()`，可选链 `?.` 会安全跳过，保证业务插件能独立在无头环境下运行。
 
 ## 配合 Vite 接入开发编译
 
@@ -38,7 +37,7 @@ import { serviceSingletons } from '@pluxel/services/vite'
 import { workbenchArtifacts } from '@pluxel/workbench/vite'
 
 export default defineConfig({
-	plugins: [serviceSingletons('./app.ts'), host({ entry: './app.ts' }), workbenchArtifacts()],
+	plugins: [serviceSingletons(), host({ entry: './app.ts' }), workbenchArtifacts()],
 })
 ```
 

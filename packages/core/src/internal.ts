@@ -1,6 +1,9 @@
 export {
+	admitOwnerInvocation,
+	assertOwnerInvocationOpen,
 	closeOwnerInvocations,
 	enterOwnerInvocation,
+	releaseOwnerInvocation,
 	type OwnerInvocationLease,
 } from './internal/owner-invocations'
 
@@ -30,32 +33,47 @@ export {
 } from './plugins/runtime/PluginDefinitions'
 export { requireConfigService } from './internal/config-service'
 export { requirePluginService } from './internal/plugin-service'
-export { requireFs, requireHostDocuments, requireTinyBaseHost } from './internal/storage'
+export {
+	requireFs,
+	requireHostDocumentRetention,
+	requireHostDocuments,
+	requireTinyBaseHost,
+	requireVaultHost,
+} from './internal/storage'
 export { observeFile } from './fs/observe'
 export { pluginNodePhysicalKey } from './internal/plugin-address'
 export {
+	installOwnerViewService,
+	installRootService,
+	installScopeService,
+} from './services/installation'
+export {
 	createContextHost,
-	defineContextCapability,
-	installOwnerViewCapability,
-	installRootCapability,
-	installScopeCapability,
-	resolveContextCapability,
-	type ContextCapability,
-	type ContextCapabilityInstallation,
+	getServiceInstallationDefinition,
+	type ServiceDefinition,
+	type ServiceInstallation,
 } from '@pluxel/context'
+export {
+	resolveContextService,
+	getServiceDefinitionKey,
+	getServiceDefinitionAccess,
+	getInstalledServiceDefinitions,
+	resolveInstalledServiceDefinition,
+	getInstalledServiceAccess,
+	createServiceRef,
+	type ServiceKey,
+} from '@pluxel/context/internal'
+export {
+	readServiceDefinition,
+	createServiceReference,
+	setServiceControlContract,
+} from './services/definition'
 export { createGenerationContext, createOwnerContext } from './context/context-factory'
 export { getPluginGenerationContext } from './plugins/composition/BasePlugin'
 export { isPluginPartContext } from './plugins/composition/PluginPart'
-export {
-	CONFIG_SERVICE_CAPABILITY,
-	createCoreContextInstallations,
-	createCoreRootContext,
-	resolveCoreRootInputs,
-	EFFECTS_CAPABILITY,
-	LOGGER_CAPABILITY,
-	PLUGIN_SERVICE_CAPABILITY,
-	type CoreRootInputs,
-} from './context/core-plan'
+export { createCoreContextHostWithFacilities } from './context/core-plan'
+export { prepareCoreContext } from './context/core-logging'
+export { clearOutboundHttpNode } from './http/host'
 export {
 	checkPluginDecorator,
 	consumePluginDefinitionCandidate,
@@ -99,5 +117,19 @@ export {
 } from './internal/workbench-content-artifact'
 export { immutableConfigRecord } from './services/config/immutable'
 
-export { createCorePluginExecutionBinding } from './context/plugin-execution'
-export { DEFAULT_PLUGIN_EXECUTION } from './plugins/runtime/PluginService'
+export {
+	assertStartTimeoutMs,
+	createCorePluginExecutionBinding,
+	DEFAULT_PLUGIN_EXECUTION,
+} from './context/plugin-execution'
+export {
+	snapshotWorkerCoreFacilitiesConfig,
+	type PreparedCoreFacilities,
+} from './context/core-facilities'
+
+export { recordSecurityEvent, listSecurityEvents, type SecurityEvent } from './internal/security'
+
+export { snapshotVaultBindings } from './vault/bindings'
+export { validateKey as validateVaultKey } from './vault/paths'
+
+export { snapshotVaultConfig } from './vault/options'

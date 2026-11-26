@@ -12,6 +12,8 @@ description: 从零构建一个包含业务方法、Valibot 配置校验、结�
 
 ## 初始化插件包
 
+准备[工作区工具链](../development/workspace-toolchain.md#准备-checkout)中的全局 Vite+ 与 Node.js 24+。插件模板与应用脚手架采用相同的 `vp` 命令约定。
+
 在终端中执行以下命令生成一个插件模板并安装基础开发依赖：
 
 ```sh
@@ -89,7 +91,7 @@ it('能够正确读取配置，并在停止后销毁定时器', async () => {
 		await using host = await createTestHost()
 
 		// 启动待测插件，并传入自定义初始配置
-		const plugin = await host.start(StatusPlugin, {
+		const plugin = await host.start(StatusPlugin.nodeAddress(), {
 			initialConfig: { label: 'healthy', intervalMs: 1_000 },
 		})
 
@@ -101,7 +103,7 @@ it('能够正确读取配置，并在停止后销毁定时器', async () => {
 		expect(plugin.snapshot().samples).toBe(1)
 
 		// 停止插件
-		await host.stop(StatusPlugin)
+		await host.stop(StatusPlugin.nodeAddress())
 
 		// 再次推进时间，确认后台定时器已彻底停止
 		vi.advanceTimersByTime(1_000)
@@ -127,4 +129,4 @@ vp run verify
 - [插件依赖拓扑](../plugin-development/model.md)：如何在构造函数中注入其他插件，或声明可选依赖。
 - [结构化日志最佳实践](../plugin-development/logging.md)：使用上下文日志记录关键指标与调试信息。
 - [插件拆分与 Part 机制](../plugin-development/parts.md)：使用 `PluginPart` 将庞大插件的内部状态模块化拆分。
-- [接入宿主应用](../host/configuration.md)：将写好的插件打包并注册进完整的宿主应用中。
+- 让用户启停随应用发布的插件、修改参数并保存选择。[启停和配置内置插件](../host/fixed-plugins.md)

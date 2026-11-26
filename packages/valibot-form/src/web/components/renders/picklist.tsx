@@ -1,17 +1,15 @@
-import type { PicklistFieldNode } from '../../../core/fields'
 import { FieldChrome } from '../chrome/FieldChrome'
 import { cleanProps } from '../../utils/propHelpers'
 import { PicklistControl } from './controls/PicklistControl'
 import {
 	normalizeErrorMessages,
-	type RendererProps,
+	type ScalarRendererProps,
 	triggerFormBlur,
 	triggerFormEvents,
 } from './types'
 
-export function PicklistField(props: RendererProps) {
+export function PicklistField(props: ScalarRendererProps<'picklist'>) {
 	const { node, errors, inputProps, value } = props
-	const info = node as PicklistFieldNode
 	const baseErrors = normalizeErrorMessages(errors)
 
 	return (
@@ -25,6 +23,7 @@ export function PicklistField(props: RendererProps) {
 				badge: node.meta.badge,
 				errors: baseErrors,
 				errorId: inputProps.errorId,
+				descriptionId: inputProps.descriptionId,
 				hideLabel: node.meta.hideLabel,
 				hideRequired: node.meta.hideRequired,
 			})}
@@ -34,22 +33,9 @@ export function PicklistField(props: RendererProps) {
 				name={inputProps.name}
 				aria-invalid={inputProps['aria-invalid']}
 				aria-describedby={inputProps['aria-describedby']}
-				meta={{
-					options: info.options,
-					entries: info.entries,
-					labels: info.labels,
-					disabled: info.disabled,
-					placeholder: info.placeholder,
-					searchable: info.searchable,
-					clearable: info.clearable,
-					max: info.max,
-					create: info.create,
-					control: info.control ?? 'select',
-					multiple: false,
-					emptyLabel: info.emptyLabel,
-				}}
+				node={node}
 				value={value}
-				onChange={(next) => triggerFormEvents(inputProps, next)}
+				onChange={(next) => triggerFormEvents(inputProps, next ?? undefined)}
 				onBlur={() => triggerFormBlur(inputProps)}
 				disabled={inputProps.disabled || inputProps.readOnly}
 				required={node.required}

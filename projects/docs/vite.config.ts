@@ -75,12 +75,13 @@ export default defineConfig({
 					cache: {
 						input: [
 							{ pattern: 'docs/**', base: 'workspace' },
+							{ pattern: 'plugins/package-manager/src/**', base: 'workspace' },
 							'!dist/**',
 							'!.source/**',
 							'!.vercel/output/**',
 						],
 						output: ['dist/**', '.source/**', '.vercel/output/**'],
-						env: ['VERCEL*'],
+						env: ['VERCEL*', 'VITE_MARKET_URL'],
 					},
 				},
 				'check-types': {
@@ -99,6 +100,8 @@ export default defineConfig({
 					'@pluxel/core#compile',
 					'@pluxel/host#compile',
 					'@pluxel/services#compile',
+					// The docs server renders the public Marketplace package before hydration.
+					'@pluxel/plugin-package-manager#compile',
 					'@pluxel/plugin-takumi-markdown#compile',
 					// Browser examples consume the source/parser WASM exports, without the native addon.
 					'@pluxel/plugin-typst#compile-lib',

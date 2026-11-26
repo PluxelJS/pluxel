@@ -1,39 +1,43 @@
 import { expectTypeOf } from 'vitest'
-import type {
-	ProjectInspection,
-	InspectionSection,
-	InspectionSectionData,
-} from '../src/inspect/index'
+import {
+	inspectPlugin,
+	type InspectionSection,
+	type InspectionSectionData,
+} from '@pluxel/agent-sdk/source'
 
-declare const project: ProjectInspection
+const context = { root: '/workspace' }
 const reference = 'package:@fixture/mail::MailPlugin'
 type ConfigSection = InspectionSection<InspectionSectionData['config']>
 type PartsSection = InspectionSection<InspectionSectionData['parts']>
 
-const literal = await project.plugin(reference, { include: ['config'] })
+const literal = await inspectPlugin(reference, { ...context, include: ['config'] })
 expectTypeOf(literal.data.sections.config).toEqualTypeOf<ConfigSection>()
 expectTypeOf<keyof typeof literal.data.sections>().toEqualTypeOf<'config'>()
 
 const include: ('config' | 'parts')[] = ['config']
-const dynamic = await project.plugin(reference, { include })
+const dynamic = await inspectPlugin(reference, { ...context, include })
 expectTypeOf(dynamic.data.sections.config).toEqualTypeOf<ConfigSection | undefined>()
 expectTypeOf(dynamic.data.sections.parts).toEqualTypeOf<PartsSection | undefined>()
 
 const optionalOptions: { include?: readonly ['config'] } = {}
-const optional = await project.plugin(reference, optionalOptions)
+const optional = await inspectPlugin(reference, { ...context, ...optionalOptions })
 expectTypeOf(optional.data.sections.config).toEqualTypeOf<ConfigSection | undefined>()
 
-const omitted = await project.plugin(reference)
+const omitted = await inspectPlugin(reference, context)
 expectTypeOf<keyof typeof omitted.data.sections>().toEqualTypeOf<never>()
 
 const application = { root: 'host', entry: 'a.ts' }
-const inputs = await project.plugin(reference, { application, include: ['inputs'] })
+const inputs = await inspectPlugin(reference, { ...context, application, include: ['inputs'] })
 expectTypeOf<keyof typeof inputs.data.sections>().toEqualTypeOf<'inputs'>()
 expectTypeOf(inputs.data.sections.inputs).toEqualTypeOf<
 	InspectionSection<InspectionSectionData['inputs']>
 >()
 const applicationIncludes: ('inputs' | 'config')[] = ['inputs']
-const dynamicInputs = await project.plugin(reference, { application, include: applicationIncludes })
+const dynamicInputs = await inspectPlugin(reference, {
+	...context,
+	application,
+	include: applicationIncludes,
+})
 expectTypeOf(dynamicInputs.data.sections.inputs).toEqualTypeOf<
 	InspectionSection<InspectionSectionData['inputs']> | undefined
 >()

@@ -11,28 +11,22 @@ export interface FontSelectionApi extends RpcTarget {
 	set(ref: FontRef | null): void
 }
 
-const selectionRenderer = workbench.entry(
-	import.meta.url,
-	'./PluginContributionFontDemo/ui/selection.tsx',
-)
-
-export const FontManagerWorkbench = workbench.define({
+export const FontManagerWorkbench = workbench.define(import.meta.url, {
 	selection: workbench.attachment<FontCatalogApi, FontSelectionApi>({
-		renderer: selectionRenderer,
+		renderer: './PluginContributionFontDemo/ui/selection.tsx',
 	}),
 })
 
-export const FontConsumerWorkbench = workbench.define({
-	appearanceFont: FontManagerWorkbench.selection.place(
-		workbench.tab({
+export const FontConsumerWorkbench = workbench.define(import.meta.url, {
+	appearanceFont: FontManagerWorkbench.selection.place({
+		kind: 'tab',
+		label: 'Typography',
+		icon: 'typography',
+		group: {
+			id: 'typography',
 			label: 'Typography',
-			icon: workbench.icons.Typography,
-			group: {
-				id: 'typography',
-				label: 'Typography',
-				icon: workbench.icons.Typography,
-			},
-			order: 40,
-		}),
-	),
+			icon: 'typography',
+		},
+		order: 40,
+	}),
 })

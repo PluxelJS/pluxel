@@ -8,9 +8,9 @@ import { TypstSourceEditor, type TypstSourceEditorProps } from '@pluxel/plugin-t
 export async function mountParameterFixture() {
 	const files = {
 		'main.typ':
-			'#import "component.typ": sample\n\n#sample(count: 7, loud: true, title: "原始标题")\n',
+			'#import "/component.typ": sample\n\n#sample(count: 7, loud: true, title: "原始标题", tone: upper("warm"))\n',
 		'component.typ':
-			'#let sample(count: 2, loud: false, title: "默认标题") = [#title #count #loud]\n',
+			'#let sample(count: 2, loud: false, title: "默认标题", tone: "warm") = [#title #count #loud #tone]\n',
 	}
 	const project = await createTypstSourceProject({
 		files,
@@ -24,6 +24,7 @@ export async function mountParameterFixture() {
 					count: { type: 'number', label: '数量' },
 					loud: { type: 'boolean', label: '显示标记' },
 					title: { type: 'string', label: '标题' },
+					tone: { type: 'string', label: '色调' },
 				},
 			},
 		],
@@ -38,7 +39,7 @@ export async function mountFieldFixture(writablePaths: readonly string[] = ['dat
 		writablePaths,
 		files: {
 			...(await createTypstSourceLibrary()),
-			'main.typ': `#import "lib/pluxel.typ" as report
+			'main.typ': `#import "/lib/pluxel.typ" as report
 #import "component.typ": sample
 
 公司：#report.field(json("data.json"), ("company",))

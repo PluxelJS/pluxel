@@ -25,6 +25,7 @@
 		"@pluxel/host": "catalog:pluxel",
 		"@pluxel/services": "catalog:pluxel",
 		"@pluxel/test": "catalog:pluxel",
+		"@types/bun": "catalog:tooling",
 		"typescript": "catalog:tooling",
 		"vite-plus": "catalog:tooling",
 		"vitest": "catalog:test"
@@ -32,7 +33,13 @@
 	"peerDependencies": {
 		"@example/todo-plugin": "*",
 		"@pluxel/core": "catalog:pluxel",
+		"@pluxel/host": "catalog:pluxel",
 		"@pluxel/services": "catalog:pluxel"
+	},
+	"peerDependenciesMeta": {
+		"@pluxel/host": {
+			"optional": true
+		}
 	},
 	"pluxel": {
 		"artifactRoot": "dist",

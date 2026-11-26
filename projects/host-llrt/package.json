@@ -1,0 +1,61 @@
+{
+	"name": "@pluxel-example/host-llrt",
+	"version": "0.0.0",
+	"private": true,
+	"type": "module",
+	"exports": {
+		".": {
+			"@pluxel/hmr": "./src/index.ts",
+			"default": "./dist/index.js"
+		},
+		"./package.json": "./package.json",
+		"./control": {
+			"types": "./dist/control/index.d.mts",
+			"import": "./dist/control/index.mjs",
+			"default": "./dist/control/index.mjs"
+		}
+	},
+	"publishConfig": {
+		"exports": {
+			".": "./dist/index.js",
+			"./package.json": "./package.json",
+			"./control": {
+				"types": "./dist/control/index.d.mts",
+				"import": "./dist/control/index.mjs",
+				"default": "./dist/control/index.mjs"
+			}
+		}
+	},
+	"scripts": {
+		"build": "vp run compile",
+		"build:plugin": "vp run compile-plugin",
+		"start": "vp run check-smoke",
+		"typecheck": "vp run check-types"
+	},
+	"dependencies": {
+		"@formatjs/intl-getcanonicallocales": "catalog:prod",
+		"@formatjs/intl-locale": "catalog:prod",
+		"@formatjs/intl-numberformat": "catalog:prod",
+		"@formatjs/intl-pluralrules": "catalog:prod",
+		"@pluxel-example/host-targets-plugins": "workspace:*",
+		"@pluxel/agent-sdk": "workspace:*"
+	},
+	"devDependencies": {
+		"@pluxel/cli": "workspace:*",
+		"@pluxel/rolldown": "workspace:*",
+		"esbuild": "catalog:build",
+		"llrt-readable-stream": "catalog:dev",
+		"typescript": "catalog:dev",
+		"vite-plus": "catalog:build"
+	},
+	"peerDependencies": {
+		"@pluxel/core": "workspace:^",
+		"@pluxel/host": "workspace:^"
+	},
+	"pluxel": {
+		"artifactRoot": "dist",
+		"nodeArtifacts": true,
+		"control": "./dist/control/manifest.json",
+		"workbenchArtifacts": true
+	}
+}

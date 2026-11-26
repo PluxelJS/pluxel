@@ -27,11 +27,6 @@
 			"import": "./dist/better-result.mjs",
 			"require": "./dist/better-result.cjs"
 		},
-		"./config": {
-			"@pluxel/source": "./src/config.ts",
-			"import": "./dist/config.mjs",
-			"require": "./dist/config.cjs"
-		},
 		"./federation": {
 			"@pluxel/source": "./src/federation.ts",
 			"import": "./dist/federation.mjs",
@@ -57,10 +52,25 @@
 			"import": "./dist/internal.mjs",
 			"require": "./dist/internal.cjs"
 		},
+		"./internal/control-manifest": {
+			"@pluxel/source": "./src/internal/control-manifest.ts",
+			"import": "./dist/internal/control-manifest.mjs",
+			"require": "./dist/internal/control-manifest.cjs"
+		},
+		"./internal/plugin-address-evidence": {
+			"@pluxel/source": "./src/internal/plugin-address-evidence.ts",
+			"import": "./dist/internal/plugin-address-evidence.mjs",
+			"require": "./dist/internal/plugin-address-evidence.cjs"
+		},
 		"./internal/test": {
 			"@pluxel/source": "./src/internal-test.ts",
 			"import": "./dist/internal/test.mjs",
 			"require": "./dist/internal/test.cjs"
+		},
+		"./internal/zenfs": {
+			"@pluxel/source": "./src/internal/zenfs.ts",
+			"import": "./dist/internal/zenfs.mjs",
+			"require": "./dist/internal/zenfs.cjs"
 		},
 		"./logger": {
 			"@pluxel/source": "./src/logger/index.ts",
@@ -97,6 +107,11 @@
 			"import": "./dist/toolchain.mjs",
 			"require": "./dist/toolchain.cjs"
 		},
+		"./vault": {
+			"@pluxel/source": "./src/vault.ts",
+			"import": "./dist/vault.mjs",
+			"require": "./dist/vault.cjs"
+		},
 		"./package.json": "./package.json"
 	},
 	"publishConfig": {
@@ -108,10 +123,6 @@
 			"./better-result": {
 				"import": "./dist/better-result.mjs",
 				"require": "./dist/better-result.cjs"
-			},
-			"./config": {
-				"import": "./dist/config.mjs",
-				"require": "./dist/config.cjs"
 			},
 			"./federation": {
 				"import": "./dist/federation.mjs",
@@ -133,9 +144,21 @@
 				"import": "./dist/internal.mjs",
 				"require": "./dist/internal.cjs"
 			},
+			"./internal/control-manifest": {
+				"import": "./dist/internal/control-manifest.mjs",
+				"require": "./dist/internal/control-manifest.cjs"
+			},
+			"./internal/plugin-address-evidence": {
+				"import": "./dist/internal/plugin-address-evidence.mjs",
+				"require": "./dist/internal/plugin-address-evidence.cjs"
+			},
 			"./internal/test": {
 				"import": "./dist/internal/test.mjs",
 				"require": "./dist/internal/test.cjs"
+			},
+			"./internal/zenfs": {
+				"import": "./dist/internal/zenfs.mjs",
+				"require": "./dist/internal/zenfs.cjs"
 			},
 			"./logger": {
 				"import": "./dist/logger.mjs",
@@ -165,6 +188,10 @@
 				"import": "./dist/toolchain.mjs",
 				"require": "./dist/toolchain.cjs"
 			},
+			"./vault": {
+				"import": "./dist/vault.mjs",
+				"require": "./dist/vault.cjs"
+			},
 			"./package.json": "./package.json"
 		},
 		"access": "public"
@@ -186,10 +213,13 @@
 		"@logtape/pretty": "catalog:prod",
 		"@standard-schema/spec": "catalog:prod",
 		"@types/node": "catalog:types",
+		"age-encryption": "catalog:prod",
 		"better-result": "catalog:prod",
 		"pathe": "catalog:node",
 		"std-env": "catalog:prod",
-		"tinybase": "catalog:prod"
+		"tinybase": "catalog:prod",
+		"undici": "catalog:prod",
+		"wretch": "catalog:prod"
 	},
 	"devDependencies": {
 		"@logtape/file": "catalog:prod",
@@ -235,6 +265,6 @@
 		"utilium": "3.10.0"
 	},
 	"pluxel": {
-		"tinybase": "10.0.1"
+		"tinybase": "10.1.0"
 	}
 }

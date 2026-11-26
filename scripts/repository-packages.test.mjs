@@ -11,6 +11,7 @@ import { unifiedReleaseVersions } from './release-policy.mts'
 
 import {
 	isPublishablePackage,
+	officialPluginsRepository,
 	publishPackageClosure,
 	rootWorkspaceDependencyErrors,
 	packagesRequiringInitialMajor,
@@ -35,12 +36,12 @@ describe('repository package policy', () => {
 		try {
 			await writeFile(
 				join(root, 'pnpm-workspace.yaml'),
-				"packages: [projects/*, projects/embedded-launcher/sdk, vendor/library, '!projects/excluded']\n",
+				"packages: [projects/*, projects/example/sdk, vendor/library, '!projects/excluded']\n",
 			)
 			for (const directory of [
-				'projects/embedded-launcher',
-				'projects/embedded-launcher/sdk',
-				'projects/embedded-launcher/unrelated',
+				'projects/example',
+				'projects/example/sdk',
+				'projects/example/unrelated',
 				'projects/excluded',
 				'vendor/library',
 			]) {
@@ -52,8 +53,8 @@ describe('repository package policy', () => {
 			}
 			const packages = await readRepositoryPackages(root)
 			assert.deepEqual(packages.map(({ directory }) => directory).sort(), [
-				'projects/embedded-launcher',
-				'projects/embedded-launcher/sdk',
+				'projects/example',
+				'projects/example/sdk',
 				'vendor/library',
 			])
 			assert.deepEqual(
@@ -121,6 +122,14 @@ describe('repository package policy', () => {
 	it('limits Tegami to public inventory names and their npm IDs', () => {
 		const packages = [
 			packageRecord('plugin', '@scope/public-plugin'),
+			{
+				...packageRecord('plugin', '@pluxel/plugin-external'),
+				manifest: {
+					name: '@pluxel/plugin-external',
+					version: '2.0.0',
+					repository: { url: officialPluginsRepository },
+				},
+			},
 			packageRecord('package', 'literal.name'),
 			packageRecord('package', '@scope/internal', true),
 			packageRecord('project', '@scope/app', true),
@@ -142,11 +151,16 @@ describe('repository package policy', () => {
 			'unknown-fixture',
 			'literalXname',
 			'@scope/public-plugin-extra',
+			'@pluxel/plugin-external',
 		]) {
 			assert.equal(ignored.test(name), true)
 			assert.equal(ignored.test(`npm:${name}`), true)
 		}
 		assert.equal(tegamiIgnorePattern([]).test('anything'), true)
+		assert.deepEqual(
+			releasePackageErrors([packageRecord('package', '@pluxel/core', false, '1.0.0'), packages[1]]),
+			[],
+		)
 	})
 
 	it('requires an atomic first major, then only majors newly added pre-1 packages', () => {

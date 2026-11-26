@@ -2,7 +2,7 @@ import { BasePlugin, Plugin } from '@pluxel/core'
 import { FontsPlugin } from '@pluxel/plugin-fonts'
 import { nodeModules } from '@pluxel/services/node'
 import { workers } from '@pluxel/services/workers'
-import { createTestHost } from '@pluxel/test'
+import { createTestHost, PluginLifecycleAssertionError } from '@pluxel/test'
 import { describe, expect, it } from 'vitest'
 import { TypstError, TypstPlugin } from '../src/index.ts'
 
@@ -15,14 +15,20 @@ class SvgConsumer extends BasePlugin {
 
 async function fixture(maxInputBytes?: number) {
 	const host = await createTestHost({ services: [nodeModules(), workers({ maxThreads: 1 })] })
+	const started = performance.now()
 	try {
-		await host.start(TypstPlugin, {
+		await host.start(TypstPlugin.nodeAddress(), {
 			catalog: [FontsPlugin],
 			...(maxInputBytes === undefined ? {} : { initialConfig: { maxInputBytes } }),
 		})
-		await host.start(SvgConsumer, { catalog: [FontsPlugin, TypstPlugin] })
+		await host.start(SvgConsumer.nodeAddress(), { catalog: [FontsPlugin, TypstPlugin] })
 		return host
 	} catch (error) {
+		if (error instanceof PluginLifecycleAssertionError)
+			console.error(
+				'Typst SVG fixture startup failed',
+				JSON.stringify({ elapsedMs: performance.now() - started, summary: error.summary }),
+			)
 		await host.dispose()
 		throw error
 	}
@@ -33,7 +39,7 @@ const source = '#set page(width: auto, height: auto, margin: 0pt)\n$x^2 + y^2 = 
 describe('Typst stateless SVG through its injected provider', () => {
 	it('renders independent documents through the shared Worker and keeps compile diagnostics', async () => {
 		await using host = await fixture()
-		const consumer = host.require(SvgConsumer)
+		const consumer = host.require(SvgConsumer.nodeAddress())
 		const svg = await consumer.typst.renderSvg(source)
 		expect(Buffer.from(svg).toString('utf8', 0, 64)).toContain('<svg')
 		expect(svg.byteLength).toBeGreaterThan(1_000)
@@ -49,7 +55,7 @@ describe('Typst stateless SVG through its injected provider', () => {
 
 	it('applies per-call byte limits and cancellation without closing the provider', async () => {
 		await using host = await fixture()
-		const consumer = host.require(SvgConsumer)
+		const consumer = host.require(SvgConsumer.nodeAddress())
 		await expect(consumer.typst.renderSvg(source, { maxOutputBytes: 1 })).rejects.toMatchObject({
 			code: 'LIMIT_EXCEEDED',
 		})
@@ -66,16 +72,18 @@ describe('Typst stateless SVG through its injected provider', () => {
 
 	it('rejects an inactive provider with its stable lifecycle error', async () => {
 		await using host = await fixture()
-		const typst = host.require(TypstPlugin)
-		await host.stop(SvgConsumer)
-		await host.stop(TypstPlugin)
+		const typst = host.require(TypstPlugin.nodeAddress())
+		await host.stop(SvgConsumer.nodeAddress())
+		await host.stop(TypstPlugin.nodeAddress())
 		await expect(typst.renderSvg(source)).rejects.toBeInstanceOf(TypstError)
 		await expect(typst.renderSvg(source)).rejects.toMatchObject({ code: 'CLOSED' })
 	})
 
 	it('counts UTF-8 bytes before dispatch, including non-BMP characters', async () => {
 		await using host = await fixture(3)
-		await expect(host.require(SvgConsumer).typst.renderSvg('😀')).rejects.toMatchObject({
+		await expect(
+			host.require(SvgConsumer.nodeAddress()).typst.renderSvg('😀'),
+		).rejects.toMatchObject({
 			code: 'LIMIT_EXCEEDED',
 		})
 	})

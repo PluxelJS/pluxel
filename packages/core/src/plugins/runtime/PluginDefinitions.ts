@@ -1,5 +1,4 @@
 import type { Context, PluginContext } from '../../context/Context'
-import { closeConsumerInvocations, closeOwnerInvocations } from '../../internal/owner-invocations'
 import { createErr, createOk } from 'option-t/plain_result'
 import {
 	DraftGraph,
@@ -12,6 +11,7 @@ import {
 import {
 	BasePlugin,
 	constructPluginGeneration,
+	drainPluginGeneration,
 	type PluginRequirementResolver,
 } from '../composition/BasePlugin'
 import { createCallerGenerationView } from '../composition/caller-view'
@@ -542,20 +542,7 @@ export class PluginDefinitions {
 				partContexts,
 			)
 		} catch (cause) {
-			const cleanup = (async () => {
-				await Promise.all([
-					closeOwnerInvocations(pluginContext),
-					...[...partContexts].map((ctx) => closeOwnerInvocations(ctx)),
-				])
-				try {
-					await pluginContext.effects.dispose()
-				} finally {
-					await Promise.all([
-						closeConsumerInvocations(pluginContext),
-						...[...partContexts].map((ctx) => closeConsumerInvocations(ctx)),
-					])
-				}
-			})()
+			const cleanup = drainPluginGeneration(pluginContext, partContexts)
 			throw new PluginGenerationConstructionError(cause, cleanup)
 		}
 	}
@@ -903,6 +890,7 @@ function installPluginGenerationInfo(
 			...(definition.config === undefined ? {} : { config: definition.config }),
 		}),
 	)
+	Object.preventExtensions(ctx)
 }
 
 function invalidDeclaration(nodeKey: object, message: string): GraphBuildError {

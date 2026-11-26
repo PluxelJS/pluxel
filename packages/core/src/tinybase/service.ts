@@ -1,40 +1,36 @@
 import { pluginNodeIndexKey, type PluginNodeAddress } from '../plugins/runtime/identity'
 import type { Context, PluginContext, RootContext } from '../context/Context'
-import type { CorePluginLifecycleHooks } from '../plugins/runtime/plugin-service/HostLifecycle'
-import type { HostDocumentStorage } from '../storage/documents'
-import type { FsService } from '../fs/service'
+import type { CoreStorage, CoreDocumentStorage } from '../storage/documents'
 import { pluginNodePhysicalKey } from '../internal/plugin-address'
 import { TinyBaseError } from './error'
 import { StoreWriter, runOperation } from './writer'
 import type { TinyBaseHostService, TinyBaseService, TinyBaseStatus } from './types'
 
 export class TinyBaseRuntime implements TinyBaseHostService {
-	readonly lifecycle: CorePluginLifecycleHooks
 	private readonly owners = new WeakMap<Context, StoreWriter>()
-	private readonly published = new WeakSet<Context>()
 	private readonly writers = new Map<string, StoreWriter>()
-	private readonly nodeBacking: HostDocumentStorage
+	private readonly nodeBacking: CoreDocumentStorage
+	private readonly retention: ReturnType<CoreStorage['documents']['documentRetention']>
 	private closed = false
 
 	constructor(
 		private readonly root: RootContext,
-		private readonly fs: FsService,
+		storage: CoreStorage,
 		private readonly maxBytes: number,
+		private readonly published: WeakSet<Context>,
 	) {
-		this.nodeBacking = fs.documents('services/tinybase/nodes', maxBytes)
-		this.lifecycle = {
-			prepareCommit: ({ started }) => {
-				for (const ctx of started) this.owners.get(ctx)?.preparePublication()
-			},
-			publishCommit: ({ started }) => {
-				for (const ctx of started) {
-					this.published.add(ctx)
-					this.owners.get(ctx)?.publish()
-				}
-				return undefined
-			},
-		}
+		const directory = 'services/tinybase/nodes'
+		this.nodeBacking = storage.documents.documents(directory, maxBytes)
+		this.retention = storage.documents.documentRetention(directory)
 		root.effects.defer(() => this.close(), { tag: 'TinyBase', phase: 'final' })
+	}
+
+	preparePublication(started: readonly PluginContext[]): void {
+		for (const ctx of started) this.owners.get(ctx)?.preparePublication()
+	}
+
+	publish(ctx: PluginContext): void {
+		this.owners.get(ctx)?.publish()
 	}
 
 	forOwner(ctx: Context): TinyBaseService {
@@ -45,15 +41,8 @@ export class TinyBaseRuntime implements TinyBaseHostService {
 			const key = pluginNodeIndexKey(node)
 			writer = new StoreWriter(
 				ctx as PluginContext,
-				{
-					put: (file, text) => this.nodeBacking.put(file, text),
-					stat: (file) => this.nodeBacking.stat(file),
-					getText: async (file) => {
-						// open() is a writable capability even when this particular file already exists.
-						await this.fs.directory('services/tinybase/nodes', { writable: true })
-						return this.nodeBacking.getText(file)
-					},
-				},
+				this.nodeBacking,
+				this.retention,
 				`${pluginNodePhysicalKey(node)}.json`,
 				this.maxBytes,
 				() => {

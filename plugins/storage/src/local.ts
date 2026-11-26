@@ -990,7 +990,9 @@ function objectResponse(
 			autoClose: true,
 			signal,
 		})
-		body = Readable.toWeb(stream) as ReadableStream<Uint8Array>
+		// Node uses the global Web Stream constructor, but Node and DOM/Bun BYOB
+		// declarations disagree on buffer constraints. Bridge that type boundary only.
+		body = Readable.toWeb(stream) as unknown as ReadableStream<Uint8Array>
 	}
 	const headers = new Headers(opened.header.headers)
 	headers.set('content-type', opened.header.contentType)
@@ -1019,7 +1021,7 @@ function bodyFromOpenObject(
 			autoClose: true,
 			signal,
 		}),
-	) as ReadableStream<Uint8Array>
+	) as unknown as ReadableStream<Uint8Array>
 }
 
 function multipartBody(paths: string[], signal: AbortSignal): ReadableStream<Uint8Array> {
@@ -1032,7 +1034,7 @@ function multipartBody(paths: string[], signal: AbortSignal): ReadableStream<Uin
 			}
 		})(),
 	)
-	return Readable.toWeb(source) as ReadableStream<Uint8Array>
+	return Readable.toWeb(source) as unknown as ReadableStream<Uint8Array>
 }
 
 async function hashFile(path: string): Promise<string> {

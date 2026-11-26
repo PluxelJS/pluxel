@@ -1,0 +1,76 @@
+{
+	"name": "@pluxel/agent-sdk",
+	"version": "1.1.0",
+	"description": "Source and control interface queries, in-process Host operations and Node clients for Pluxel agents.",
+	"license": "AGPL-3.0-only",
+	"repository": {
+		"type": "git",
+		"url": "https://github.com/PluxelJS/pluxel",
+		"directory": "packages/agent-sdk"
+	},
+	"files": [
+		"dist",
+		"!**/*.map"
+	],
+	"type": "module",
+	"exports": {
+		"./client": {
+			"@pluxel/source": "./src/client.ts",
+			"default": "./dist/client.mjs"
+		},
+		"./control": {
+			"@pluxel/source": "./src/control.ts",
+			"default": "./dist/control.mjs"
+		},
+		"./host": {
+			"@pluxel/source": "./src/host.ts",
+			"default": "./dist/host.mjs"
+		},
+		"./internal/cli": {
+			"@pluxel/source": "./src/internal-cli.ts",
+			"default": "./dist/internal/cli.mjs"
+		},
+		"./internal/client": {
+			"@pluxel/source": "./src/internal-client.ts",
+			"default": "./dist/internal/client.mjs"
+		},
+		"./source": {
+			"@pluxel/source": "./src/source.ts",
+			"default": "./dist/source.mjs"
+		},
+		"./package.json": "./package.json"
+	},
+	"publishConfig": {
+		"exports": {
+			"./client": "./dist/client.mjs",
+			"./control": "./dist/control.mjs",
+			"./host": "./dist/host.mjs",
+			"./internal/cli": "./dist/internal/cli.mjs",
+			"./internal/client": "./dist/internal/client.mjs",
+			"./source": "./dist/source.mjs",
+			"./package.json": "./package.json"
+		},
+		"access": "public"
+	},
+	"scripts": {
+		"build": "vp run compile",
+		"typecheck": "vp run check-types",
+		"test": "vp run check-tests"
+	},
+	"dependencies": {
+		"@pluxel/core": "workspace:^",
+		"@pluxel/host": "workspace:^",
+		"@pluxel/rolldown": "workspace:^",
+		"@pluxel/services": "workspace:^",
+		"capnweb": "catalog:prod",
+		"crossws": "catalog:prod",
+		"gunshi": "catalog:prod"
+	},
+	"devDependencies": {
+		"@types/node": "catalog:types",
+		"vite-plus": "catalog:build"
+	},
+	"engines": {
+		"node": ">=24"
+	}
+}

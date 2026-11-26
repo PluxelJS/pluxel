@@ -29,17 +29,14 @@ export function installHostPluginDiagnostics(ctx: Context): void {
 	const retained = new Map<string, readonly HostPluginLifecycleDiagnostic[]>()
 	lifecycleIssues.set(root, retained)
 	const unsubscribe = registry.subscribeCommitted((summary) => {
-		const nodes = new Map(
-			registry
-				.readCommittedDependencyAdjacency()
-				.nodes.map((node) => [pluginNodeIndexKey(node), node]),
-		)
-		for (const [key] of retained) {
-			const node = nodes.get(key)
-			if (!node || registry.isRunning(node)) retained.delete(key)
+		const newIssues = summary.lifecycleReport.issues
+		if (retained.size === 0 && newIssues.length === 0) return
+		for (const [key, diagnostics] of retained) {
+			const node = diagnostics[0]!.plugin
+			if (!registry.isMaterialized(node) || registry.isRunning(node)) retained.delete(key)
 		}
 		const failed = new Map<string, HostPluginLifecycleDiagnostic[]>()
-		for (const issue of summary.lifecycleReport.issues) {
+		for (const issue of newIssues) {
 			const address = registry.nodeAddressOf(issue.plugin)
 			const key = pluginNodeIndexKey(address)
 			const issues = failed.get(key) ?? []
@@ -53,7 +50,10 @@ export function installHostPluginDiagnostics(ctx: Context): void {
 				error: issue.error,
 			})
 		}
-		for (const [key, issues] of failed) if (nodes.has(key)) retained.set(key, Object.freeze(issues))
+		for (const [key, diagnostics] of failed) {
+			if (registry.isMaterialized(diagnostics[0]!.plugin))
+				retained.set(key, Object.freeze(diagnostics))
+		}
 	})
 	root.effects.defer(
 		() => {

@@ -13,13 +13,21 @@ export default defineConfig(() => {
 		'@pluxel/plugin-typst',
 		'@pluxel/plugin-takumi-markdown',
 		'@pluxel/plugins-host',
-		'@report-template-studio/app',
 		'@pluxel-example/typst-agent-workspace',
 	])
 	const ciPackages = packages.filter(({ manifest }) => !nativeConsumers.has(manifest.name))
+	const ciPlugins = ciPackages.filter(({ kind }) => kind === 'plugin')
+	const nativeIgnoreFlags = packages
+		.filter(({ manifest }) => nativeConsumers.has(manifest.name))
+		.map(({ directory }) => `--ignore-pattern '${directory}/**'`)
+		.join(' ')
 	// Explicit task edges avoid cycles in the publishing dependency graph.
 	const tasks: Record<string, Task> = {}
-	for (const [scope, selected] of Object.entries({ workspace: packages, ci: ciPackages })) {
+	for (const [scope, selected] of Object.entries({
+		workspace: packages,
+		ci: ciPackages,
+		plugins: ciPlugins,
+	})) {
 		for (const [script, task] of Object.entries({
 			build: 'compile',
 			typecheck: 'check-types',
@@ -29,7 +37,7 @@ export default defineConfig(() => {
 				command:
 					script === 'build'
 						? 'node scripts/check-source-declarations.mjs'
-						: script === 'typecheck'
+						: script === 'typecheck' && scope !== 'plugins'
 							? 'tsc --noEmit --pretty false -p scripts/tsconfig.json'
 							: [],
 				cache: false,
@@ -41,8 +49,7 @@ export default defineConfig(() => {
 	}
 	Object.assign(tasks, {
 		'worksplit:native:check': {
-			command:
-				'node scripts/check-worksplit-native.mjs packages/workbench plugins/render/typst projects/report-template-studio',
+			command: 'node scripts/check-worksplit-native.mjs packages/workbench plugins/render/typst',
 			dependsOn: ['@worksplit/react#compile'],
 			cache: false,
 		},
@@ -84,10 +91,7 @@ export default defineConfig(() => {
 		},
 		'ci:checks': {
 			// Formatting remains repository-wide. Typed lint needs the selected package declarations.
-			command: `vp fmt --check && vp lint --type-aware --type-check ${packages
-				.filter(({ manifest }) => nativeConsumers.has(manifest.name))
-				.map(({ directory }) => `--ignore-pattern '${directory}/**'`)
-				.join(' ')}`,
+			command: `vp fmt --check && vp lint --type-aware --type-check ${nativeIgnoreFlags}`,
 			dependsOn: ['ci:build'],
 			cache: false,
 		},
@@ -97,9 +101,6 @@ export default defineConfig(() => {
 				'vp test run --config vite.config.ts',
 				'plugins/render/typst/tests/preview.test.ts',
 				'plugins/render/typst/tests/source-navigation.test.ts',
-				'projects/report-template-studio/tests/inputs.test.ts',
-				'projects/report-template-studio/tests/discovery-acl.test.ts',
-				'projects/report-template-studio/tests/electron-shutdown.test.ts',
 			].join(' '),
 			cache: false,
 		},
@@ -112,6 +113,23 @@ export default defineConfig(() => {
 				'ci:build',
 				'ci:typecheck',
 				'ci:test',
+				'ci:smoke',
+			],
+			cache: false,
+		},
+		'plugins:checks': {
+			command: `vp fmt --check plugins && vp lint --type-aware --type-check plugins ${nativeIgnoreFlags}`,
+			dependsOn: ['plugins:build'],
+			cache: false,
+		},
+		'plugins:ci': {
+			command: [],
+			dependsOn: [
+				'plugins:checks',
+				'governance:check',
+				'plugins:build',
+				'plugins:typecheck',
+				'plugins:test',
 				'ci:smoke',
 			],
 			cache: false,

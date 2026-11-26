@@ -132,6 +132,35 @@ describe('source editor admission boundaries', () => {
 		}
 	})
 
+	it('keeps an external revision published by beforeTransaction ahead of the pending edit', () => {
+		const project = createTypstSourceProject({ files: { 'main.typ': 'Human' } })
+		const issues: TypstSourceDiagnostic[] = []
+		const editor = createTypstSourceEditor({
+			project,
+			path: 'main.typ',
+			onIssues: (value) => issues.push(...value),
+		})
+		let submitted = false
+		editor.on('beforeTransaction', ({ transaction }) => {
+			if (submitted || !transaction.docChanged) return
+			submitted = true
+			expect(project.replace({ baseRevision: 0, files: { 'main.typ': 'Agent revision' } }).ok).toBe(
+				true,
+			)
+		})
+		try {
+			editor.commands.insertContentAt(1, { type: 'text', text: 'Stale ' })
+			expect(project.snapshot()).toMatchObject({
+				revision: 1,
+				files: { 'main.typ': 'Agent revision' },
+			})
+			expect(editor.getText()).toBe('Agent revision')
+			expect(issues.at(-1)?.code).toBe('CONFLICT')
+		} finally {
+			editor.destroy()
+		}
+	})
+
 	it('keeps read-only view commands from undoing another source transaction', () => {
 		const project = createTypstSourceProject({ files: { 'main.typ': 'Human' } })
 		const editor = createTypstSourceEditor({ project, path: 'main.typ', editable: false })
@@ -144,6 +173,27 @@ describe('source editor admission boundaries', () => {
 			expect(editor.commands.redo()).toBe(false)
 			expect(project.snapshot().files['main.typ']).toBe('Agent')
 			expect(editor.getText()).toBe('Agent')
+		} finally {
+			editor.destroy()
+		}
+	})
+
+	it('uses the current project allowlist for history commands in an open view', () => {
+		const files = { 'main.typ': 'Human', 'chapter.typ': 'Chapter' }
+		const project = createTypstSourceProject({ files })
+		const editor = createTypstSourceEditor({ project, path: 'main.typ' })
+		try {
+			expect(project.replace({ baseRevision: 0, files, writablePaths: ['chapter.typ'] }).ok).toBe(
+				true,
+			)
+			expect(
+				project.apply({
+					baseRevision: 1,
+					patches: [{ path: 'chapter.typ', from: 0, to: 0, text: 'New ' }],
+				}).ok,
+			).toBe(true)
+			expect(editor.commands.undo()).toBe(false)
+			expect(project.snapshot().files['chapter.typ']).toBe('New Chapter')
 		} finally {
 			editor.destroy()
 		}

@@ -3,14 +3,14 @@ import { loadOfficialCapability } from '../capability-loader'
 import {
 	databaseCheckDefinition,
 	databaseCommandDefinition,
-	databaseCommonArgs,
+	databaseCheckArgs,
 	databaseGenerateArgs,
 	databaseGenerateDefinition,
 	databaseRebaseArgs,
 	databaseRebaseDefinition,
 } from '../command-manifest'
 
-type DatabaseCommonValues = ArgValues<typeof databaseCommonArgs>
+type DatabaseCheckValues = ArgValues<typeof databaseCheckArgs>
 type DatabaseGenerateValues = ArgValues<typeof databaseGenerateArgs>
 type DatabaseRebaseValues = ArgValues<typeof databaseRebaseArgs>
 
@@ -20,14 +20,14 @@ export const databaseGenerateCommand = define({
 		const values = ctx.values as DatabaseGenerateValues
 		const database = await loadOfficialCapability('rolldown-database')
 		await database.generateDatabaseMigrations(values)
-		ctx.log('[database] migrations generated and checksummed')
+		ctx.log(`[database] Drizzle migrations generated in ${values.out}`)
 	},
 })
 
 export const databaseCheckCommand = define({
 	...databaseCheckDefinition,
 	async run(ctx) {
-		const values = ctx.values as DatabaseCommonValues
+		const values = ctx.values as DatabaseCheckValues
 		const database = await loadOfficialCapability('rolldown-database')
 		await database.checkDatabaseMigrations(values)
 		ctx.log('[database] migration history and schema are valid')

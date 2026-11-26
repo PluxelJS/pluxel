@@ -1,6 +1,6 @@
-import { randomUUID } from 'node:crypto'
 import {
 	BasePlugin,
+	formatPluginNodeReference,
 	parsePluginNodeAddress,
 	pluginNodeIndexKey,
 	type Context,
@@ -8,6 +8,7 @@ import {
 	type PluginNodeAddress,
 	type PluginNodeSlot,
 } from '@pluxel/core'
+import { randomUUID } from 'node:crypto'
 import {
 	parseWorkbenchDeclarationIdentity,
 	parseWorkbenchOpenableIdentity,
@@ -19,6 +20,7 @@ import {
 	type WorkbenchViewDeclarationIdentity,
 } from '@pluxel/core/federation'
 import {
+	assertOwnerInvocationOpen,
 	enterOwnerInvocation,
 	getPluginGenerationContext,
 	requirePluginService,
@@ -27,8 +29,6 @@ import { RpcTarget } from 'capnweb'
 import {
 	readWorkbenchDefinition,
 	readWorkbenchDescriptor,
-	readWorkbenchMarkdownDocument,
-	readWorkbenchRendererEntry,
 	type AnyWorkbenchDefinition,
 	type WorkbenchAttachmentOpenContext,
 	type WorkbenchContentFactory,
@@ -37,10 +37,19 @@ import {
 	type WorkbenchEntry,
 	type WorkbenchPlacement,
 	type WorkbenchPrincipal,
+	type WorkbenchPublication,
 	type WorkbenchPublishBindings,
 	type WorkbenchTargetFactory,
 	type WorkbenchViewOpenContext,
 } from '../../workbench/definition.ts'
+import {
+	compileWorkbenchRoute,
+	isWorkbenchRouteParameter,
+	matchWorkbenchRoute,
+	workbenchRoutesOverlap,
+	type CompiledWorkbenchRoute,
+} from '../../workbench/routes.ts'
+import { readWorkbenchEntryLink } from '../../workbench/shortcuts.ts'
 import type {
 	WorkbenchFederatedViewRef,
 	WorkbenchFederatedViewUnavailable,
@@ -114,6 +123,7 @@ type PublishedTarget = Readonly<{
 	definition: AnyWorkbenchDefinition
 	metadata: WorkbenchDefinitionMetadata
 	entries: ReadonlyMap<string, PublishedEntry>
+	routes: readonly { key: string; compiled: CompiledWorkbenchRoute }[]
 }>
 
 type OpenCandidate = Readonly<{
@@ -173,8 +183,9 @@ export class WorkbenchRegistry {
 		owner: Context,
 		definition: Definition,
 		...bindings: WorkbenchPublishBindings<Definition>
-	): void {
+	): WorkbenchPublication<Definition> {
 		const pluginOwner = requirePluginContext(owner)
+		assertOwnerInvocationOpen(pluginOwner)
 		if (this.publicationsByContext.has(pluginOwner)) {
 			throw new Error('[workbench] a Plugin generation can publish only once')
 		}
@@ -206,6 +217,33 @@ export class WorkbenchRegistry {
 			this.withdraw(publication)
 			throw error
 		}
+		return Object.freeze<WorkbenchPublication<Definition>>({
+			link: (key, params) => {
+				assertOwnerInvocationOpen(pluginOwner)
+				if (this.publicationsByContext.get(pluginOwner) !== publication)
+					throw new Error('[workbench] this publication has been withdrawn')
+				const entry = publication.entries.get(key)
+				if (!entry || entry.kind === 'attachment') {
+					throw new TypeError(
+						`[workbench] ${formatPluginNodeReference(pluginOwner.pluginInfo.nodeAddress)} has no published tab or route "${key}"`,
+					)
+				}
+				const location = entryLinkLocation(entry.metadata.placement, params)
+				const occupiedBy =
+					location === undefined
+						? undefined
+						: publication.routes.find(({ compiled }) => compiled.path === location)?.key
+				if (occupiedBy !== undefined)
+					throw new TypeError(
+						`[workbench] link for "${key}" resolves to static route ${location} owned by ${occupiedBy}`,
+					)
+				return readWorkbenchEntryLink({
+					target: pluginOwner.pluginInfo.nodeAddress,
+					entryKey: key,
+					...(location === undefined ? {} : { location }),
+				})
+			},
+		})
 	}
 
 	subscribe(
@@ -469,11 +507,7 @@ export class WorkbenchRegistry {
 	): PublishedTarget {
 		const metadata = readWorkbenchDefinition(definition)
 		const expectedKeys = metadata.entries
-			.filter(
-				(entry) =>
-					entry.kind !== 'content' ||
-					Object.keys(readWorkbenchMarkdownDocument(entry.document).slots).length > 0,
-			)
+			.filter((entry) => entry.kind !== 'content' || Object.keys(entry.slots).length > 0)
 			.map((entry) => entry.key)
 			.sort()
 		if (expectedKeys.length === 0 && bindings.length > 0) {
@@ -508,14 +542,14 @@ export class WorkbenchRegistry {
 					const resolved = this.content.resolveContent(
 						owner.pluginInfo.definitionAddress,
 						descriptorIdentity,
-						descriptor.document,
+						descriptor.slots,
 					)
 					if (!resolved) {
 						throw new TypeError(
 							`[workbench] no committed Content artifact for Content "${descriptor.key}"`,
 						)
 					}
-					const contract = prepareWorkbenchContentContract(descriptor.document, resolved.plan)
+					const contract = prepareWorkbenchContentContract(descriptor.slots, resolved.plan)
 					const interactive = contract.presentation.slots.length > 0
 					entries.set(
 						descriptor.key,
@@ -565,6 +599,7 @@ export class WorkbenchRegistry {
 			definition,
 			metadata,
 			entries,
+			routes: compilePublishedRoutes(owner.pluginInfo.nodeAddress, entries),
 		})
 	}
 
@@ -573,44 +608,59 @@ export class WorkbenchRegistry {
 		metadata: Extract<WorkbenchDescriptorMetadata, { kind: 'attachment-placement' }>,
 		binding: unknown,
 	): PublishedAttachmentPlacement {
-		const record = readPlainRecord(binding, `bindings.${metadata.key}`)
+		const consumer = formatPluginNodeReference(owner.pluginInfo.nodeAddress)
+		const bindingPath = `${consumer} bindings.${metadata.key}`
+		const providerMetadata = readWorkbenchDescriptor(metadata.provider)
+		if (providerMetadata.kind !== 'attachment') {
+			throw new TypeError(`[workbench] ${bindingPath} has an invalid provider descriptor`)
+		}
+		const expected = `expected ${describeAttachment(providerMetadata)}`
+		const record = readPlainRecord(binding, `${bindingPath} (${expected})`)
 		const keys = Object.keys(record).sort()
 		if (
 			!sameStrings(keys, record.consumer === undefined ? ['provider'] : ['consumer', 'provider'])
 		) {
 			throw new TypeError(
-				`[workbench] bindings.${metadata.key} must contain provider and optional consumer only`,
+				`[workbench] ${bindingPath} must contain provider and optional consumer only (${expected})`,
 			)
 		}
 		if (!(record.provider instanceof BasePlugin)) {
 			throw new TypeError(
-				`[workbench] bindings.${metadata.key}.provider must be a Plugin dependency`,
+				`[workbench] ${bindingPath}.provider must be a Plugin dependency (${expected})`,
 			)
 		}
 		const providerOwner = requirePluginContext(getPluginGenerationContext(record.provider))
 		const providerSlot = providerOwner.pluginInfo.nodeSlot
+		const bound = formatPluginNodeReference(providerOwner.pluginInfo.nodeAddress)
 		if (
 			!requirePluginService(this.root)
 				.graph.depsOf(owner.pluginInfo.nodeSlot)
 				.includes(providerSlot)
 		) {
 			throw new TypeError(
-				`[workbench] bindings.${metadata.key}.provider must be a direct required dependency`,
+				`[workbench] ${bindingPath}.provider must be a direct required dependency (${expected}, bound ${bound})`,
 			)
 		}
 
-		const providerMetadata = readWorkbenchDescriptor(metadata.provider)
-		if (providerMetadata.kind !== 'attachment') {
-			throw new TypeError(`[workbench] ${metadata.key} has an invalid provider descriptor`)
-		}
 		const providerPublication = this.publicationsByContext.get(providerOwner)
 		const providerEntry = providerPublication?.entries.get(providerMetadata.key)
-		if (!providerPublication || providerEntry?.kind !== 'attachment') {
+		if (providerEntry?.kind !== 'attachment') {
+			const published = providerEntry
+				? `published a ${providerEntry.kind} with that key`
+				: `did not publish that entry`
 			throw new TypeError(
-				`[workbench] bindings.${metadata.key}.provider did not publish the required Attachment`,
+				`[workbench] ${bindingPath}.provider ${expected}, but ${bound} ${published}`,
 			)
 		}
-		assertSameRendererProvenance(providerMetadata, providerEntry.metadata)
+		const published = providerEntry.metadata
+		if (
+			providerMetadata.moduleUrl !== published.moduleUrl ||
+			providerMetadata.renderer !== published.renderer
+		) {
+			throw new TypeError(
+				`[workbench] ${bindingPath}.provider ${expected}, but ${bound} published a different declaration: ${describeAttachment(published)}`,
+			)
+		}
 
 		return Object.freeze({
 			kind: 'attachment-placement',
@@ -621,7 +671,10 @@ export class WorkbenchRegistry {
 			...(record.consumer === undefined
 				? {}
 				: {
-						consumerFactory: requireFactory(record.consumer, `bindings.${metadata.key}.consumer`),
+						consumerFactory: requireFactory(
+							record.consumer,
+							`${bindingPath}.consumer (${expected}, bound ${bound})`,
+						),
 					}),
 		})
 	}
@@ -639,7 +692,7 @@ export class WorkbenchRegistry {
 					!this.content.resolveContent(
 						candidate.owner.pluginInfo.definitionAddress,
 						descriptor,
-						entry.metadata.document,
+						entry.metadata.slots,
 					)
 				) {
 					throw new TypeError(
@@ -658,33 +711,6 @@ export class WorkbenchRegistry {
 				throw new TypeError(
 					`[workbench] no committed federation artifact for ${entry.kind} "${entry.metadata.key}"`,
 				)
-			}
-		}
-
-		const exactRoutes = new Map<string, string>()
-		const parameterized: Array<{ path: string; owner: string }> = []
-		for (const entry of candidate.entries.values()) {
-			if (entry.kind === 'attachment') continue
-			const placement = entry.metadata.placement
-			if (placement.kind !== 'route') continue
-			const owner = `${pluginNodeIndexKey(candidate.owner.pluginInfo.nodeAddress)}:${entry.metadata.key}`
-			if (placement.path.includes('/:')) {
-				for (const existing of parameterized) {
-					if (routePatternsOverlap(existing.path, placement.path)) {
-						throw new TypeError(
-							`[workbench] ambiguous parameterized routes: ${existing.path} (${existing.owner}) and ${placement.path} (${owner})`,
-						)
-					}
-				}
-				parameterized.push({ path: placement.path, owner })
-			} else {
-				const existing = exactRoutes.get(placement.path)
-				if (existing) {
-					throw new TypeError(
-						`[workbench] duplicate exact route ${placement.path}: ${existing} and ${owner}`,
-					)
-				}
-				exactRoutes.set(placement.path, owner)
 			}
 		}
 
@@ -742,7 +768,7 @@ export class WorkbenchRegistry {
 			const resolved = this.content.resolveContent(
 				target.owner.pluginInfo.definitionAddress,
 				descriptor,
-				entry.metadata.document,
+				entry.metadata.slots,
 			)
 			if (!resolved) return null
 			return Object.freeze({
@@ -870,14 +896,14 @@ export class WorkbenchRegistry {
 		const layoutEntry = this.layoutEntry(target, metadata)
 		if (!layoutEntry) return null
 		if (!workbenchOpenableIdentityEqual(layoutEntry.descriptor, input.descriptor)) return null
-		const params = matchPlacement(metadata.metadata.placement, input.location)
+		const params = matchPublishedEntry(target, metadata, input.location)
 		if (!params) return null
 		if (metadata.kind === 'content') {
 			if (layoutEntry.descriptor.kind !== 'content') return null
 			const content = this.content.resolveContent(
 				target.owner.pluginInfo.definitionAddress,
 				layoutEntry.descriptor,
-				metadata.metadata.document,
+				metadata.metadata.slots,
 			)
 			if (!content) return null
 			return Object.freeze({ target, entry: metadata, layoutEntry, params, content })
@@ -1115,58 +1141,87 @@ function readPlainRecord(value: unknown, label: string): Record<string, any> {
 	return value as Record<string, any>
 }
 
-function assertSameRendererProvenance(
-	placed: Extract<WorkbenchDescriptorMetadata, { kind: 'attachment' }>,
-	published: Extract<WorkbenchDescriptorMetadata, { kind: 'attachment' }>,
-): void {
-	const left = readWorkbenchRendererEntry(placed.renderer)
-	const right = readWorkbenchRendererEntry(published.renderer)
-	if (left.moduleUrl !== right.moduleUrl || left.entryPath !== right.entryPath) {
-		throw new TypeError('[workbench] placed Attachment does not belong to the bound provider')
-	}
+function describeAttachment(
+	entry: Extract<WorkbenchDescriptorMetadata, { kind: 'attachment' }>,
+): string {
+	const url = new URL(entry.moduleUrl)
+	return `Attachment "${entry.key}" from ${url.protocol}//${url.host}${url.pathname} (renderer ${entry.renderer})`
 }
 
-function matchPlacement(
+function entryLinkLocation(
 	placement: WorkbenchPlacement,
+	params: Readonly<Record<string, string>> | undefined,
+): string | undefined {
+	if (placement.kind === 'panel')
+		throw new TypeError('[workbench] panels cannot be linked as documents')
+	if (placement.kind === 'tab') {
+		if (params !== undefined)
+			throw new TypeError('[workbench] tab links do not take route parameters')
+		return undefined
+	}
+	const values = params === undefined ? {} : readPlainRecord(params, 'link parameters')
+	const remaining = new Set(Object.keys(values))
+	const segments = placement.path.split('/')
+	const parameterized = placement.path.includes('/:')
+	for (let index = 1; index < segments.length; index++) {
+		const segment = segments[index]!
+		if (!segment.startsWith(':')) continue
+		const key = segment.slice(1)
+		if (!remaining.delete(key))
+			throw new TypeError(`[workbench] link for ${placement.path} requires parameter "${key}"`)
+		const value: unknown = values[key]
+		if (!isWorkbenchRouteParameter(value))
+			throw new TypeError(
+				`[workbench] invalid value for route parameter "${key}" in ${placement.path}`,
+			)
+		segments[index] = encodeURIComponent(value)
+	}
+	if (remaining.size > 0)
+		throw new TypeError(
+			`[workbench] link for ${placement.path} has unexpected parameter "${remaining.values().next().value}"`,
+		)
+	return parameterized ? segments.join('/') : undefined
+}
+
+function compilePublishedRoutes(
+	owner: PluginNodeAddress,
+	entries: ReadonlyMap<string, PublishedEntry>,
+): PublishedTarget['routes'] {
+	const routes: { key: string; compiled: CompiledWorkbenchRoute }[] = []
+	for (const [key, entry] of entries) {
+		if (entry.kind === 'attachment' || entry.metadata.placement.kind !== 'route') continue
+		const compiled = compileWorkbenchRoute(entry.metadata.placement.path)
+		const parameterized = compiled.staticSegments < compiled.segments.length
+		const conflict = routes.find(({ compiled: other }) =>
+			parameterized
+				? other.staticSegments < other.segments.length && workbenchRoutesOverlap(other, compiled)
+				: other.path === compiled.path,
+		)
+		if (conflict) {
+			const reason = parameterized ? 'ambiguous parameterized routes' : 'duplicate exact route'
+			throw new TypeError(
+				`[workbench] ${reason} on ${formatPluginNodeReference(owner)}: ${conflict.key} (${conflict.compiled.path}) and ${key} (${compiled.path})`,
+			)
+		}
+		routes.push({ key, compiled })
+	}
+	// A concrete declaration takes precedence over a parameter in the same slot.
+	return routes.sort((left, right) => right.compiled.staticSegments - left.compiled.staticSegments)
+}
+
+function matchPublishedEntry(
+	target: PublishedTarget,
+	entry: Exclude<PublishedEntry, PublishedAttachment>,
 	location: string | undefined,
 ): Readonly<Record<string, string>> | null {
-	if (placement.kind !== 'route') return location === undefined ? Object.freeze({}) : null
-	if (typeof location !== 'string' || !location.startsWith('/') || location.includes('?'))
-		return null
-	const expected = placement.path.split('/').slice(1)
-	const actual = location.replace(/\/+$/, '').split('/').slice(1)
-	if (expected.length !== actual.length) return null
-	const params: Record<string, string> = {}
-	for (let index = 0; index < expected.length; index += 1) {
-		const pattern = expected[index]!
-		const segment = actual[index]!
-		if (!segment) return null
-		if (!pattern.startsWith(':')) {
-			if (pattern !== segment) return null
-			continue
-		}
-		let decoded: string
-		try {
-			decoded = decodeURIComponent(segment)
-		} catch {
-			return null
-		}
-		if (!decoded || decoded.includes('/') || decoded.includes('\\') || decoded.length > 512) {
-			return null
-		}
-		params[pattern.slice(1)] = decoded
+	if (entry.metadata.placement.kind !== 'route')
+		return location === undefined ? Object.freeze({}) : null
+	if (location === undefined) return null
+	for (const { compiled, key } of target.routes) {
+		const params = matchWorkbenchRoute(compiled, location)
+		if (params) return key === entry.metadata.key ? params : null
 	}
-	return Object.freeze(params)
-}
-
-function routePatternsOverlap(left: string, right: string): boolean {
-	const leftSegments = left.split('/').slice(1)
-	const rightSegments = right.split('/').slice(1)
-	if (leftSegments.length !== rightSegments.length) return false
-	return leftSegments.every((segment, index) => {
-		const other = rightSegments[index]!
-		return segment.startsWith(':') || other.startsWith(':') || segment === other
-	})
+	return null
 }
 
 function compareLayoutEntries(left: WorkbenchLayoutEntry, right: WorkbenchLayoutEntry): number {

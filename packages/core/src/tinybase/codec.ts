@@ -1,5 +1,6 @@
 import { pluginNodeAddressEqual, parsePluginNodeAddress } from '../plugins/runtime/identity'
-import type { Content } from 'tinybase'
+import type { Content, Row, Store, Table, Tables, Values } from 'tinybase'
+import { exceedsUtf8Budget } from '../storage/documents'
 import { TinyBaseError } from './error'
 import type { TinyBaseIdentity } from './types'
 
@@ -24,11 +25,19 @@ function record(value: unknown): value is Record<string, unknown> {
 	)
 }
 
-function scalar(value: unknown): boolean {
+function scalar(value: unknown): value is string | boolean | number {
 	return (
 		typeof value === 'string' ||
 		typeof value === 'boolean' ||
 		(typeof value === 'number' && Number.isFinite(value))
+	)
+}
+
+function invalidContent(identity: TinyBaseIdentity): TinyBaseError {
+	return new TinyBaseError(
+		'SNAPSHOT_INVALID',
+		'Content must contain Tables and Values of strings, booleans and finite numbers.',
+		identity,
 	)
 }
 
@@ -48,11 +57,7 @@ export function assertContent(
 				Object.values(table).every((row) => record(row) && Object.values(row).every(scalar)),
 		)
 	)
-		throw new TinyBaseError(
-			'SNAPSHOT_INVALID',
-			'Content must contain Tables and Values of strings, booleans and finite numbers.',
-			identity,
-		)
+		throw invalidContent(identity)
 }
 
 /** Content equality ignores key order and treats signed zero according to JSON number semantics. */
@@ -81,6 +86,39 @@ export function encodeSnapshot(
 	maxBytes: number,
 ): string {
 	assertContent(content, identity)
+	return serializeSnapshot(identity, content, maxBytes)
+}
+
+/** Capture a native Store in one walk, validating cells and values as they are read. */
+export function encodeStoreSnapshot(
+	identity: TinyBaseIdentity,
+	store: Store,
+	maxBytes: number,
+): string {
+	const tables: Tables = Object.create(null)
+	const values: Values = Object.create(null)
+	const readScalar = (value: unknown) => {
+		if (!scalar(value)) throw invalidContent(identity)
+		return value
+	}
+	store.forEachTable((tableId, forEachRow) => {
+		const table: Table = Object.create(null)
+		tables[tableId] = table
+		forEachRow((rowId, forEachCell) => {
+			const row: Row = Object.create(null)
+			table[rowId] = row
+			forEachCell((cellId, value) => {
+				row[cellId] = readScalar(value)
+			})
+		})
+	})
+	store.forEachValue((valueId, value) => {
+		values[valueId] = readScalar(value)
+	})
+	return serializeSnapshot(identity, [tables, values], maxBytes)
+}
+
+function serializeSnapshot(identity: TinyBaseIdentity, content: Content, maxBytes: number): string {
 	const envelope: Envelope = { format: 'pluxel.tinybase', formatVersion: 1, identity, content }
 	const text = `${JSON.stringify(envelope)}\n`
 	assertBudget(text, identity, maxBytes)
@@ -116,7 +154,7 @@ export function decodeSnapshot(
 }
 
 function assertBudget(text: string, identity: TinyBaseIdentity, maxBytes: number): void {
-	if (new TextEncoder().encode(text).byteLength > maxBytes)
+	if (exceedsUtf8Budget(text, maxBytes))
 		throw new TinyBaseError(
 			'BUDGET_EXCEEDED',
 			`Snapshot exceeds ${maxBytes} UTF-8 bytes.`,

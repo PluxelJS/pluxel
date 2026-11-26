@@ -32,7 +32,7 @@ describe('@pnpm/napi adapter', () => {
 describe.runIf(process.env.PLUXEL_PNPM_NATIVE_INTEGRATION === '1')(
 	'native registry integration',
 	() => {
-		it('installs, publishes, and removes a real registry package', async () => {
+		it('rejects an ordinary npm library before publishing a managed entry', async () => {
 			const rootDir = await mkdtemp(resolve(tmpdir(), 'pluxel-pnpm-native-'))
 			roots.push(rootDir)
 			const store = new ManagedPackageStore(await loadPnpmEngine(), {
@@ -44,20 +44,15 @@ describe.runIf(process.env.PLUXEL_PNPM_NATIVE_INTEGRATION === '1')(
 			await store.initialize()
 
 			const installed = await store.install(['is-number@7.0.0'])
-			expect(installed).toEqual({ ok: true, succeeded: ['is-number'], failed: [] })
+			expect(installed).toMatchObject({
+				ok: false,
+				succeeded: [],
+				failed: [{ message: expect.stringContaining('@pluxel/core') }],
+			})
 			const snapshot = await store.snapshot()
-			expect(snapshot.packages).toEqual([
-				expect.objectContaining({
-					name: 'is-number',
-					installedVersion: '7.0.0',
-					entryFile: expect.stringMatching(/\.mjs$/),
-				}),
-			])
-			expect(await readdir(snapshot.entriesDir)).toHaveLength(1)
-
-			const removed = await store.remove(['is-number'])
-			expect(removed).toEqual({ ok: true, succeeded: ['is-number'], failed: [] })
+			expect(snapshot.packages).toEqual([])
 			expect(await readdir(snapshot.entriesDir)).toEqual([])
+			await store.close()
 		}, 60_000)
 	},
 )
@@ -76,7 +71,13 @@ it('consumes published installs and withdrawals only in a fresh native process',
 		await mkdir(resolve(directory, 'package'), { recursive: true })
 		await writeFile(
 			resolve(directory, 'package/package.json'),
-			JSON.stringify({ name, version: '1.0.0', type: 'module', exports: './index.mjs' }),
+			JSON.stringify({
+				name,
+				version: '1.0.0',
+				peerDependencies: { '@pluxel/core': '*' },
+				type: 'module',
+				exports: './index.mjs',
+			}),
 		)
 		await writeFile(
 			resolve(directory, 'package/index.mjs'),
@@ -141,7 +142,6 @@ export { Dynamic }
 		minimumReleaseAgeMinutes: 0,
 	})
 	let child: ReturnType<typeof fork> | undefined
-	let observed: { running: boolean[]; errors: unknown[] } | undefined
 	let diagnostics = ''
 	try {
 		await store.initialize()
@@ -152,7 +152,7 @@ export { Dynamic }
 		// Missing definitions are accepted; an installed Plugin must still start successfully.
 		await writeFile(
 			resolve(root, 'app.mjs'),
-			`export default () => ({plugins:[],sources:[{kind:'directory',path:${JSON.stringify(store.entriesDir)},include:['*.mjs']}],policy:{autoStart:${JSON.stringify(names.map(address))}},acceptStartup:({status})=>status.statuses.every(node=>node.desiredState!=='running'||node.availability==='unavailable'||node.lifecycleState==='running')})`,
+			`export default () => ({sources:[{directory:${JSON.stringify(store.entriesDir)},include:['*.mjs']}],pluginNodes:${JSON.stringify(names.map((name) => ({ definition: address(name).definition, autoStart: true })))},acceptStartup:({status})=>status.statuses.every(node=>node.desiredState!=='running'||node.availability==='unavailable'||node.lifecycleState==='running')})`,
 		)
 		await writeFile(
 			script,
@@ -170,17 +170,20 @@ report()
 `,
 		)
 		const launch = async () => {
-			observed = undefined
 			child = fork(script, { execArgv: [], silent: true })
 			child.stderr?.on('data', (chunk) => {
 				diagnostics += String(chunk)
 			})
-			child.on('message', (message) => {
-				observed = message as typeof observed
-			})
-			await expect
-				.poll(() => ({ ready: observed !== undefined, diagnostics }))
-				.toEqual({ ready: true, diagnostics: '' })
+			const [report] = await Promise.race([
+				once(child, 'message'),
+				once(child, 'exit').then(([code, signal]) => {
+					throw new Error(
+						`Host exited before sending its report (${code ?? signal}): ${diagnostics}`,
+					)
+				}),
+			])
+			expect(diagnostics).toBe('')
+			return report
 		}
 		const query = async () => {
 			const message = new Promise((received) => child!.once('message', received))
@@ -195,8 +198,7 @@ report()
 			child = undefined
 			expect({ code, signal }).toEqual({ code: 0, signal: null })
 		}
-		await launch()
-		expect(observed).toEqual({ running: [false, false], errors: [] })
+		expect(await launch()).toEqual({ running: [false, false], errors: [] })
 		expect(await store.install(names.map((name) => `${name}@1.0.0`))).toEqual({
 			ok: true,
 			succeeded: names,
@@ -204,8 +206,7 @@ report()
 		})
 		expect(await query()).toEqual({ running: [false, false], errors: [] })
 		await stop()
-		await launch()
-		expect(observed).toEqual({ running: [true, true], errors: [] })
+		expect(await launch()).toEqual({ running: [true, true], errors: [] })
 		const snapshot = await store.snapshot()
 		const retained = snapshot.packages.find((pkg) => pkg.name === names[1])!
 		const path = resolve(store.entriesDir, retained.entryFile!)
@@ -214,8 +215,7 @@ report()
 		expect(await query()).toEqual({ running: [true, true], errors: [] })
 		expect(await stat(path)).toMatchObject({ ino: before.ino, mtimeMs: before.mtimeMs })
 		await stop()
-		await launch()
-		expect(observed).toEqual({ running: [false, true], errors: [] })
+		expect(await launch()).toEqual({ running: [false, true], errors: [] })
 		await stop()
 	} finally {
 		if (child?.connected) {

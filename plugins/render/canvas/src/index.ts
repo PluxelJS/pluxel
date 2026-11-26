@@ -1,3 +1,4 @@
+import type { Workbench } from '@pluxel/workbench'
 import type { PreparedText, PreparedTextWithSegments } from '@chenglou/pretext'
 import type { PreparedRichInline } from '@chenglou/pretext/rich-inline'
 import {
@@ -18,7 +19,7 @@ import {
 	type SvgCanvas,
 } from '@napi-rs/canvas'
 import { FontsPlugin, type DefaultFontSnapshot } from '@pluxel/plugin-fonts'
-import { BasePlugin, Plugin, type Context } from '@pluxel/core'
+import { BasePlugin, Plugin, type Context, defineServiceRef } from '@pluxel/core'
 import { CanvasConfig, type CanvasPluginConfig } from './config.ts'
 import {
 	CanvasError,
@@ -40,6 +41,7 @@ import { DecodeScheduler, type DecodeSchedulerOwner } from './decode-scheduler.t
 import { assertCanvasDimensions, resolveImageDataOwnership } from './worker-internal.ts'
 import { CanvasWorkbench } from './workbench.ts'
 
+const WorkbenchRef = defineServiceRef<Workbench>()
 const GENERIC_FONT_FAMILIES = new Set(['serif', 'sans-serif', 'monospace'])
 
 type CanvasGeneration = Readonly<{
@@ -118,7 +120,7 @@ export class CanvasPlugin extends BasePlugin {
 			},
 			{ tag: 'canvas-generation' },
 		)
-		this.ctx.workbench?.publish(CanvasWorkbench, {
+		this.ctx.service(WorkbenchRef)?.publish(CanvasWorkbench, {
 			fonts: { provider: this.fonts },
 		})
 	}

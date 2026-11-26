@@ -2,9 +2,8 @@ import * as nativeFs from 'node:fs'
 import { mkdtemp, readdir, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import { BasePlugin, Plugin } from '@pluxel/core'
+import { BasePlugin, Plugin, parsePluginNodeAddress } from '@pluxel/core'
 import { createTestHost } from '@pluxel/test'
-import { standardServices } from '@pluxel/services'
 import { Passthrough, type FsConfig } from '@pluxel/core/fs'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { Cache, CachePlugin, MemoryCacheBackendPlugin } from '../src/index.ts'
@@ -50,26 +49,21 @@ async function withPersistentCache(
 		...(options.flushIntervalMs === undefined ? {} : { flushIntervalMs: options.flushIntervalMs }),
 	}
 	await using host = await createTestHost({
-		services: standardServices(),
-		config: {
-			records: [
-				{
-					owner: MemoryCacheBackendPlugin.nodeAddress(),
-					config: {
-						...(options.maxEntries === undefined ? {} : { maxEntries: options.maxEntries }),
-						persistence,
-					},
-				},
-			],
-		},
-		runtime: { zenfs: storage, documents: { config: false } },
+		services: [],
+		coreConfig: { zenfs: storage },
+		config: { document: false },
 	})
 	await host.commit((change) => {
-		change.start(MemoryCacheBackendPlugin)
-		change.start(CachePlugin)
-		change.start(PersistentCacheConsumer)
+		change.start(MemoryCacheBackendPlugin.nodeAddress(), {
+			initialConfig: {
+				...(options.maxEntries === undefined ? {} : { maxEntries: options.maxEntries }),
+				persistence,
+			},
+		})
+		change.start(CachePlugin.nodeAddress())
+		change.start(PersistentCacheConsumer.nodeAddress())
 	})
-	await fn(host.require(PersistentCacheConsumer).cache)
+	await fn(host.require(PersistentCacheConsumer.nodeAddress()).cache)
 }
 
 describe('MemoryCacheBackendPlugin persistence', () => {
@@ -127,10 +121,9 @@ describe('MemoryCacheBackendPlugin persistence', () => {
 
 	it('writes a newer revision when delete races an in-flight atomic replacement', async () => {
 		const storage = await durableStorage()
-		let releaseFirstWrite!: () => void
-		const firstWriteGate = new Promise<void>((resolve) => {
-			releaseFirstWrite = resolve
-		})
+		const firstWrite = Promise.withResolvers<void>()
+		const releaseFirstWrite = Promise.withResolvers<void>()
+		const secondWrite = Promise.withResolvers<void>()
 		let snapshotWrites = 0
 		const instrumented = {
 			...storage,
@@ -142,49 +135,51 @@ describe('MemoryCacheBackendPlugin persistence', () => {
 						promises: {
 							...nativeFs.promises,
 							async rename(from: nativeFs.PathLike, to: nativeFs.PathLike) {
-								if (String(to).endsWith('/memory-backend.snapshot')) {
-									snapshotWrites++
-									if (snapshotWrites === 1) await firstWriteGate
+								if (!String(to).endsWith('/memory-backend.snapshot')) {
+									return nativeFs.promises.rename(from, to)
+								}
+								const revision = ++snapshotWrites
+								if (revision === 1) {
+									firstWrite.resolve()
+									await releaseFirstWrite.promise
 								}
 								await nativeFs.promises.rename(from, to)
+								if (revision === 2) secondWrite.resolve()
 							},
 						},
 					},
 				},
 			},
 		}
-		try {
-			await withPersistentCache(
-				instrumented,
-				async (cache) => {
+		await withPersistentCache(
+			instrumented,
+			async (cache) => {
+				try {
 					await cache.set('racing', 'stale', { ttlMs: 0 })
-					await vi.waitFor(() => expect(snapshotWrites).toBe(1))
+					await firstWrite.promise
 					await cache.delete('racing')
-					releaseFirstWrite()
-					await vi.waitFor(() => expect(snapshotWrites).toBe(2))
-				},
-				{ flushIntervalMs: 0 },
-			)
-		} finally {
-			releaseFirstWrite()
-		}
+				} finally {
+					releaseFirstWrite.resolve()
+				}
+				await secondWrite.promise
+			},
+			{ flushIntervalMs: 0 },
+		)
 		await withPersistentCache(storage, async (cache) => {
 			expect(await cache.get('racing')).toBeUndefined()
 		})
 	})
 
 	it('fails lifecycle honestly when durable storage is unavailable', async () => {
-		await using host = await createTestHost({
-			services: standardServices(),
-		})
+		await using host = await createTestHost()
 		const failure = await host.commitExpectFail((change) => {
-			change.start(MemoryCacheBackendPlugin, {
+			change.start(MemoryCacheBackendPlugin.nodeAddress(), {
 				initialConfig: { maxEntries: 10, persistence: { mode: 'durable', flushIntervalMs: 1_000 } },
 			})
 		})
 		expect(failure.lifecycleReport.issues).toContainEqual(
 			expect.objectContaining({
-				plugin: MemoryCacheBackendPlugin.nodeAddress(),
+				plugin: parsePluginNodeAddress(MemoryCacheBackendPlugin.nodeAddress()),
 				kind: 'start-failed',
 				message: expect.stringMatching(/durable|ephemeral/i),
 			}),
@@ -216,17 +211,19 @@ describe('MemoryCacheBackendPlugin persistence', () => {
 			},
 		}
 		await using host = await createTestHost({
-			services: standardServices(),
-			runtime: { zenfs: instrumented, documents: { config: false, state: false } },
+			services: [],
+			coreConfig: { zenfs: instrumented },
+			config: { document: false },
+			policy: { document: false },
 		})
 		const failure = await host.commitExpectFail((change) => {
-			change.start(MemoryCacheBackendPlugin, {
+			change.start(MemoryCacheBackendPlugin.nodeAddress(), {
 				initialConfig: { maxEntries: 10, persistence: { mode: 'durable', flushIntervalMs: 1_000 } },
 			})
 		})
 		expect(failure.lifecycleReport.issues).toContainEqual(
 			expect.objectContaining({
-				plugin: MemoryCacheBackendPlugin.nodeAddress(),
+				plugin: parsePluginNodeAddress(MemoryCacheBackendPlugin.nodeAddress()),
 				kind: 'start-failed',
 				message: expect.stringContaining('could not be restored'),
 			}),

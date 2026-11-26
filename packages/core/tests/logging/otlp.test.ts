@@ -13,7 +13,6 @@ import { createServer } from 'node:http'
 import { once } from 'node:events'
 import { expect, it, vi } from 'vitest'
 import type { RuntimeLoggingInput } from '@pluxel/core/logging'
-import { logtape } from '@pluxel/core/config'
 
 @Plugin()
 class RemoteLoggedOwner extends BasePlugin {
@@ -86,8 +85,8 @@ it.each([
 		const sink = getOpenTelemetrySink({ loggerProvider: provider })
 		try {
 			const host = await createHost({
-				plugins: [RemoteLoggedOwner],
-				runtime: { logtape: logtape(plan(sink)) },
+				plugins: [{ plugin: RemoteLoggedOwner }],
+				coreConfig: { logtape: plan(sink) },
 				services: [],
 			})
 			try {
@@ -134,11 +133,11 @@ it('disposes the native sink once when a later Host service fails to prepare', a
 		await expect(
 			createHost({
 				plugins: [],
-				runtime: { logtape: logtape(plan(sink)) },
+				coreConfig: { logtape: plan(sink) },
 				services: [
 					defineHostService({
 						name: 'FailAfterLogging',
-						capabilities: [],
+						provides: [],
 						prepare() {
 							throw new Error('fixture prepare failed')
 						},

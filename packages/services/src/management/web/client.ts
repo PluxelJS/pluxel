@@ -1,4 +1,4 @@
-import type { HostConfigState, HostPolicyInput, HostPolicyField } from '@pluxel/host'
+import type { HostConfigState, HostPolicyPatch, HostPolicyResetTarget } from '@pluxel/host'
 import {
 	cloneRuntimeUpdateSnapshot,
 	type RuntimeUpdateSnapshot,
@@ -18,6 +18,7 @@ import {
 	type PolicyResult,
 	type EnsureForkResult,
 	type LoggingHandleApi,
+	type OutboundHttpHandleApi,
 	type PluginAutoStartBatchItem,
 	type PluginConsumerRequirementsInspectionResult,
 	type PluginControlBatchResult,
@@ -52,6 +53,8 @@ import {
 	parseEnsureForkResult,
 	parseLogRangeResult,
 	parseLogStreamMeta,
+	parseOutboundHttpSaveResult,
+	parseOutboundHttpSnapshot,
 	parsePluginConsumerRequirementsInspectionResult,
 	parsePluginControlBatchResult,
 	parsePluginDependencyGraphSnapshot,
@@ -71,7 +74,16 @@ import {
 	parseVaultPublicKeyResult,
 	parseVersionedPluginLogPolicySnapshot,
 } from './management-validation'
-import { parseRuntimeMeta } from './validation'
+import { parseRuntimeMeta, validateRuntimePortableData } from './validation'
+import {
+	parsePluginControlManifestIndex,
+	parsePluginControlFileChunk,
+	ScriptExecutionError,
+	type PluginControlManifestIndex,
+	type PluginControlManifestRequest,
+	type PluginControlFileRequest,
+	type PluginControlFileChunk,
+} from '@pluxel/host/internal/agent/runtime'
 
 export type { RuntimeLogFollowInput, RuntimeLogRangeQuery, RuntimeLogStreamsIndex }
 
@@ -88,6 +100,10 @@ export type RuntimeLogClient = Readonly<{
 /** Framework-neutral facade over one borrowed Management capability from the page session. */
 export type RuntimeManagementClient = Readonly<{
 	describe(): Promise<RuntimeMeta>
+	materials: Readonly<{
+		manifest(input?: PluginControlManifestRequest): Promise<PluginControlManifestIndex>
+		file(input: PluginControlFileRequest): Promise<PluginControlFileChunk>
+	}>
 	updates: Readonly<{
 		snapshot(): Promise<RuntimeUpdateSnapshot | null>
 		follow(
@@ -135,10 +151,10 @@ export type RuntimeManagementClient = Readonly<{
 	}>
 	policy: Readonly<{
 		get(): Promise<PolicyResult>
-		validate(values: HostPolicyInput): Promise<PolicyResult>
-		patch(values: HostPolicyInput, options?: ManagedInputMutationOptions): Promise<PolicyResult>
+		validate(values: HostPolicyPatch): Promise<PolicyResult>
+		patch(values: HostPolicyPatch, options?: ManagedInputMutationOptions): Promise<PolicyResult>
 		reset(
-			keys?: readonly HostPolicyField[],
+			targets?: readonly HostPolicyResetTarget[],
 			options?: ManagedInputMutationOptions,
 		): Promise<PolicyResult>
 	}>
@@ -184,6 +200,7 @@ export type RuntimeManagementClient = Readonly<{
 		): Promise<RemoveForkResult>
 	}>
 	logging: Readonly<LoggingHandleApi>
+	outboundHttp: OutboundHttpHandleApi
 	logs: RuntimeLogClient
 	security: RuntimeSecurityClient
 }>
@@ -199,6 +216,18 @@ export function createRuntimeManagementClient(
 
 	const client: RuntimeManagementClient = {
 		describe: () => call((root) => root.describeDto(), parseRuntimeMeta),
+		materials: Object.freeze({
+			manifest: (input) =>
+				call(
+					(root) => root.pluginControlManifestDto(input),
+					(value) => materialResponse(value, parsePluginControlManifestIndex),
+				),
+			file: (input) =>
+				call(
+					(root) => root.pluginControlFileDto(input),
+					(value) => materialResponse(value, parsePluginControlFileChunk),
+				),
+		}),
 		updates: Object.freeze({
 			snapshot: () => call((root) => root.runtimeUpdateDto(), cloneRuntimeUpdateSnapshot),
 			follow: async (observer) => {
@@ -262,8 +291,8 @@ export function createRuntimeManagementClient(
 			validate: (values) => call((root) => root.validateHostPolicyDto(values), parsePolicyResult),
 			patch: (values, options) =>
 				call((root) => root.patchHostPolicyDto(values, options), parsePolicyResult),
-			reset: (keys, options) =>
-				call((root) => root.resetHostPolicyDto(keys, options), parsePolicyResult),
+			reset: (targets, options) =>
+				call((root) => root.resetHostPolicyDto(targets, options), parsePolicyResult),
 		}),
 		dependencies: Object.freeze({
 			graph: () =>
@@ -324,6 +353,14 @@ export function createRuntimeManagementClient(
 					parseVersionedPluginLogPolicySnapshot,
 				),
 		}),
+		outboundHttp: Object.freeze({
+			get: (owner) => call((root) => root.getOutboundHttpDto(owner), parseOutboundHttpSnapshot),
+			save: (owner, expectedRevision, settings) =>
+				call(
+					(root) => root.saveOutboundHttpDto(owner, expectedRevision, settings),
+					parseOutboundHttpSaveResult,
+				),
+		}),
 		logs: Object.freeze({
 			streams: () => call((root) => root.logStreamsDto(), parseRuntimeLogStreamsIndex),
 			meta: (streamId) => call((root) => root.logMetaDto(streamId), parseLogStreamMeta),
@@ -356,6 +393,34 @@ export function createRuntimeManagementClient(
 		}),
 	}
 	return Object.freeze(client)
+}
+
+function materialResponse<T>(input: unknown, parse: (value: unknown) => T): T {
+	validateRuntimePortableData(input, 'control material response')
+	if (!input || typeof input !== 'object' || Array.isArray(input))
+		throw new TypeError('Invalid control material response')
+	const value = input as Record<string, unknown>
+	if (value.ok === true && Object.keys(value).length === 2 && Object.hasOwn(value, 'value'))
+		return parse(value.value)
+	if (
+		value.ok === false &&
+		Object.keys(value).length === 2 &&
+		value.error &&
+		typeof value.error === 'object'
+	) {
+		const error = value.error as Record<string, unknown>
+		if (
+			typeof error.code === 'string' &&
+			typeof error.message === 'string' &&
+			Object.keys(error).every((key) => ['code', 'message', 'stack'].includes(key)) &&
+			(error.stack === undefined || typeof error.stack === 'string')
+		) {
+			const failure = new ScriptExecutionError(error.code, error.message)
+			if (typeof error.stack === 'string') failure.stack = error.stack
+			throw failure
+		}
+	}
+	throw new TypeError('Invalid control material response envelope')
 }
 
 async function readPortableResult<T>(

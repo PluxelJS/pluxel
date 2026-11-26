@@ -1,5 +1,5 @@
 import { type PluginConstructor, BasePlugin, Plugin } from '@pluxel/core'
-import { standardServices } from '@pluxel/services'
+import { elysia } from '@pluxel/services/elysia'
 import { createTestHost, type TestHost, type RawPluginConfig } from '@pluxel/test'
 import * as v from 'valibot'
 import { describe, expect, it } from 'vitest'
@@ -36,8 +36,8 @@ async function startCanvasFixture(
 ): Promise<void> {
 	await host.commit((change) => {
 		change.catalog.add(plugins)
-		if (initialConfig !== undefined) change.config.seed(CanvasPlugin, initialConfig)
-		change.start(plugins)
+		if (initialConfig !== undefined) change.config.seed(CanvasPlugin.nodeAddress(), initialConfig)
+		change.start(plugins.map((plugin) => plugin.nodeAddress()))
 	})
 }
 
@@ -45,11 +45,9 @@ const discoveredFamily = GlobalFonts.families[0]?.family
 
 describe('CanvasPlugin', () => {
 	it('demonstrates recoverable upload rejection without treating cancellation or withdrawal as an invalid image', async () => {
-		await using host = await createTestHost({
-			services: standardServices(),
-		})
+		await using host = await createTestHost()
 		await startCanvasFixture(host, [FontsPlugin, CanvasPlugin, CanvasTestConsumer])
-		const canvas = host.require(CanvasTestConsumer).canvas
+		const canvas = host.require(CanvasTestConsumer.nodeAddress()).canvas
 		const bytes = await canvas.createCanvasSync(2, 2).encode('png')
 		const image = await decodeUpload(canvas, bytes)
 		expect(image.isOk()).toBe(true)
@@ -61,7 +59,7 @@ describe('CanvasPlugin', () => {
 		expect(invalid.error.reason).toBe('invalid_image')
 		const aborted = new Error('caller cancelled')
 		await expect(decodeUpload(canvas, bytes, AbortSignal.abort(aborted))).rejects.toBe(aborted)
-		await host.stop(CanvasTestConsumer)
+		await host.stop(CanvasTestConsumer.nodeAddress())
 		await expect(decodeUpload(canvas, bytes)).rejects.toThrow(Error)
 	})
 
@@ -77,19 +75,19 @@ describe('CanvasPlugin', () => {
 
 	it('creates native raster and SVG canvases in a headless host', async () => {
 		{
-			await using host = await createTestHost({
-				services: [],
-			})
+			await using host = await createTestHost()
 
 			await startCanvasFixture(host, [FontsPlugin, CanvasPlugin, CanvasTestConsumer])
-			const canvas = host.require(CanvasTestConsumer).canvas.createCanvasSync(64, 32)
+			const canvas = host.require(CanvasTestConsumer.nodeAddress()).canvas.createCanvasSync(64, 32)
 			const context = canvas.getContext('2d')
 			context.fillStyle = '#ff0000'
 			context.fillRect(0, 0, canvas.width, canvas.height)
 			const png = await canvas.encode('png')
-			const svg = host.require(CanvasTestConsumer).canvas.createSvgCanvasSync(40, 20, {
-				mode: 'compact',
-			})
+			const svg = host
+				.require(CanvasTestConsumer.nodeAddress())
+				.canvas.createSvgCanvasSync(40, 20, {
+					mode: 'compact',
+				})
 			svg.getContext('2d').fillRect(0, 0, 40, 20)
 
 			expect([...png.subarray(0, 8)]).toEqual([137, 80, 78, 71, 13, 10, 26, 10])
@@ -99,12 +97,10 @@ describe('CanvasPlugin', () => {
 
 	it('creates a bounded native worker adapter from a detached host snapshot', async () => {
 		{
-			await using host = await createTestHost({
-				services: standardServices(),
-			})
+			await using host = await createTestHost()
 
 			await startCanvasFixture(host, [FontsPlugin, CanvasPlugin, CanvasTestConsumer])
-			const capability = host.require(CanvasTestConsumer).canvas
+			const capability = host.require(CanvasTestConsumer.nodeAddress()).canvas
 			const snapshot = capability.workerSnapshot
 			expect(snapshot.decodeLimits).toEqual({ maxConcurrent: 1, maxQueued: 32 })
 			const workerCanvas = createCanvasWorkerAdapter(structuredClone(snapshot))
@@ -167,12 +163,10 @@ describe('CanvasPlugin', () => {
 		'applies provider preference changes to subsequently created raster and SVG contexts',
 		async () => {
 			{
-				await using host = await createTestHost({
-					services: standardServices(),
-				})
+				await using host = await createTestHost()
 
 				await startCanvasFixture(host, [FontsPlugin, CanvasPlugin, CanvasFontAdminConsumer])
-				const consumer = host.require(CanvasFontAdminConsumer)
+				const consumer = host.require(CanvasFontAdminConsumer.nodeAddress())
 				const initialWorkerSnapshot = consumer.canvas.workerSnapshot
 
 				await consumer.fonts.setPreferredFamily(discoveredFamily!)
@@ -199,12 +193,10 @@ describe('CanvasPlugin', () => {
 
 	it('decodes caller-provided bytes without adding an outbound HTTP policy', async () => {
 		{
-			await using host = await createTestHost({
-				services: standardServices(),
-			})
+			await using host = await createTestHost()
 
 			await startCanvasFixture(host, [FontsPlugin, CanvasPlugin, CanvasTestConsumer])
-			const capability = host.require(CanvasTestConsumer).canvas
+			const capability = host.require(CanvasTestConsumer.nodeAddress()).canvas
 			const source = capability.createCanvasSync(11, 7)
 			const borrowedBytes = await source.encode('png')
 			const image = await capability.decodeImage(borrowedBytes)
@@ -229,14 +221,12 @@ describe('CanvasPlugin', () => {
 
 	it('cooperatively snapshots borrowed decode bytes and observes cancellation', async () => {
 		{
-			await using host = await createTestHost({
-				services: standardServices(),
-			})
+			await using host = await createTestHost()
 
 			await startCanvasFixture(host, [FontsPlugin, CanvasPlugin, CanvasTestConsumer])
 			const controller = new AbortController()
 			const decoded = host
-				.require(CanvasTestConsumer)
+				.require(CanvasTestConsumer.nodeAddress())
 				.canvas.decodeImage(new Uint8Array(2 * 1024 * 1024), { signal: controller.signal })
 			queueMicrotask(() => controller.abort())
 			await expect(decoded).rejects.toMatchObject({ name: 'AbortError' })
@@ -245,12 +235,10 @@ describe('CanvasPlugin', () => {
 
 	it('uses bounded Pretext for multiline and rich-inline layout', async () => {
 		{
-			await using host = await createTestHost({
-				services: standardServices(),
-			})
+			await using host = await createTestHost()
 
 			await startCanvasFixture(host, [FontsPlugin, CanvasPlugin, CanvasTestConsumer])
-			const capability = host.require(CanvasTestConsumer).canvas
+			const capability = host.require(CanvasTestConsumer.nodeAddress()).canvas
 			const prepared = capability.prepareTextWithSegmentsSync({
 				text: 'Pluxel 可以正确处理多语言 canvas text layout',
 				fontSize: 18,
@@ -270,25 +258,21 @@ describe('CanvasPlugin', () => {
 
 	it('rejects text before Pretext work when the host character budget is exceeded', async () => {
 		{
-			await using host = await createTestHost({
-				services: standardServices(),
-			})
+			await using host = await createTestHost()
 
 			await startCanvasFixture(host, [FontsPlugin, CanvasPlugin, CanvasTestConsumer], {
 				maxTextCharacters: 4,
 			})
 
 			expect(() =>
-				host.require(CanvasTestConsumer).canvas.prepareTextSync({ text: '12345' }),
+				host.require(CanvasTestConsumer.nodeAddress()).canvas.prepareTextSync({ text: '12345' }),
 			).toThrow(expect.objectContaining<Partial<CanvasError>>({ code: 'TEXT_TOO_LARGE' }))
 		}
 	})
 
 	it('enforces allocation and decode boundaries before returning resources', async () => {
 		{
-			await using host = await createTestHost({
-				services: standardServices(),
-			})
+			await using host = await createTestHost()
 
 			await startCanvasFixture(host, [FontsPlugin, CanvasPlugin, CanvasTestConsumer], {
 				maxWidth: 100,
@@ -296,7 +280,7 @@ describe('CanvasPlugin', () => {
 				maxPixels: 1_000,
 				maxImageBytes: 4,
 			})
-			const capability = host.require(CanvasTestConsumer).canvas
+			const capability = host.require(CanvasTestConsumer.nodeAddress()).canvas
 			const controller = new AbortController()
 			controller.abort(new Error('request closed'))
 
@@ -322,13 +306,13 @@ describe('CanvasPlugin', () => {
 		{
 			await using host = await createTestHost({
 				workbench: true,
-				services: standardServices(),
+				services: [elysia()],
 			})
 
 			await startCanvasFixture(host, [FontsPlugin, CanvasPlugin])
 
 			using selection = await host.workbench.open({
-				target: CanvasPlugin,
+				target: CanvasPlugin.nodeAddress(),
 				entry: CanvasWorkbench.fonts,
 				principal: { provider: 'test', subject: 'canvas-tests' },
 			})
@@ -338,7 +322,7 @@ describe('CanvasPlugin', () => {
 				federatedViewRef: { expose: './views/selection' },
 			})
 			expect(await selection.provider.snapshotDto()).toMatchObject({
-				defaultFont: host.require(CanvasPlugin).defaultFont,
+				defaultFont: host.require(CanvasPlugin.nodeAddress()).defaultFont,
 				families: expect.any(Array),
 			})
 		}

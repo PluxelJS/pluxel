@@ -16,7 +16,7 @@ async function fixture() {
 	const host = await createTestHost({ services: [] })
 	await host.commit((change) => {
 		change.catalog.add([TakumiPlugin, Consumer])
-		change.start(Consumer)
+		change.start(Consumer.nodeAddress())
 	})
 	return host
 }
@@ -24,7 +24,7 @@ async function fixture() {
 describe('Takumi native API', () => {
 	it('renders real React hooks and context using native CSS and return values without services', async () => {
 		await using host = await fixture()
-		const { takumi } = host.require(Consumer)
+		const { takumi } = host.require(Consumer.nodeAddress())
 		const Title = createContext('fallback')
 		function Card() {
 			const [count] = useState(42)
@@ -46,7 +46,7 @@ describe('Takumi native API', () => {
 
 	it('preserves native format options for HTML, node trees and animation', async () => {
 		await using host = await fixture()
-		const { takumi } = host.require(Consumer)
+		const { takumi } = host.require(Consumer.nodeAddress())
 		const jpeg = await takumi.render(
 			'<div style="background:red;width:100%;height:100%">Report</div>',
 			{
@@ -82,7 +82,7 @@ describe('Takumi native API', () => {
 
 	it('preserves upstream cancellation reasons and component exceptions', async () => {
 		await using host = await fixture()
-		const { takumi } = host.require(Consumer)
+		const { takumi } = host.require(Consumer.nodeAddress())
 		const reason = new Error('caller stopped')
 		await expect(takumi.render('<div/>', { signal: AbortSignal.abort(reason) })).rejects.toBe(
 			reason,

@@ -6,7 +6,6 @@ export interface TypstSourceParser {
 	parse(source: string, options?: { mode?: 'markup' | 'code' | 'math' }): ParseResult
 	parseAst(source: string, options?: { mode?: 'markup' | 'code' | 'math' }): ParseAstResult
 }
-export type TypstSourceRevision = string | number
 export interface TypstSourceRange {
 	from: number
 	to: number
@@ -31,7 +30,7 @@ export interface TypstSourceDiagnostic extends TypstSourceRange {
 		| 'NO_HISTORY'
 	message: string
 	path: string
-	revision: TypstSourceRevision
+	revision: number
 	severity: 'error' | 'warning'
 }
 export type TypstSourceResult<T> =
@@ -120,8 +119,8 @@ export interface TypstSourceNodeOrigin extends TypstSourceRange {
 	children: TypstSourceNodeOrigin[]
 }
 export interface TypstSourceProjection {
-	path: string
-	revision: TypstSourceRevision
+	readonly path: string
+	readonly revision: number
 	source: string
 	document: JSONContent
 	mapping: TypstSourceMapping[]
@@ -154,7 +153,7 @@ export interface TypstSourceProjectionInput {
 	files?: Readonly<Record<string, string | Uint8Array>>
 	components?: readonly TypstSourceComponent[]
 	path: string
-	revision: TypstSourceRevision
+	revision: number
 	source: string
 	parser: TypstSourceParser
 }

@@ -1,5 +1,5 @@
 import * as v from 'valibot'
-import type { VaultKvHandle } from '@pluxel/services/vault'
+import type { VaultKvHandle } from '@pluxel/core/vault'
 import { normalizeUsername, parsePasswordRecord, type PasswordRecord } from './password.ts'
 import { parseTotpRecord, type TotpRecord } from './totp.ts'
 
@@ -103,23 +103,18 @@ export const AuthVaultSchema = v.object({
 })
 
 export class CredentialStore {
-	private readonly kv?: VaultKvHandle
+	private readonly kv: VaultKvHandle
 
 	constructor(
-		private readonly vault?: Readonly<{
+		private readonly vault: Readonly<{
 			kv(): VaultKvHandle
 			flush(): Promise<void>
 		}>,
 	) {
-		this.kv = vault?.kv()
-	}
-
-	get available(): boolean {
-		return this.kv !== undefined
+		this.kv = vault.kv()
 	}
 
 	async watch(listener: () => Promise<void>): Promise<() => void> {
-		if (!this.kv) return () => {}
 		const subscriptions = await Promise.all([
 			this.kv.watch(ACCOUNT_KEY, listener),
 			this.kv.watch(OIDC_SECRET_KEY, listener),
@@ -136,7 +131,7 @@ export class CredentialStore {
 	}
 
 	async loadAccount(): Promise<{ account?: LocalAccountRecord; invalid: boolean }> {
-		const snapshot = await this.kv?.get(ACCOUNT_KEY)
+		const snapshot = await this.kv.get(ACCOUNT_KEY)
 		const value = snapshot?.value
 		if (value === undefined) return { invalid: false }
 		const account = parseAccount(value)
@@ -144,13 +139,12 @@ export class CredentialStore {
 	}
 
 	async saveAccount(account: LocalAccountRecord): Promise<void> {
-		if (!this.kv || !this.vault) throw new Error('Vault is unavailable')
 		await this.kv.set(ACCOUNT_KEY, account)
 		await this.vault.flush()
 	}
 
 	async loadOidcSecret(): Promise<{ secret?: string; invalid: boolean }> {
-		const snapshot = await this.kv?.get(OIDC_SECRET_KEY)
+		const snapshot = await this.kv.get(OIDC_SECRET_KEY)
 		const value = snapshot?.value
 		if (value === undefined) return { invalid: false }
 		const secret = parseOidcSecret(value)
@@ -158,7 +152,6 @@ export class CredentialStore {
 	}
 
 	async saveOidcSecret(secret: string): Promise<void> {
-		if (!this.kv || !this.vault) throw new Error('Vault is unavailable')
 		if (secret.length === 0 || secret.length > 4_096) throw new TypeError('Invalid OIDC secret')
 		await this.kv.set(OIDC_SECRET_KEY, {
 			version: 1,

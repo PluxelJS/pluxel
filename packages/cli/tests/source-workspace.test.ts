@@ -560,6 +560,57 @@ describe('source workspace planning', () => {
 		})
 	})
 
+	it.each(['shared', 'conflicting', 'missing'] as const)(
+		'checks physical peer singleton installations: %s',
+		async (installation) => {
+			const root = await createTemporaryRoot()
+			const source = resolve(root, 'source')
+			const consumer = resolve(root, 'consumer')
+			await createWorkspace(source, {
+				'a/package.json': { name: '@acme/a', peerDependencies: { react: '^19.0.0' } },
+				'b/package.json': { name: '@acme/b', peerDependencies: { react: '^19.0.0' } },
+				'unused/package.json': { name: '@acme/unused', peerDependencies: { react: '^18.0.0' } },
+			})
+			await createWorkspace(consumer, {
+				'app/package.json': {
+					name: '@acme/app',
+					dependencies: { '@acme/a': '*', '@acme/b': '*' },
+				},
+			})
+			await writeJson(resolve(consumer, 'pluxel.sources.jsonc'), {
+				version: 1,
+				sources: ['https://github.com/acme/source'],
+				singletons: ['react'],
+			})
+			const registryPath = resolve(root, 'source-checkouts.json')
+			await writeJson(registryPath, {
+				version: 1,
+				checkouts: { 'https://github.com/acme/source': source },
+			})
+			const shared = resolve(source, 'node_modules/react')
+			await mkdir(shared, { recursive: true })
+			await mkdir(resolve(source, 'a/node_modules'), { recursive: true })
+			await mkdir(resolve(source, 'b/node_modules'), { recursive: true })
+			await symlink(shared, resolve(source, 'a/node_modules/react'), 'dir')
+			if (installation === 'shared')
+				await symlink(shared, resolve(source, 'b/node_modules/react'), 'dir')
+			else if (installation === 'conflicting') await mkdir(resolve(source, 'b/node_modules/react'))
+			const plan = createSourceWorkspacePlan({ root: consumer, registryPath })
+			const outcome = await plan.then(
+				(value) => value.overrides.react.replace(source, '<source>'),
+				(error: Error) => error.message,
+			)
+			const expected = {
+				shared: 'link:<source>/a/node_modules/react',
+				missing: expect.stringContaining('Cannot resolve singleton react for @acme/b'),
+				conflicting: expect.stringContaining(
+					'Singleton react resolves to different source installations',
+				),
+			}
+			expect(outcome).toEqual(expected[installation])
+		},
+	)
+
 	it('uses the most specific checkout and a stable proxy when repositories are nested', async () => {
 		const root = await createTemporaryRoot()
 		const parent = resolve(root, 'parent')

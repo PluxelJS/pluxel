@@ -42,6 +42,7 @@ import {
 import { runtimeErrorMessage } from '../../../../runtime'
 import { notifyAndRecord } from '../../../notifications/notifyBridge'
 import { PluginProvidedCapability, usePluginProviderPolicy } from './PluginProvidedCapability'
+import { describePluginPolicyTarget } from '../../pluginOverviewModel'
 
 type DetailLinkComponent = ElementType<{
 	to: string
@@ -336,6 +337,7 @@ function RelationSection({
 	summary?: string
 	children: ReactNode
 }) {
+	if (count === 0) return null
 	return (
 		<section className="plx-pluginDependencyDetail__section">
 			<div className="plx-pluginDependencyDetail__sectionHeader">
@@ -347,11 +349,9 @@ function RelationSection({
 					<span className="plx-pluginDependencyDetail__sectionSummary">{summary}</span>
 				) : null}
 			</div>
-			{count > 0 ? (
-				<div className="plx-pluginDependencyDetail__relations" role="list">
-					{children}
-				</div>
-			) : null}
+			<div className="plx-pluginDependencyDetail__relations" role="list">
+				{children}
+			</div>
 		</section>
 	)
 }
@@ -367,8 +367,18 @@ export function PluginDependencyDetailContent({
 	requiredControl?: (dependency: PluginDependencyDetail['required'][number]) => ReactNode
 	providedCapability?: ReactNode
 }) {
+	const relationCount =
+		detail.required.length +
+		detail.optional.length +
+		detail.dependents.effective.length +
+		detail.dependents.inactive.length
 	return (
 		<div className="plx-pluginDependencyDetail">
+			{relationCount === 0 && (
+				<Text size="xs" c="dimmed">
+					无依赖关系
+				</Text>
+			)}
 			<RequiredRelations
 				detail={detail}
 				LinkComponent={LinkComponent}
@@ -393,19 +403,12 @@ export function PluginDependencyDetailCard() {
 	}
 	const loading = graph.isLoading || controls.isLoading || providerPolicy.loading
 	return (
-		<Paper withBorder p="sm" shadow="none" bg="var(--plx-raised)">
-			<Stack gap="sm">
-				<Group justify="space-between" align="center" wrap="nowrap">
-					<Group gap={6} wrap="wrap">
-						<Text size="sm" fw={600}>
-							依赖管理
-						</Text>
-						{graph.isStale ? (
-							<Badge variant="outline" color="yellow" size="xs">
-								数据待刷新
-							</Badge>
-						) : null}
-					</Group>
+		<Paper component="section" aria-label="依赖管理" withBorder p="xs" bg="var(--plx-raised)">
+			<Stack gap="xs">
+				<Group gap={6}>
+					<Text component="h2" size="sm" fw={600} m={0}>
+						依赖管理
+					</Text>
 					<Tooltip label={loading ? '加载中…' : '刷新依赖关系与候选实现'} withArrow>
 						<ActionIcon
 							size="sm"
@@ -417,6 +420,11 @@ export function PluginDependencyDetailCard() {
 							{loading ? <Loader size={13} /> : <IconRefresh size={14} />}
 						</ActionIcon>
 					</Tooltip>
+					{graph.isStale ? (
+						<Badge variant="outline" color="yellow" size="xs">
+							数据待刷新
+						</Badge>
+					) : null}
 				</Group>
 
 				{graph.detail ? (
@@ -526,16 +534,23 @@ function DependencyImplementationControl({
 		})
 	}
 
+	const overridePolicy = controls.overridePolicy(row.requirement)
 	return (
 		<Stack gap={5}>
 			<Group gap={5} wrap="nowrap" align="flex-end">
 				<Select
 					size="xs"
 					aria-label={`设置当前插件的 ${row.requirement.exportName} 实现`}
-					label="当前插件使用"
+					label="依赖实现"
 					data={selection.data}
 					value={selection.value}
-					disabled={consumerOverridePending || createPending || !controls.canChangeConsumerOverride}
+					description={describePluginPolicyTarget(overridePolicy)}
+					styles={{
+						root: { display: 'flex', flexWrap: 'wrap', alignItems: 'baseline', columnGap: 6 },
+						description: { maxWidth: '100%', overflowWrap: 'anywhere' },
+						wrapper: { flexBasis: '100%', minWidth: 0 },
+					}}
+					disabled={consumerOverridePending || createPending || !overridePolicy?.canWrite}
 					searchable
 					allowDeselect={false}
 					comboboxProps={{ withinPortal: true }}
@@ -574,7 +589,7 @@ function DependencyImplementationControl({
 							consumerOverridePending ||
 							createPending ||
 							row.options.length === 0 ||
-							!controls.canCreateFork
+							!overridePolicy?.canWrite
 						}
 						onClick={createFork}
 						aria-label={`为 ${row.requirement.exportName} 创建 Fork`}
@@ -593,12 +608,15 @@ function DependencyImplementationControl({
 								<Badge variant="outline" color="gray" radius="sm" size="xs">
 									{option.address.forkId}
 								</Badge>
-								<Tooltip label="删除此 Fork" withArrow>
+								<Tooltip
+									label={`删除此 Fork · ${describePluginPolicyTarget(controls.forkPolicy(option.address))}`}
+									withArrow
+								>
 									<ActionIcon
 										size="xs"
 										variant="subtle"
 										color="red"
-										disabled={removePending || !controls.canRemoveFork}
+										disabled={removePending || !controls.canRemoveFork(option.address)}
 										onClick={() => {
 											openConfirmModal({
 												title: '删除 Fork',

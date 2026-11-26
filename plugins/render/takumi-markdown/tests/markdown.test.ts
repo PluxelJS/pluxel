@@ -25,8 +25,8 @@ async function fixture(config?: RawPluginConfig) {
 	const host = await createTestHost({ services: [nodeModules(), workers()] })
 	await host.commit((change) => {
 		change.catalog.add([TakumiPlugin, TakumiMarkdownPlugin, Consumer])
-		if (config) change.config.seed(TakumiMarkdownPlugin, config)
-		change.start(Consumer)
+		if (config) change.config.seed(TakumiMarkdownPlugin.nodeAddress(), config)
+		change.start(Consumer.nodeAddress())
 	})
 	return host
 }
@@ -34,7 +34,7 @@ async function fixture(config?: RawPluginConfig) {
 describe('Markdown native rendering', () => {
 	it('demonstrates recoverable source limits and propagates unknown extension exceptions', async () => {
 		await using host = await fixture({ maxSourceBytes: 32 })
-		const markdown = host.require(Consumer).markdown
+		const markdown = host.require(Consumer.nodeAddress()).markdown
 		await using renderer = markdown.createRenderer()
 		const rendered = await renderDocument(renderer, '# Hi', { width: 64, height: 32 })
 		expect(rendered.isOk()).toBe(true)
@@ -61,7 +61,7 @@ describe('Markdown native rendering', () => {
 	it('renders GFM and highlighted code, removes raw HTML, and forwards native CSS and formats', async () => {
 		await using host = await fixture()
 		let highlighted = false
-		await using renderer = host.require(Consumer).markdown.createRenderer({
+		await using renderer = host.require(Consumer.nodeAddress()).markdown.createRenderer({
 			extensions: [
 				{
 					name: 'observe',
@@ -131,7 +131,7 @@ describe('Markdown native rendering', () => {
 			},
 		})
 		await using renderer = host
-			.require(Consumer)
+			.require(Consumer.nodeAddress())
 			.markdown.createRenderer({ extensions: [extension('first'), extension('second')] })
 		await renderer.render('Paragraph', { width: 64, height: 32 })
 		expect(phases).toEqual([
@@ -147,7 +147,7 @@ describe('Markdown native rendering', () => {
 	it('validates parser feature options before creating a renderer', async () => {
 		await using host = await fixture()
 		expect(() =>
-			host.require(Consumer).markdown.createRenderer({
+			host.require(Consumer.nodeAddress()).markdown.createRenderer({
 				extensions: [
 					{
 						name: 'invalid',
@@ -175,7 +175,7 @@ describe('Markdown native rendering', () => {
 		const address = server.address()
 		if (!address || typeof address === 'string') throw new Error('Expected a TCP test server')
 		const remote = `http://127.0.0.1:${address.port}/image.svg`
-		await using renderer = host.require(Consumer).markdown.createRenderer({
+		await using renderer = host.require(Consumer.nodeAddress()).markdown.createRenderer({
 			extensions: [
 				{
 					name: 'image',
@@ -206,7 +206,7 @@ describe('Markdown native rendering', () => {
 			},
 		})
 		expect([...png.subarray(0, 8)]).toEqual([137, 80, 78, 71, 13, 10, 26, 10])
-		await using plain = host.require(Consumer).markdown.createRenderer()
+		await using plain = host.require(Consumer.nodeAddress()).markdown.createRenderer()
 		for (const policy of [{}, { allowRemote: undefined }, { allowRemote: false }]) {
 			await expect(
 				plain.render(`![remote](${remote})`, {
@@ -228,7 +228,7 @@ describe('Markdown native rendering', () => {
 
 	it('keeps generated asset counts bounded and rejects reserved caller sources', async () => {
 		await using host = await fixture({ maxAssets: 1 })
-		await using renderer = host.require(Consumer).markdown.createRenderer({
+		await using renderer = host.require(Consumer.nodeAddress()).markdown.createRenderer({
 			extensions: [
 				{
 					name: 'assets',
@@ -243,7 +243,7 @@ describe('Markdown native rendering', () => {
 		await expect(renderer.render('Too many')).rejects.toMatchObject({
 			code: 'ASSET_COUNT_EXCEEDED',
 		})
-		await using plain = host.require(Consumer).markdown.createRenderer()
+		await using plain = host.require(Consumer.nodeAddress()).markdown.createRenderer()
 		await expect(
 			plain.render('Collision', {
 				images: [{ src: 'pluxel://markdown-internal/caller.png', data: new Uint8Array([1]) }],
@@ -254,7 +254,7 @@ describe('Markdown native rendering', () => {
 	it('accounts for the captured asset when its caller reuses an input holder during copying', async () => {
 		const mib = 1024 * 1024
 		await using host = await fixture({ maxAssetBytes: 3 * mib, maxTotalAssetBytes: 3 * mib })
-		await using renderer = host.require(Consumer).markdown.createRenderer({
+		await using renderer = host.require(Consumer.nodeAddress()).markdown.createRenderer({
 			extensions: [
 				{
 					name: 'reuse-holder',
@@ -278,7 +278,7 @@ describe('Markdown native rendering', () => {
 		const started = new Promise<void>((resolve) => {
 			entered = resolve
 		})
-		const renderer = host.require(Consumer).markdown.createRenderer({
+		const renderer = host.require(Consumer.nodeAddress()).markdown.createRenderer({
 			extensions: [
 				{
 					name: 'wait',
@@ -295,7 +295,7 @@ describe('Markdown native rendering', () => {
 		const pending = renderer.render('Waiting')
 		const rejected = pending.catch((error: unknown) => error)
 		await started
-		await host.commit((change) => change.stop(Consumer))
+		await host.commit((change) => change.stop(Consumer.nodeAddress()))
 		expect(await rejected).toMatchObject({ code: 'NOT_RUNNING' })
 		expect(() => renderer.render('Closed')).toThrow('Plugin owner stopped')
 	})

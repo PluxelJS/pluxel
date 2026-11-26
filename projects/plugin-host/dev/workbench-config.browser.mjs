@@ -62,19 +62,20 @@ async function consoleRead(file, exportName = 'default', input) {
 		.trim()
 		.split('\n')
 		.map((line) => JSON.parse(line))
-		.find((event) => event.event === 'accepted')
+		.find((event) => event.stage === 'accepted')
 	assert.ok(accepted?.receipt)
 	assert.equal(result.ok, true, JSON.stringify(result))
-	assert.equal(result.value.state, 'succeeded', JSON.stringify(result.value))
+	const { run } = result.value
+	assert.equal(run.state, 'succeeded', JSON.stringify(run))
 	receipt.console.push({
 		file,
 		exportName,
 		receipt: accepted.receipt,
-		runId: result.value.runId,
-		hostEpoch: result.value.hostEpoch,
-		value: result.value.value,
+		runId: run.runId,
+		hostEpoch: run.hostEpoch,
+		value: run.value,
 	})
-	return result.value.value
+	return run.value
 }
 async function check(name, run) {
 	const evidence = await run()
@@ -117,7 +118,7 @@ page.on('response', (response) => {
 const panelOf = async (tab) => page.locator(`[id="${await tab.getAttribute('aria-controls')}"]`)
 const pathInput = (panel) => panel.getByRole('textbox', { name: '出站探测路径', exact: true })
 async function assertPanels(panel) {
-	const dimensions = await panel.locator('.plx-pluginDocument__panel').evaluateAll((nodes) =>
+	const dimensions = await panel.locator('.plx-document-tabs__panel').evaluateAll((nodes) =>
 		nodes.map((node) => ({
 			id: node.id,
 			display: getComputedStyle(node).display,
@@ -143,7 +144,6 @@ try {
 	assert.equal(online.studio.lifecycleState, 'running')
 	const configBefore = await consoleRead('workbench-config.ts')
 	savedConfigBefore = configBefore
-	assert.equal(configBefore.ok, true)
 	const studioEntry = online.layout.entries.find((entry) => entry.descriptor.key === 'studio')
 	assert.equal(studioEntry?.placement.kind, 'route')
 	assert.equal(studioEntry.placement.frame, 'shell')
@@ -346,7 +346,7 @@ try {
 			assert.ok(copied.height > 0 && copied.scrollHeight > copied.height)
 			const containment = await copyScroll.evaluate((node) => {
 				const viewport = node.getBoundingClientRect()
-				const owner = node.closest('.plx-pluginDocument__panel').getBoundingClientRect()
+				const owner = node.closest('.plx-document-tabs__panel').getBoundingClientRect()
 				return { top: viewport.top >= owner.top, bottom: viewport.bottom <= owner.bottom }
 			})
 			assert.deepEqual(containment, { top: true, bottom: true })
@@ -397,7 +397,6 @@ try {
 				await assertInputIdentity(originalHandle, pathInput(panel), newer)
 				await expect(detailTab.locator('[aria-label="未保存的更改"]')).toHaveCount(1)
 				const saved = await consoleRead('workbench-config.ts')
-				assert.equal(saved.ok, true)
 				assert.equal(saved.managedInput.outboundPath, draft)
 				// This sample has no config update listener; persisted input is explicit about that boundary.
 				assert.equal(saved.application, 'saved-not-applied')
@@ -409,7 +408,6 @@ try {
 					'restoreOutboundPath',
 					restoreInput,
 				)
-				assert.equal(restored.ok, true)
 				assert.equal(restored.application, 'applied')
 				restoreInput = undefined
 				return {
@@ -442,7 +440,6 @@ try {
 	if (restoreInput) {
 		try {
 			const restored = await consoleRead('workbench-config.ts', 'restoreOutboundPath', restoreInput)
-			assert.equal(restored.ok, true)
 			for (const key of ['managedInput', 'effectiveInput', 'config'])
 				assert.deepEqual(restored[key], savedConfigBefore[key])
 			receipt.restoredAfterFailure = true

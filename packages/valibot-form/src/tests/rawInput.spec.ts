@@ -6,6 +6,7 @@ import {
 	type RawInputProjection,
 	type RawInputProjectionFailure,
 	type RawInputProjectionResult,
+	type Schema,
 } from '../core'
 
 describe('projectRawInput', () => {
@@ -287,6 +288,32 @@ describe('projectRawInput', () => {
 			ok: false,
 			kind: 'path_not_found',
 		})
+	})
+
+	it('reports the identity of the deciding schema once and keeps it out of the result', () => {
+		const first = v.unknown()
+		const second = v.unknown()
+		const mixed = v.union([v.object({ port: v.optional(first) }), v.object({ port: second })])
+		const empty = v.object({})
+		const root = v.object({ mixed, empty, enabled: v.boolean() })
+		const seen: Schema[] = []
+		const options = {
+			onFailureSchema(node: Schema) {
+				seen.push(node)
+			},
+		}
+
+		const leaf = projectRawInput(root, ['mixed', 'port'], options)
+		expect(leaf).toEqual(projectRawInput(root, ['mixed', 'port']))
+		expect(seen).toHaveLength(1)
+		expect(seen[0]).toBe(first)
+		projectRawInput(root, ['mixed', 'missing'], options)
+		expect(seen[1]).toBe(mixed)
+		projectRawInput(root, ['empty', 'missing'], options)
+		expect(seen[2]).toBe(empty)
+		expect(projectRawInput(root, ['enabled'], options).ok).toBe(true)
+		expect(projectRawInput(null as unknown as Schema, [], options).ok).toBe(false)
+		expect(seen).toHaveLength(3)
 	})
 
 	it('never executes defaults, validation, transforms, or lazy getters', () => {

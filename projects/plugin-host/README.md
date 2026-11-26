@@ -61,7 +61,7 @@ ReportStudioPlugin
   ├─ TakumiMarkdown -> Typst math + Takumi shared Worker
   ├─ Typst (stateless SVG compilation through the shared Workers service)
   ├─ S3 bucket:drafts + bucket:releases
-  ├─ Wretch (provider-owned HTTP settings Attachment)
+  ├─ ctx.wretch (built-in outbound HTTP)
   └─ Otel (report metrics at /showcase/metrics)
 ```
 
@@ -97,8 +97,8 @@ The same application Plugin also registers:
 - HTTP: `GET /showcase/status`, `POST /showcase/generate/:engine/:title`,
   `GET /showcase/artifacts/:id`;
 - Commands: `showcase.report.generate` with `{ title, engine }`, `showcase.cache.clear`;
-- Workbench: one view with an engine selector, status/artifact panels, observer and Wretch's
-  provider-owned Attachment;
+- Workbench: one view with an engine selector, status/artifact panels and observer. Open **出站 HTTP**
+  in the plugin details to edit its outbound settings. **受管出站 HTTP** in the sidebar shows activity.
 - one object config for admission, preview caching, output prefixes and outbound HTTP.
 
 Inspect the single `S3Plugin` provider's `drafts` and `releases` buckets. Cache and Rates keep their
@@ -111,7 +111,7 @@ keeps its own product boundary and independent sources.
 
 The Vite configuration explicitly enables the development console. Coding agents must use this
 console for runtime inspection, config edits, Plugin methods, Workbench RPC, data and logs.
-The current local transport supports Unix systems; on Windows disable `devConsole` in the
+The current local transport supports Unix systems; on Windows disable `scripts` in the
 configuration to run the host without the console.
 
 From the repository root, discover the already running host and use its returned instance ID:
@@ -129,12 +129,12 @@ previous operations. The default `inspect.ts` export returns current Plugin stat
 the real showcase and Workbench HTTP routes and returns bounded logs; set `origin` to the address reported by the selected instance.
 
 Follow the [development console guide](../../docs/development/dev-console.md) for typed config,
-explicit service access and recovery. Scripts import `DevConsole` from `@pluxel/host-vite/console` and use `dev.ctx` with service APIs; they pass `dev.signal` and release their own service resources. Isolated regressions continue to use the test host.
+explicit service access and recovery. Node and Vite scripts use `satisfies Script` from `@pluxel/agent-sdk/host`. SDK control operations return values directly and throw `ScriptError` on failure. Use `sdk.ctx.service(Token)` for services and `const { instance } = await plugin.instance()` for Plugin business methods; pass `run.signal` and release resources created by the script. The shared SDK is documented in [Host scripts](../../docs/development/scripts.md). Isolated regressions continue to use the test host.
 
 ## Boundary
 
 - `src/app.ts` owns fixed Plugins, mutable sources, service configuration and startup policy.
-- `src/app.ts` uses `servicesPreset()` from `@pluxel/services/preset` for the official service set and optional Workbench; Core logging and storage are explicit `runtime.logtape` / `runtime.zenfs` declarations from `@pluxel/core/config`.
+- `src/app.ts` uses `servicesPreset()` from `@pluxel/services/preset` for the official service set and optional Workbench. Core credentials use `coreConfig.vault`, with `PLUXEL_VAULT_DEPLOY_IDENTITY` supplied from `startup.env`. Logging and storage use `coreConfig.logtape` and `coreConfig.zenfs`.
 - `vite.config.ts` uses `vitePreset()` from `@pluxel/services/vite`; it combines the shared development driver with attachments for installed official services.
 - `tsdown.config.ts` uses `pluxel({ delivery: 'modules' })` from `@pluxel/rolldown`; package imports and compiled Node/Workbench artifacts are preserved.
 - Managed entries and Package Manager's data share the explicitly configured application-local directory.
@@ -163,14 +163,14 @@ imports in Native, renders Takumi/HeroUI PNG, Markdown with Typst mathematics an
 
 `src/bot-lab/` 用四个真实 Plugin 验证多个插件共用一个业务列表：
 
-- 三个来源插件各自拥有内存 `BotStore`，通过 constructor 依赖工作区插件，在 `init()` 注册来源并返回撤销函数。
+- 三个来源插件各自管理本节点的 TinyBase Store，通过 constructor 依赖工作区插件，在 `init()` 注册来源并返回注销函数。
 - `BotWorkspacePlugin` 统一发布首页、左侧 View 列表、参数化机器人文档、右侧来源状态和底部工作区事件。
 - 列表和文档通过 Workbench RPC 与 `watch()` 读取数据；保存调用绑定 `source + bot` 的独立 target，并检查版本。
 - 不同来源都包含名为“客服助手”、ID 为 `support` 的机器人。搜索、业务分组、标签切换和独立草稿可用来验证身份隔离。
 
-在“插件管理”停止 Discord 模拟来源后，列表保留其最后已知条目并标为不可用；其他来源仍可使用。来源没有单独发布页面，
-且依赖方向为来源 → 工作区，因此停止来源不会撤回工作区 publication。停止工作区本身仍遵循正常的 publication 失效与页面刷新规则。
-来源重启会重新创建它的模拟数据；工作区和来源重启不提供业务持久化。过期草稿不能覆盖新版本，须显式核对并重新读取。
+打开 Discord 的“客服助手”详情，可以进入来源插件自己的通知频道文档。中心收到 `WorkbenchEntryLink`，Discord 负责读取、校验和保存该机器人的频道。Telegram 和企业微信只注册数据。新增来源可沿用相同的注册方法。 [跨插件组合](../../docs/workbench/composition.md#向中心插件注册来源)
+
+在“插件管理”停止来源后，中心保留最后已知条目并标为不可用。停止仅提供数据的来源时，中心已有文档可继续工作。停止 Discord 还会撤回其页面 publication，浏览器按 Workbench 会话失效流程重新载入。页面本地的未提交输入随之释放。重新打开后只读取已提交到节点 Store 的偏好，跨 Host 重启恢复取决于存储后端。
 
 右侧、底部扩展是**整个工作区**的状态与事件，不会假装拥有活动机器人的实体上下文。当前 API 下，单个机器人的详情、事件和草稿放在它的文档中；
 左侧列表使用 `host.navigation.navigate()` 按 URL 复用文档，不读取 Shell store 或建立全局“当前机器人”。

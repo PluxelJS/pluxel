@@ -4,12 +4,12 @@ import { resolveHostEnv } from '@pluxel/host/environment'
 import { servicesPreset } from '@pluxel/services/preset'
 import { listenElysia } from '@pluxel/services/elysia/node'
 import { Passthrough } from '@pluxel/core/fs'
-import { logtape, zenfs } from '@pluxel/core/config'
-
-import { pluginSource } from '@pluxel/host/sources'
+import { VaultAdminPlugin } from '@pluxel/services/plugins'
+import { AuditPlugin } from '@example/audit-plugin'
+import { HttpPlugin } from '@example/http-plugin'
+import { TodoPlugin } from '@example/todo-plugin'
 import { resolve } from 'node:path'
 import { product } from './product'
-import { exampleHostConfig, examplePlugins, exampleHostPolicy } from './policy'
 
 export { product }
 
@@ -21,17 +21,31 @@ export default defineHostApplication(async (startup) => {
 	await nativeFs.promises.mkdir(prefix, { recursive: true })
 	return {
 		name: 'pluxel-example',
-		plugins: examplePlugins,
+		config: { mode: 'saved-first' },
+		policy: { mode: 'saved-first' },
+		plugins: [
+			{ plugin: AuditPlugin, autoStart: true },
+			{
+				plugin: TodoPlugin,
+				config: {
+					maxItems:
+						env.EXAMPLE_TODO_MAX_ITEMS === undefined ? 12 : Number(env.EXAMPLE_TODO_MAX_ITEMS),
+					seedTitle: 'Trace a Todo from React to a Plugin',
+				},
+			},
+			{ plugin: HttpPlugin, autoStart: true },
+			{ plugin: VaultAdminPlugin, autoStart: true },
+		],
 		sources: [
-			pluginSource({
-				kind: 'directory',
-				path: resolve(dataRoot, 'managed-plugins/entries'),
+			{
+				directory: resolve(dataRoot, 'managed-plugins/entries'),
 				include: ['*.mjs'],
-			}),
+			},
 		],
 		services: await servicesPreset(startup, {
 			product,
-			workbench: environment.workbench ?? true,
+			workbench:
+				(environment.workbench ?? startup.deployment?.variant !== 'headless') ? undefined : false,
 		}),
 		async launch({ host }) {
 			await listenElysia(host, {
@@ -41,14 +55,13 @@ export default defineHostApplication(async (startup) => {
 				publicDir: resolve(startup.deployment?.root ?? startup.root, 'public'),
 			})
 		},
-		config: exampleHostConfig(env.EXAMPLE_TODO_MAX_ITEMS),
-		policy: exampleHostPolicy(),
-		runtime: {
-			logtape: logtape(),
-			zenfs: zenfs({
+		coreConfig: {
+			vault: { deployIdentity: startup.env.PLUXEL_VAULT_DEPLOY_IDENTITY },
+			logtape: {},
+			zenfs: {
 				mounts: { '/': { backend: Passthrough, fs: nativeFs, prefix } },
 				durableMounts: ['/'],
-			}),
+			},
 		},
 	}
 })

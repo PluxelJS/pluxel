@@ -1,28 +1,17 @@
 import { Card, Radio, Select, Stack, Switch, Text } from '@mantine/core'
-import { useContext, useEffect, useMemo, useRef, useState, type ChangeEvent } from 'react'
+import { useContext, useMemo, useRef, useState, type ChangeEvent } from 'react'
 import type { UnionBranch, UnionFieldNode } from '../../../core/fields'
 import { cleanProps } from '../../utils/propHelpers'
 import { FormResetVersion } from '../internal/formContext'
 import { UnionSelectionContext } from '../internal/unionSelectionContext'
 import { useFieldRenderer, useValueRenderer } from '../internal/fieldRendererContext'
+import { hasProtectedValue, isProtectedField } from '../internal/fieldProtection'
+import { isRecord, matchingUnionBranches, unionBranchLiteral } from '../../../core/fieldInput'
 import { SegmentedButtons } from '../SegmentedButtons'
 import { FieldChrome } from '../chrome/FieldChrome'
 import { normalizeErrorMessages, type RendererProps, triggerFormEvents } from './types'
 
-const booleanVariants = new Set<UnionFieldNode['control']>(['switch'])
 const truthySet = new Set<unknown>([true, 'true', 1, '1'])
-const EMPTY_BRANCHES: UnionBranch[] = []
-const EMPTY_SHARED_FIELDS: NonNullable<UnionFieldNode['sharedFields']> = []
-const EMPTY_LABELS: Record<string, string> = {}
-
-const isObject = (value: unknown): value is Record<string, unknown> =>
-	value !== null && typeof value === 'object'
-
-function normalizeBranchKey(value: UnionBranch['discriminatorValue'], index: number) {
-	if (value === null || value === undefined) return `branch_${index}`
-	if (typeof value === 'boolean') return value ? 'true' : 'false'
-	return String(value)
-}
 
 function humanizeBranchLabel(value: UnionBranch['discriminatorValue'], index: number) {
 	if (value === true) return '开启'
@@ -32,115 +21,36 @@ function humanizeBranchLabel(value: UnionBranch['discriminatorValue'], index: nu
 	return str.charAt(0).toUpperCase() + str.slice(1)
 }
 
-function isTruthyDiscriminator(value: UnionBranch['discriminatorValue']) {
-	return truthySet.has(value as unknown)
-}
-
-function findMatchingBranchIndex(
-	branches: UnionBranch[],
+function branchDraft(
+	branch: UnionBranch | undefined,
 	value: unknown,
-	discriminator?: string,
-	fallback = 0,
-) {
-	if (branches.length === 0) return fallback
-	if (!discriminator || !isObject(value)) return fallback
-	const discValue = value[discriminator]
-	const idx = branches.findIndex((b) => b.discriminatorValue === discValue)
-	if (idx !== -1) return idx
-	if (typeof discValue === 'boolean') {
-		const truthyIdx = branches.findIndex((b) => isTruthyDiscriminator(b.discriminatorValue))
-		const falsyIdx = branches.findIndex((b) => !isTruthyDiscriminator(b.discriminatorValue))
-		return discValue
-			? truthyIdx !== -1
-				? truthyIdx
-				: fallback
-			: falsyIdx !== -1
-				? falsyIdx
-				: fallback
-	}
-	return fallback
+	sharedKeys: ReadonlySet<string>,
+	discriminator: string | undefined,
+): unknown {
+	if (branch?.fields.some((field) => field.replaceValue)) return value
+	return isRecord(value)
+		? Object.fromEntries(
+				Object.entries(value).filter(([key]) => key !== discriminator && !sharedKeys.has(key)),
+			)
+		: undefined
 }
 
-function collectNonBranchKeys(
-	sharedFields: UnionFieldNode['sharedFields'],
-	discriminator?: string,
-) {
-	const set = new Set<string>()
-	for (const field of sharedFields) {
-		if (field.key) set.add(field.key)
-	}
-	if (discriminator) set.add(discriminator)
-	return set
-}
-
-function snapshotBranchValue(
-	cache: Map<number, Record<string, unknown>>,
-	index: number,
+function missingProtectedInput(
+	node: UnionBranch['fields'][number]['node'],
 	value: unknown,
-	nonBranchKeys: Set<string>,
-	enabled: boolean,
-) {
-	if (!enabled || !isObject(value)) return
-	const snapshot: Record<string, unknown> = {}
-	for (const [key, val] of Object.entries(value)) {
-		if (nonBranchKeys.has(key)) continue
-		snapshot[key] = val
-	}
-	cache.set(index, snapshot)
-}
-
-function buildNextValue(args: {
-	targetIndex: number
-	branches: UnionBranch[]
-	currentValue: unknown
-	discriminator?: string
-	explicitDiscriminator?: UnionBranch['discriminatorValue']
-	nonBranchKeys: Set<string>
-	cache: Map<number, Record<string, unknown>>
-	preserveBranchValues: boolean
-}) {
-	const {
-		targetIndex,
-		branches,
-		currentValue,
-		discriminator,
-		explicitDiscriminator,
-		nonBranchKeys,
-		cache,
-		preserveBranchValues,
-	} = args
-
-	const next: Record<string, unknown> = {}
-	const currentObj = isObject(currentValue) ? currentValue : {}
-
-	for (const key of nonBranchKeys) {
-		if (key === discriminator) continue
-		if (key in currentObj) next[key] = currentObj[key]
-	}
-
-	const branch = branches[targetIndex]
-	const discValue =
-		explicitDiscriminator ??
-		branch?.discriminatorValue ??
-		(discriminator ? currentObj[discriminator] : null)
-	if (discriminator && discValue !== null && discValue !== undefined) {
-		next[discriminator] = discValue
-	}
-
-	if (preserveBranchValues) {
-		const cached = cache.get(targetIndex)
-		if (cached) Object.assign(next, cached)
-	}
-
-	if (preserveBranchValues && !cache.has(targetIndex)) {
-		for (const [key, val] of Object.entries(currentObj)) {
-			if (nonBranchKeys.has(key)) continue
-			if (key === discriminator) continue
-			if (!(key in next)) next[key] = val
-		}
-	}
-
-	return next
+): boolean {
+	if (value === undefined && !node.required) return false
+	if (isProtectedField(node)) return value === undefined
+	return (
+		node.kind === 'object' &&
+		value !== null &&
+		node.fields.some((field) =>
+			missingProtectedInput(
+				field,
+				isRecord(value) && field.name !== undefined ? value[field.name] : undefined,
+			),
+		)
+	)
 }
 
 function renderEmptyBranch() {
@@ -155,146 +65,154 @@ function renderEmptyBranch() {
 
 export function UnionField(props: RendererProps) {
 	const resetVersion = useContext(FormResetVersion)
+	const node = props.node as UnionFieldNode
+	// Drafts belong to the editable branch structure. Equivalent projections,
+	// labels and current array indices can change without ending that session.
+	const { discriminator, branches, sharedFields, preserve } = node
+	const shape = useMemo(
+		() =>
+			JSON.stringify(
+				[discriminator, preserve !== false, branches, sharedFields],
+				[
+					'key',
+					'discriminatorValue',
+					'replaceValue',
+					'node',
+					'name',
+					'kind',
+					'literal',
+					'options',
+					'fields',
+					'item',
+					'value',
+					'branches',
+					'sharedFields',
+					'discriminator',
+					'discriminatorField',
+					'required',
+					'nullable',
+					'meta',
+					'hidden',
+					'disabled',
+					'readOnly',
+				],
+			),
+		[discriminator, preserve, branches, sharedFields],
+	)
+	return <UnionEditor key={`${resetVersion}:${shape}`} {...props} node={node} />
+}
+
+function UnionEditor(props: RendererProps<UnionFieldNode>) {
 	const { node, errors, inputProps, value, path } = props
-	const info = node as UnionFieldNode
 	const renderField = useFieldRenderer()
 	const renderValue = useValueRenderer()
 	const initializeParentUnion = useContext(UnionSelectionContext)
-	const branches = info.branches ?? EMPTY_BRANCHES
-	const discriminator = info.discriminator
-	const sharedFields = info.sharedFields ?? EMPTY_SHARED_FIELDS
-	const resolvedControl = info.control ?? 'select'
-	const branchLabels = info.labels ?? EMPTY_LABELS
-	const branchDescriptions = info.descriptions ?? EMPTY_LABELS
-	const preserveBranchValues = info.preserve !== false
-	const exposeDiscriminator = info.expose ?? 'auto'
+	const { branches, discriminator, sharedFields, labels, descriptions } = node
+	const candidates = useMemo(() => matchingUnionBranches(node, value), [node, value])
+	const matchingIndex = candidates.length === 1 ? branches.indexOf(candidates[0]!) : -1
+	const truthyBranchIndex = branches.findIndex((branch) => truthySet.has(branch.discriminatorValue))
+	const falsyBranchIndex = branches.findIndex((branch) => !truthySet.has(branch.discriminatorValue))
+	const resolvedControl =
+		node.control === 'switch' &&
+		((matchingIndex < 0 && discriminator !== undefined) ||
+			branches.length !== 2 ||
+			truthyBranchIndex < 0 ||
+			falsyBranchIndex < 0)
+			? 'select'
+			: node.control
+	const preserveBranchValues = node.preserve !== false
+	const exposeDiscriminator = node.expose ?? 'auto'
 	const isLocked = Boolean(inputProps.disabled || inputProps.readOnly)
 
-	const branchCacheRef = useRef(new Map<number, Record<string, unknown>>())
-
-	const branchSignature = useMemo(
-		() =>
-			branches
-				.map((branch, index) => {
-					const key = branch.key ?? normalizeBranchKey(branch.discriminatorValue, index)
-					return `${key}:${String(branch.discriminatorValue)}`
-				})
-				.join('|'),
-		[branches],
-	)
-	const sharedSignature = useMemo(
-		() =>
-			sharedFields
-				.map((field) => field.key)
-				.filter(Boolean)
-				.join('|'),
-		[sharedFields],
-	)
-
-	const nonBranchKeys = useMemo(
-		() => collectNonBranchKeys(sharedFields, discriminator),
-		[sharedFields, discriminator],
-	)
-
-	const [fallbackBranchIndex, setSelectedBranchIndex] = useState(() =>
-		findMatchingBranchIndex(branches, value, discriminator),
-	)
-
-	const selectedBranchIndex = findMatchingBranchIndex(
-		branches,
-		value,
-		discriminator,
-		fallbackBranchIndex,
-	)
-
-	useEffect(() => {
-		branchCacheRef.current.clear()
-		setSelectedBranchIndex(0)
-	}, [branchSignature, sharedSignature, discriminator, preserveBranchValues, resetVersion])
-
-	const selectedBranch = branches[selectedBranchIndex]
+	const branchCache = useRef(new Map<number, unknown>())
+	const sharedKeys = useMemo(() => new Set(sharedFields.map(({ key }) => key)), [sharedFields])
+	const [chosenBranchIndex, setSelectedBranchIndex] = useState<number | null>(null)
+	const [switchError, setSwitchError] = useState<string>()
+	const fallback = branches[chosenBranchIndex ?? 0]
+	const selectedBranch =
+		candidates.find((branch) => branch === fallback) ?? candidates[0] ?? fallback
+	const selectedBranchIndex = selectedBranch ? branches.indexOf(selectedBranch) : -1
+	const selectorValue =
+		matchingIndex < 0 && (discriminator !== undefined || chosenBranchIndex === null)
+			? null
+			: String(selectedBranchIndex)
 
 	const shouldRenderDiscriminatorField =
-		Boolean(info.discriminatorField) &&
+		Boolean(node.discriminatorField) &&
 		exposeDiscriminator !== 'never' &&
-		(booleanVariants.has(resolvedControl) || exposeDiscriminator === 'always')
-	const shouldRenderSelector =
-		!booleanVariants.has(resolvedControl) || !shouldRenderDiscriminatorField
+		(resolvedControl === 'switch' || exposeDiscriminator === 'always')
+	const shouldRenderSelector = resolvedControl !== 'switch' || !shouldRenderDiscriminatorField
 
-	const branchOptions = useMemo(
-		() =>
-			branches.map((branch, index) => {
-				const key = branch.key ?? normalizeBranchKey(branch.discriminatorValue, index)
-				const label =
-					branchLabels[key as keyof typeof branchLabels] ??
-					humanizeBranchLabel(branch.discriminatorValue, index)
-				return {
-					value: String(index),
-					label,
-					description: branchDescriptions[key as keyof typeof branchDescriptions],
-				}
-			}),
-		[branches, branchLabels, branchDescriptions],
-	)
+	const branchOptions = branches.map((branch, index) => {
+		const optionValue = branch.discriminatorValue
+		const numericTwin =
+			typeof optionValue === 'string' &&
+			branches.some(
+				({ discriminatorValue }) =>
+					typeof discriminatorValue === 'number' && String(discriminatorValue) === optionValue,
+			)
+		return {
+			value: String(index),
+			label:
+				labels?.[branch.key] ??
+				(numericTwin ? JSON.stringify(optionValue) : humanizeBranchLabel(optionValue, index)),
+			description: descriptions?.[branch.key],
+		}
+	})
 
-	const truthyBranchIndex = useMemo(
-		() => branches.findIndex((branch) => isTruthyDiscriminator(branch.discriminatorValue)),
-		[branches],
-	)
-	const falsyBranchIndex = useMemo(
-		() => branches.findIndex((branch) => !isTruthyDiscriminator(branch.discriminatorValue)),
-		[branches],
-	)
+	const selectBranch = (targetIndex: number) => {
+		const target = branches[targetIndex]
+		if (isLocked || !target || targetIndex === matchingIndex) return
 
-	const snapshotAndSetBranch = (
-		targetIndex: number,
-		explicitValue?: UnionBranch['discriminatorValue'],
-	) => {
-		if (targetIndex < 0 || targetIndex >= branches.length) return
-		snapshotBranchValue(
-			branchCacheRef.current,
-			selectedBranchIndex,
-			value,
-			nonBranchKeys,
-			preserveBranchValues,
-		)
-		const nextValue = buildNextValue({
-			targetIndex,
-			branches,
-			currentValue: value,
-			discriminator,
-			explicitDiscriminator: explicitValue,
-			nonBranchKeys,
-			cache: branchCacheRef.current,
-			preserveBranchValues,
-		})
+		const currentDraft = branchDraft(selectedBranch, value, sharedKeys, discriminator)
+		const sameBranch = targetIndex === selectedBranchIndex
+		if (!sameBranch && hasProtectedValue(node, value)) {
+			setSwitchError('当前选项包含受保护的值，无法切换。')
+			return
+		}
+
+		const targetDraft = sameBranch ? currentDraft : branchCache.current.get(targetIndex)
+		const replacement = target.fields.find((field) => field.replaceValue)
+		let next = targetDraft
+		if (replacement) {
+			if (next === undefined) next = unionBranchLiteral(target)
+			if (missingProtectedInput(replacement.node, next)) {
+				setSwitchError('目标选项缺少必填的只读值，无法切换。')
+				return
+			}
+		} else {
+			const common = isRecord(value)
+				? Object.fromEntries(Object.entries(value).filter(([key]) => sharedKeys.has(key)))
+				: {}
+			const fields = {
+				...common,
+				...(isRecord(targetDraft) ? targetDraft : {}),
+				...(discriminator !== undefined && target.discriminatorValue !== undefined
+					? { [discriminator]: target.discriminatorValue }
+					: {}),
+			}
+			if (
+				[...sharedFields, ...target.fields].some((field) =>
+					missingProtectedInput(field.node, fields[field.key]),
+				)
+			) {
+				setSwitchError('目标选项缺少必填的只读值，无法切换。')
+				return
+			}
+			next = fields
+		}
+
+		setSwitchError(undefined)
+		if (preserveBranchValues && !sameBranch)
+			branchCache.current.set(selectedBranchIndex, currentDraft)
 		setSelectedBranchIndex(targetIndex)
-		triggerFormEvents(inputProps, nextValue, { blur: true })
+		triggerFormEvents(inputProps, next, { blur: true })
 	}
-
-	const handleSelectorChange = (newIndexStr: string | null) => {
-		if (newIndexStr === null) return
-		const newIndex = Number(newIndexStr)
-		if (Number.isNaN(newIndex)) return
-		snapshotAndSetBranch(newIndex)
+	const handleSelectorChange = (index: string | null) => {
+		if (index !== null) selectBranch(Number(index))
 	}
-
-	const handleBooleanToggle = (checked: boolean) => {
-		const targetIndex = checked
-			? truthyBranchIndex >= 0
-				? truthyBranchIndex
-				: selectedBranchIndex
-			: falsyBranchIndex >= 0
-				? falsyBranchIndex
-				: selectedBranchIndex
-		const branch = branches[targetIndex]
-		const explicitValue =
-			branch?.discriminatorValue ??
-			(checked
-				? (branches[truthyBranchIndex]?.discriminatorValue ?? true)
-				: (branches[falsyBranchIndex]?.discriminatorValue ?? false))
-		snapshotAndSetBranch(targetIndex, explicitValue)
-	}
+	const handleBooleanToggle = (checked: boolean) =>
+		selectBranch(checked ? truthyBranchIndex : falsyBranchIndex)
 
 	const replacementOwnsErrors = selectedBranch?.fields.some(
 		(field) => field.replaceValue && !field.node.meta.hidden,
@@ -328,7 +246,7 @@ export function UnionField(props: RendererProps) {
 					<div {...selectorAccessibility} role="group">
 						<SegmentedButtons
 							data={branchOptions}
-							value={String(selectedBranchIndex)}
+							value={selectorValue ?? ''}
 							onChange={handleSelectorChange}
 							onBlur={inputProps.onBlur}
 							disabled={isLocked}
@@ -341,7 +259,7 @@ export function UnionField(props: RendererProps) {
 					<Radio.Group
 						{...selectorAccessibility}
 						{...cleanProps({
-							value: String(selectedBranchIndex),
+							value: selectorValue ?? '',
 							onChange: handleSelectorChange,
 							onBlur: inputProps.onBlur,
 						})}
@@ -364,10 +282,10 @@ export function UnionField(props: RendererProps) {
 					<Switch
 						{...selectorInputAccessibility}
 						{...cleanProps({
-							checked: isTruthyDiscriminator(selectedBranch?.discriminatorValue),
+							checked: selectorValue !== null && truthySet.has(selectedBranch?.discriminatorValue),
 							onChange: (event: ChangeEvent<HTMLInputElement>) =>
 								handleBooleanToggle(event.currentTarget.checked),
-							label: isTruthyDiscriminator(selectedBranch?.discriminatorValue)
+							label: truthySet.has(selectedBranch?.discriminatorValue)
 								? (branchOptions[truthyBranchIndex]?.label ?? '开启')
 								: (branchOptions[falsyBranchIndex]?.label ?? '关闭'),
 							onBlur: inputProps.onBlur,
@@ -381,10 +299,11 @@ export function UnionField(props: RendererProps) {
 						{...selectorInputAccessibility}
 						{...cleanProps({
 							data: branchOptions,
-							value: String(selectedBranchIndex),
+							value: selectorValue,
+							allowDeselect: false,
 							onChange: handleSelectorChange,
-							placeholder: info.placeholder ?? '选择类型',
-							searchable: info.searchable,
+							placeholder: node.placeholder ?? '选择类型',
+							searchable: node.searchable,
 							onBlur: inputProps.onBlur,
 							disabled: isLocked,
 						})}
@@ -395,8 +314,8 @@ export function UnionField(props: RendererProps) {
 
 	const alwaysVisibleFields = useMemo(() => {
 		const fields = [...sharedFields]
-		if (shouldRenderDiscriminatorField && discriminator && info.discriminatorField) {
-			fields.unshift(info.discriminatorField)
+		if (shouldRenderDiscriminatorField && discriminator && node.discriminatorField) {
+			fields.unshift(node.discriminatorField)
 		}
 		const seen = new Set<string>()
 		return fields.filter((field) => {
@@ -405,19 +324,14 @@ export function UnionField(props: RendererProps) {
 			seen.add(field.key)
 			return true
 		})
-	}, [sharedFields, shouldRenderDiscriminatorField, discriminator, info.discriminatorField])
+	}, [sharedFields, shouldRenderDiscriminatorField, discriminator, node.discriminatorField])
 
 	// Initialization belongs to this union; descendants still perform their own
 	// FieldApi operation. The guard prevents repeated parent initialization in
 	// nested unions before React renders the newly established discriminator.
 	const initializeSelection = useMemo(() => {
 		const branchValue = selectedBranch?.discriminatorValue
-		if (
-			!discriminator ||
-			branchValue === undefined ||
-			branchValue === null ||
-			(isObject(value) && value[discriminator] === branchValue)
-		)
+		if (discriminator === undefined || branchValue === undefined || matchingIndex >= 0)
 			return initializeParentUnion
 		let initializedSelection = false
 		return () => {
@@ -425,11 +339,18 @@ export function UnionField(props: RendererProps) {
 			if (initializedSelection) return
 			initializedSelection = true
 			triggerFormEvents(inputProps, {
-				...(isObject(value) ? value : {}),
+				...(isRecord(value) ? value : {}),
 				[discriminator]: branchValue,
 			})
 		}
-	}, [initializeParentUnion, inputProps, value, discriminator, selectedBranch?.discriminatorValue])
+	}, [
+		initializeParentUnion,
+		inputProps,
+		value,
+		discriminator,
+		matchingIndex,
+		selectedBranch?.discriminatorValue,
+	])
 
 	const sharedFieldsNode =
 		alwaysVisibleFields.length === 0 ? null : (
@@ -444,18 +365,8 @@ export function UnionField(props: RendererProps) {
 							onChange:
 								field.key === discriminator
 									? (nextValue: unknown) => {
-											const candidate = {
-												...(isObject(value) ? value : {}),
-												[field.key]: nextValue,
-											}
-											snapshotAndSetBranch(
-												findMatchingBranchIndex(
-													branches,
-													candidate,
-													discriminator,
-													selectedBranchIndex,
-												),
-												nextValue as UnionBranch['discriminatorValue'],
+											selectBranch(
+												branches.findIndex((branch) => branch.discriminatorValue === nextValue),
 											)
 										}
 									: undefined,
@@ -466,7 +377,7 @@ export function UnionField(props: RendererProps) {
 		)
 
 	const branchFieldsNode = (() => {
-		if (!selectedBranch?.fields?.length) return info.compact ? null : renderEmptyBranch()
+		if (!selectedBranch?.fields?.length) return node.compact ? null : renderEmptyBranch()
 		const fieldsContent = (
 			<Stack gap="sm" key={selectedBranchIndex}>
 				{selectedBranch.fields.map((field) => (
@@ -481,6 +392,9 @@ export function UnionField(props: RendererProps) {
 											...inputProps,
 											disabled: Boolean(inputProps.disabled || field.node.meta.disabled),
 											readOnly: Boolean(inputProps.readOnly || field.node.meta.readOnly),
+											...(isProtectedField(field.node)
+												? { onChange: undefined, onBlur: undefined }
+												: {}),
 										},
 									})
 							: renderField({
@@ -494,7 +408,7 @@ export function UnionField(props: RendererProps) {
 				))}
 			</Stack>
 		)
-		return info.compact ? (
+		return node.compact ? (
 			fieldsContent
 		) : (
 			<Card withBorder p="md">
@@ -521,6 +435,11 @@ export function UnionField(props: RendererProps) {
 			<UnionSelectionContext.Provider value={initializeSelection}>
 				<Stack gap="md">
 					{shouldRenderSelector && selectorNode}
+					{switchError ? (
+						<Text role="status" size="sm" c="dimmed">
+							{switchError}
+						</Text>
+					) : null}
 					{sharedFieldsNode}
 					{branchFieldsNode}
 				</Stack>

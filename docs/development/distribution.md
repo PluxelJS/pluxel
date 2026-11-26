@@ -5,6 +5,8 @@ description: 创建、检查并签名验证 standalone 或 modules Node 应用�
 
 在将构建后的应用交付部署到生产服务器、容器镜像或离线环境时，可以通过发行物工具生成数字清单并校验完整性，确保文件未被损坏或篡改。
 
+不同终端的制品格式、更新时机和安装验收由宿主决定。桌面和移动示例的本地插件安装入口见[跨平台宿主契约](../host/runtime-portability.md#开发与交付)。
+
 ## 快速使用：创建与校验清单
 
 当生产目录（如 `dist/`）构建完成后，执行以下指令生成并核对清单：
@@ -33,7 +35,6 @@ export default defineConfig({
 	plugins: [
 		pluxel({
 			variant: 'headless',
-			managedDatabaseDrivers: [],
 			residualDependencies: {
 				packages: ['@libsql/client'],
 			},
@@ -42,8 +43,7 @@ export default defineConfig({
 })
 ```
 
-- `managedDatabaseDrivers: []`：显式切断未使用的托管数据库驱动（如默认的 pglite 或 postgres），避免无用依赖进入最终打包产物。
-- `residualDependencies.packages`：确保通过原生 binding 加载的依赖及其辅助二进制库被完整追踪并拷贝至交付目录。
+托管数据库的 standalone 构建按应用可达的安装器追踪驱动。`pglite()` 带入 PGlite 及其 WASM，`postgres()` 带入 `pg`，`libsql()` 带入构建平台的原生 `libsql` 模块。导入多个安装器并在运行时选择时，交付目录会包含这些驱动。[Host 的驱动选择](../host/configuration.md#数据库服务后端选择)
 
 ## CLI 工具核心命令
 
@@ -60,7 +60,7 @@ export default defineConfig({
 在受控的 CI/CD 发布流水线中，可通过私钥对生成的清单进行 DSSE 签名，并在部署端进行公钥验证：
 
 ```sh
-pluxel distribution verify ./dist \
+vp exec pluxel distribution verify ./dist \
 	--key ./release-issuer.ed25519.pub.pem \
 	--report ../reports/verification.json
 ```
@@ -74,15 +74,15 @@ pluxel distribution verify ./dist \
 
 ```sh
 # 写入发行标记
-pluxel distribution mark ./dist \
+vp exec pluxel distribution mark ./dist \
 	--claims ../private/release-claims.json \
 	--record-out ../private/delivery-record.json
 
 # 生成最终清单
-pluxel distribution create ./dist
+vp exec pluxel distribution create ./dist
 
 # 在接收端验证标记与交付记录的匹配度
-pluxel distribution correlate ./dist \
+vp exec pluxel distribution correlate ./dist \
 	--delivery-record ../private/delivery-record.json
 ```
 

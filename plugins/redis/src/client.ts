@@ -1,4 +1,11 @@
-import { BasePlugin, formatPluginNodeReference, Plugin, type Context } from '@pluxel/core'
+import type { Workbench } from '@pluxel/workbench'
+import {
+	BasePlugin,
+	formatPluginNodeReference,
+	Plugin,
+	type Context,
+	defineServiceRef,
+} from '@pluxel/core'
 import * as f from 'valibot-form'
 import * as v from 'valibot'
 import {
@@ -11,6 +18,7 @@ import { RedisScripts } from './scripts.ts'
 import { isRedisConnectionId } from './validation.ts'
 import { RedisWorkbench, type RedisWorkbenchStatus } from './workbench.ts'
 
+const WorkbenchRef = defineServiceRef<Workbench>()
 const MAX_CONNECTIONS = 64
 
 function isCredentialFreeRedisUrl(value: string): boolean {
@@ -147,7 +155,7 @@ type RedisOwnerState = {
 }
 
 /** Credential-free standalone provider for a bounded catalog of named Redis connections. */
-@Plugin(Redis)
+@Plugin(Redis, { displayName: 'Redis' })
 export class RedisPlugin extends Redis {
 	private readonly config = this.configs.use(RedisConfig)
 	private ids: readonly string[] = Object.freeze([])
@@ -209,7 +217,23 @@ export class RedisPlugin extends Redis {
 			this.deactivate()
 			throw error
 		}
-		this.publishWorkbench()
+		this.ctx.service(WorkbenchRef)?.publish(RedisWorkbench, {
+			connections: ({ signal: openSignal }) => ({
+				subscribe: (changed) => {
+					const listeners = (this.workbenchDataListeners ??= new Set())
+					listeners.add(changed)
+					return {
+						[Symbol.dispose]: () => {
+							listeners.delete(changed)
+						},
+					}
+				},
+				load: () => ({ status: this.workbenchStatus(openSignal) }),
+				actions: {
+					ping: ({ connectionId, payload }) => this.pingRedis(openSignal, connectionId, payload),
+				},
+			}),
+		})
 	}
 
 	private async startConnection(config: RedisConnectionConfig, signal: AbortSignal): Promise<void> {
@@ -226,7 +250,7 @@ export class RedisPlugin extends Redis {
 		const state: RedisConnectionState = {
 			config,
 			client,
-			workbench: this.ctx.workbench
+			workbench: this.ctx.service(WorkbenchRef)
 				? {
 						recentErrorType: null,
 						ping: { state: 'not-run', latencyMs: null, errorType: null },
@@ -289,28 +313,6 @@ export class RedisPlugin extends Redis {
 			)
 		}
 		this.states.set(config.id, state)
-	}
-
-	private publishWorkbench(): void {
-		const workbench = this.ctx.workbench
-		if (!workbench) return
-		this.workbenchDataListeners = new Set()
-		workbench.publish(RedisWorkbench, {
-			connections: ({ signal }) => ({
-				subscribe: (changed) => {
-					this.workbenchDataListeners!.add(changed)
-					return {
-						[Symbol.dispose]: () => {
-							this.workbenchDataListeners?.delete(changed)
-						},
-					}
-				},
-				load: () => ({ status: this.workbenchStatus(signal) }),
-				actions: {
-					ping: ({ connectionId, payload }) => this.pingRedis(signal, connectionId, payload),
-				},
-			}),
-		})
 	}
 
 	private workbenchStatus(signal: AbortSignal): RedisWorkbenchStatus {

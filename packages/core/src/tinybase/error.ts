@@ -6,6 +6,7 @@ export class TinyBaseError extends Error {
 			| 'INVALID_STORE'
 			| 'STORE_IN_USE'
 			| 'OPEN_CONFLICT'
+			| 'DURABILITY_UNAVAILABLE'
 			| 'NOT_OPEN'
 			| 'TRANSACTION_ACTIVE'
 			| 'SNAPSHOT_INVALID'

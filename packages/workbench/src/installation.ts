@@ -1,12 +1,9 @@
 import { readNativeWorkbenchArtifacts } from './services/workbench/loaded-artifacts'
-import { defineHostService } from '@pluxel/host'
-import {
-	installOwnerViewCapability,
-	installRootCapability,
-	resolveContextCapability,
-} from '@pluxel/core/host'
+import { defineHostService, type HostService } from '@pluxel/host'
+import { assertWorkbenchApplicationRuntime } from '@pluxel/host/internal/shared-runtime'
+import { installOwnerViewService, installRootService } from '@pluxel/core/host'
 import type { Context } from '@pluxel/core'
-import { isPluginPartContext } from '@pluxel/core/internal'
+import { isPluginPartContext, resolveContextService } from '@pluxel/core/internal'
 import type { WorkbenchInstallOptions, WorkbenchBackend } from './services/workbench'
 import type {
 	AnyWorkbenchDefinition,
@@ -20,7 +17,7 @@ import { readWorkbenchShortcuts } from './workbench/shortcuts'
 export function createWorkbenchService(
 	options: WorkbenchInstallOptions,
 	createBackend: (root: Context, options: WorkbenchInstallOptions) => WorkbenchBackend,
-) {
+): HostService {
 	const snapshot = Object.freeze({
 		...options,
 		...(options.artifacts ? { artifacts: Object.freeze({ ...options.artifacts }) } : {}),
@@ -30,29 +27,29 @@ export function createWorkbenchService(
 	})
 	return defineHostService({
 		name: 'Workbench',
-		capabilities: [
-			installRootCapability(WorkbenchHost, { create: (root) => createBackend(root, snapshot) }),
-			installOwnerViewCapability(Workbench, {
-				property: 'workbench',
-				createRoot: (root) => resolveContextCapability(root, WorkbenchHost),
+		provides: [
+			installRootService(WorkbenchHost, { create: (root) => createBackend(root, snapshot) }),
+			installOwnerViewService(Workbench, {
+				createRoot: (root) => resolveContextService(root, WorkbenchHost),
 				createView: (backend, owner): PluginWorkbench =>
 					Object.freeze({
 						publish<const Definition extends AnyWorkbenchDefinition>(
 							definition: Definition,
 							...bindings: WorkbenchPublishBindings<Definition>
-						): void {
+						) {
 							if (isPluginPartContext(owner)) {
 								throw new Error(
 									'[workbench] PluginPart cannot publish Workbench entries; aggregate them in the owning Plugin definition.',
 								)
 							}
-							backend.publish(owner, definition, ...bindings)
+							return backend.publish(owner, definition, ...bindings)
 						},
 					}),
 			}),
 		],
-		async prepare({ ctx, plugins }) {
-			const backend = resolveContextCapability(ctx, WorkbenchHost)
+		async prepare({ ctx, plugins, applicationEntry }) {
+			if (applicationEntry !== undefined) assertWorkbenchApplicationRuntime(applicationEntry)
+			const backend = resolveContextService(ctx, WorkbenchHost)
 			await backend.prepare()
 			for (const candidate of await readNativeWorkbenchArtifacts(plugins)) {
 				const prepared = await backend.artifactCoordinator.prepareCandidate(candidate)

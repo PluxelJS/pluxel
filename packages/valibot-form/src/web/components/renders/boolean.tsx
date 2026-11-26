@@ -1,9 +1,9 @@
 import { Switch } from '@mantine/core'
 import { FieldChrome } from '../chrome/FieldChrome'
 import { cleanProps } from '../../utils/propHelpers'
-import { normalizeErrorMessages, type RendererProps, triggerFormEvents } from './types'
+import { normalizeErrorMessages, type ScalarRendererProps, triggerFormEvents } from './types'
 
-export function BooleanField(props: RendererProps) {
+export function BooleanField(props: ScalarRendererProps<'boolean'>) {
 	const { node, errors, inputProps, value } = props
 	const baseErrors = normalizeErrorMessages(errors)
 
@@ -18,6 +18,7 @@ export function BooleanField(props: RendererProps) {
 				badge: node.meta.badge,
 				errors: baseErrors,
 				errorId: inputProps.errorId,
+				descriptionId: inputProps.descriptionId,
 				hideLabel: node.meta.hideLabel,
 				hideRequired: node.meta.hideRequired,
 			})}

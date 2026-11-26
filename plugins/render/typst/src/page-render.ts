@@ -30,7 +30,7 @@ export interface TypstPageImage {
 export function validateRenderPage(
 	input: TypstRenderPageOptions,
 	pages?: readonly TypstPage[],
-): void {
+): number {
 	if (
 		!input ||
 		typeof input !== 'object' ||
@@ -40,7 +40,7 @@ export function validateRenderPage(
 		input.page < 1
 	)
 		throw new TypstError('INVALID_INPUT', 'revision and page must be positive safe integers')
-	const scale = input.scale ?? 2
+	const scale = input.scale === undefined ? 2 : input.scale
 	if (!Number.isFinite(scale) || scale <= 0 || Math.fround(scale) <= 0)
 		throw new TypstError('INVALID_INPUT', 'scale must be positive and finite')
 	if (scale > 8) throw new TypstError('LIMIT_EXCEEDED', 'scale exceeds 8 pixels per point')
@@ -56,7 +56,7 @@ export function validateRenderPage(
 			region.height <= 0)
 	)
 		throw new TypstError('INVALID_INPUT', 'region must be a finite positive rectangle')
-	if (!pages) return
+	if (!pages) return scale
 	const page = pages[input.page - 1]
 	if (!page) throw new TypstError('INVALID_INPUT', 'page is outside the compiled document')
 	if (region && (region.x + region.width > page.width || region.y + region.height > page.height))
@@ -68,4 +68,5 @@ export function validateRenderPage(
 			'LIMIT_EXCEEDED',
 			'Full page raster exceeds 8192 pixels per side or 16000000 pixels; reduce scale even when cropping',
 		)
+	return scale
 }

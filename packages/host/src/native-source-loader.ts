@@ -12,7 +12,7 @@ import {
 	readSharedRuntimePackage,
 	sharedRuntimeForImport,
 } from './shared-runtime'
-import type { HostApplicationFactory } from './application'
+import type { HostApplicationFactory } from './node-application'
 import { recordLoadedPluginModule, readLoadedPluginModule } from './loaded-modules'
 import {
 	assertSharedPackageVersion,
@@ -173,7 +173,7 @@ export async function createNativeSourceLoader(options: {
 			const owner = installedPackageFacts(file)
 			if (!owner) continue
 			for (const plugin of collectPluginModuleExports(await import(module))) {
-				const entry = plugin.definitionAddress().entry
+				const entry = plugin.address().entry
 				if (
 					(entry.kind === 'source-entry' &&
 						typeof owner.manifest.pluxel?.artifactRoot === 'string') ||
@@ -206,7 +206,7 @@ export async function createNativeSourceLoader(options: {
 		async recordFixed(plugins: readonly PluginConstructor[]): Promise<void> {
 			for (const plugin of plugins) {
 				if (readLoadedPluginModule(plugin)) continue
-				const definition = plugin.definitionAddress()
+				const definition = plugin.address()
 				if (definition.entry.kind === 'source-entry') continue
 				const specifier =
 					definition.entry.packageName +

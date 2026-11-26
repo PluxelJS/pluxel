@@ -1,14 +1,16 @@
 import type { RpcTarget } from 'capnweb'
 import { workbench } from '@pluxel/workbench'
 
-export const VaultWorkbench = workbench.define({
+export const VaultWorkbench = workbench.define(import.meta.url, {
 	overview: workbench.view<RpcTarget>({
-		renderer: workbench.entry(import.meta.url, './ui/overview.tsx'),
-		placement: workbench.route('/vault', {
+		renderer: './ui/overview.tsx',
+		placement: {
+			kind: 'route',
+			path: '/vault',
 			title: 'Vault',
-			icon: workbench.icons.ShieldLock,
+			icon: 'shield-lock',
 			navigation: { label: 'Vault' },
 			order: 20,
-		}),
+		},
 	}),
 })

@@ -1,6 +1,5 @@
 import type { Context, PluginContext } from '../../context/Context'
 import { createOwnerContext } from '../../context/context-factory'
-import { closeConsumerInvocations, closeOwnerInvocations } from '../../internal/owner-invocations'
 import type { BasePlugin, PluginCleanup, PluginRequirementResolver } from './BasePlugin'
 import { createPluginConfigs, type PluginConfigs } from './PluginConfigs'
 import {
@@ -19,7 +18,7 @@ import {
 	type EffectsMeta,
 	type EffectsScope,
 } from '../../services/effects/EffectsService'
-import { inheritPinnedPluginInfo, pinContextValue } from './context-projection'
+import { inheritPinnedPluginInfo } from './context-projection'
 import { EFFECTS_CHILD_SCOPE } from '../../internal/effects-child-scope'
 import { EFFECTS_PART_PATH } from '../../internal/effects-part-path'
 
@@ -61,20 +60,20 @@ function releasePartConstructionFrame(frame: PartConstructionFrame, cause?: unkn
 
 function createPartContext(parent: Context, path: PartPath): Context {
 	const key = path.at(-1)!
-	const ctx = createOwnerContext(parent, `${parent.name}.${key}`)
-	inheritPinnedPluginInfo(ctx, parent)
 	const factory = parent.effects as unknown as ChildScopeFactory
 	const createScope = factory[EFFECTS_CHILD_SCOPE]
 	if (typeof createScope !== 'function') {
-		throw new TypeError('[pluxel/core] Effects service cannot create an owner-bound child scope')
+		throw new TypeError('[pluxel/core] Effects scope cannot create an owner-bound child scope')
 	}
-	const effects = createScope.call(factory, ctx, {
-		tag: `part:${path.join('.')}`,
-		[EFFECTS_PART_PATH]: path,
-	} as EffectsMeta)
-	pinContextValue(ctx, 'effects', effects)
-	const logger = parent.logger.with({ partPath: path.join('.') })
-	pinContextValue(ctx, 'logger', logger)
+	const ctx = createOwnerContext(parent, `${parent.name}.${key}`, (owner) => ({
+		effects: createScope.call(factory, owner, {
+			tag: `part:${path.join('.')}`,
+			[EFFECTS_PART_PATH]: path,
+		} as EffectsMeta),
+		logger: parent.logger.with({ partPath: path.join('.') }),
+	}))
+	inheritPinnedPluginInfo(ctx, parent)
+	Object.preventExtensions(ctx)
 	pluginPartContexts.add(ctx)
 	return ctx
 }
@@ -371,16 +370,6 @@ export function isPluginPartContext(ctx: Context): boolean {
 /** @internal Core test helper; deliberately not exported from a package entry point. */
 export function pluginPartContextOf(part: PluginPart<any, any>): Context {
 	return pluginPartStateOf(part).ctx
-}
-
-export function closePluginPartInvocations(host: PluginParts<BasePlugin>): Promise<void[]> {
-	const runtime = host as PluginPartsRuntime<BasePlugin>
-	return Promise.all([...runtime.partContexts].map((ctx) => closeOwnerInvocations(ctx)))
-}
-
-export function closePluginPartConsumerInvocations(host: PluginParts<BasePlugin>): Promise<void[]> {
-	const runtime = host as PluginPartsRuntime<BasePlugin>
-	return Promise.all([...runtime.partContexts].map((ctx) => closeConsumerInvocations(ctx)))
 }
 
 export function finalizePluginParts(host: PluginParts<BasePlugin>): void {

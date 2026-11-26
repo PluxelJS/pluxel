@@ -1,81 +1,6 @@
-import { makePathArray } from '@tanstack/react-form'
 import type { FieldNode } from 'valibot-form'
-import type { HostConfigMutation, HostConfigSource } from '@pluxel/host'
-export { adaptConfigPresentationFields } from '../../workbench/presentationAdapter'
+import type { HostConfigSource } from '@pluxel/host'
 
-/** Diff editable raw inputs. Structural fields replace atomically; undefined restores inheritance. */
-export function buildEditableConfigPatch(
-	fields: readonly FieldNode[],
-	candidate: Record<string, unknown>,
-	current: Record<string, unknown>,
-): HostConfigMutation {
-	const set: Record<string, unknown> = {}
-	const remove: string[][] = []
-	const visit = (
-		nodes: readonly FieldNode[],
-		next: Record<string, unknown>,
-		previous: Record<string, unknown>,
-		parent: string[],
-	) => {
-		for (const node of nodes) {
-			if (!node.name || !editable(node)) continue
-			const value = next[node.name]
-			const before = previous[node.name]
-			if (Object.is(value, before) || JSON.stringify(value) === JSON.stringify(before)) continue
-			const path = [...parent, node.name]
-			if (node.kind === 'object' && (isRecord(value) || value === undefined)) {
-				visit(node.fields, isRecord(value) ? value : {}, isRecord(before) ? before : {}, path)
-			} else {
-				// Replacing a union/record also deletes keys left by the previous branch.
-				remove.push(path)
-				if (value !== undefined) write(set, path, value)
-			}
-		}
-	}
-	visit(fields, candidate, current, [])
-	return {
-		...(Object.keys(set).length > 0 ? { set } : {}),
-		...(remove.length > 0 ? { remove } : {}),
-	}
-}
-export function editableConfigPaths(
-	fields: readonly FieldNode[],
-	parent: readonly string[] = [],
-): readonly (readonly string[])[] {
-	return fields.flatMap((node) => {
-		if (!node.name || !editable(node)) return []
-		const path = [...parent, node.name]
-		return node.kind === 'object' ? editableConfigPaths(node.fields, path) : [path]
-	})
-}
-function editable(node: FieldNode): boolean {
-	if (!node.name) return false
-	const parsed = makePathArray(node.name)
-	return (
-		parsed.length === 1 &&
-		parsed[0] === node.name &&
-		node.kind !== 'unsupported' &&
-		!node.meta.readOnly &&
-		!node.meta.disabled
-	)
-}
-function write(root: Record<string, unknown>, path: readonly string[], value: unknown) {
-	let cursor = root
-	for (const key of path.slice(0, -1)) {
-		const existing = Object.hasOwn(cursor, key) ? cursor[key] : undefined
-		const next = isRecord(existing) ? existing : {}
-		setOwn(cursor, key, next)
-		cursor = next
-	}
-	setOwn(cursor, path.at(-1)!, value)
-}
-/**
- * Patches are sent over capnweb, which only serializes plain objects (a null-prototype object is
- * rejected as "Cannot serialize value"), so records are plain and keys are defined, not assigned.
- */
-function setOwn(target: Record<string, unknown>, key: string, value: unknown): void {
-	Object.defineProperty(target, key, { value, enumerable: true, configurable: true, writable: true })
-}
 function isRecord(value: unknown): value is Record<string, unknown> {
 	return !!value && typeof value === 'object' && !Array.isArray(value)
 }
@@ -109,21 +34,50 @@ export function applyConfigSources(
 			displayScalar && effective !== undefined
 				? `当前有效输入：${JSON.stringify(effective)}`
 				: undefined
+		const presented =
+			displayScalar && effective === undefined && source === undefined
+				? withDefaultPlaceholder(field, output)
+				: field
 		const target =
-			displayScalar && output !== undefined ? `目标配置：${JSON.stringify(output)}` : undefined
-		const description = [field.meta.description, origin, inherited, target]
-			.filter(Boolean)
-			.join('。')
-		const meta = description ? { ...field.meta, description } : field.meta
+			displayScalar && output !== undefined && presented === field
+				? `目标配置：${JSON.stringify(output)}`
+				: undefined
+		const hints = [origin, inherited, target].filter(Boolean).join('。')
+		const description = field.meta.description?.trimEnd()
+		const meta = hints
+			? {
+					...field.meta,
+					description: description
+						? `${description}${/[。．.！!？?…]$/u.test(description) ? '' : '。'}${hints}`
+						: hints,
+				}
+			: field.meta
 		return field.kind === 'object'
 			? {
 					...field,
 					meta,
 					fields: applyConfigSources(field.fields, sources, path, effectiveInput, config),
 				}
-			: { ...field, meta }
+			: { ...presented, meta }
 	})
 }
+
+function withDefaultPlaceholder(field: FieldNode, value: unknown): FieldNode {
+	if ((typeof value !== 'string' && typeof value !== 'number') || value === '') return field
+	if (field.kind === 'string' || field.kind === 'number') {
+		return field.placeholder === undefined && typeof value === field.kind
+			? { ...field, placeholder: String(value) }
+			: field
+	}
+	if (field.kind !== 'picklist' || field.control !== 'select' || field.placeholder !== undefined) {
+		return field
+	}
+	const option = field.entries?.find((entry) => entry.value === value)
+	if (!option && !field.options?.includes(value)) return field
+	const label = field.labels && Object.hasOwn(field.labels, value) ? field.labels[value] : undefined
+	return { ...field, placeholder: option?.label ?? label ?? String(value) }
+}
+
 function contains(parent: readonly string[], child: readonly string[]): boolean {
 	return parent.length <= child.length && parent.every((key, index) => key === child[index])
 }

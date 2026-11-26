@@ -7,8 +7,8 @@ import {
 	type Events,
 	type EventsService,
 } from '@pluxel/core'
-import { resolveCoreRootInputs } from '@pluxel/core/internal'
-import { withCoreInternalTestHost } from '@pluxel/core/internal/test'
+import { snapshotCoreFacilitiesConfig } from '../../context/zenfs-plan'
+import { withCoreInternalTestContext, withCoreInternalTestHost } from '@pluxel/core/internal/test'
 
 declare module '@pluxel/core' {
 	interface Events {
@@ -96,11 +96,14 @@ describe('event boundaries', () => {
 			expect(consumer.seenAt).toEqual(['a'])
 			expect(consumer.seenFront).toEqual(['a'])
 			expect(consumer.seenAmbient).toEqual(['ambient-a'])
+			const pending = consumer.boundChannel!.waitFor().catch((error: unknown) => error)
 			host.remove(ChannelConsumer)
 			await host.commit()
+			await expect(pending).resolves.toMatchObject({ message: "waitFor 'channel' cancelled" })
 			const listenerCount = owner.changed.count()
 			expect(() => consumer.boundChannel!.on(() => undefined)).toThrow(/disposed/i)
 			expect(() => consumer.boundChannel!.when().once(() => undefined)).toThrow(/disposed/i)
+			expect(() => consumer.boundChannel!.waitFor()).toThrow(/disposed/i)
 			expect(owner.changed.count()).toBe(listenerCount)
 			owner.changed.emit('b')
 			owner.ctx.events.emit('test:ambient-changed', 'ambient-b')
@@ -116,7 +119,7 @@ describe('event boundaries', () => {
 		await withCoreInternalTestHost(async (host) => {
 			expect(ambientHostConfig.events.events).toEqual(['test:ambient-changed'])
 			const configuredEvents: (keyof Events)[] = ['test:ambient-changed']
-			const inputs = resolveCoreRootInputs({
+			const inputs = snapshotCoreFacilitiesConfig({
 				events: { events: configuredEvents, errorPolicy: 'throw' },
 			})
 			configuredEvents.length = 0
@@ -167,6 +170,54 @@ describe('event boundaries', () => {
 			publisher.ctx.events.emit('test:ambient-changed', 'b')
 			expect(listener.seen).toEqual(['a', 'after-unsubscribe'])
 			expect(listener.seenAt).toEqual(['a', 'after-unsubscribe'])
+		})
+	})
+
+	it('releases ended event and channel subscriptions from a long-lived owner', async () => {
+		await withCoreInternalTestContext(async (ctx) => {
+			const { impl } = ctx.effects as unknown as {
+				impl: { aById: unknown[]; stacks: number[][] }
+			}
+			const countRegistrations = () => impl.aById.filter((entry) => entry != null).length
+			const initialRegistrations = countRegistrations()
+			const event = 'test:ambient-changed'
+			const channel = new EvtChannel<[string]>(ctx)
+			const noop = () => {}
+			const clear = () => {
+				ctx.events.on(event, noop)()
+				ctx.events.on(event, noop)
+				expect(ctx.events.off(event, noop)).toBe(true)
+				channel.on(noop)
+				channel.clear()
+				const controller = new AbortController()
+				ctx.events.onAt(event, { at: 0, signal: controller.signal }, noop)
+				channel.at('front').once(noop, { signal: controller.signal })
+				controller.abort()
+				ctx.events.on(event, noop, { signal: controller.signal })
+			}
+			for (let i = 0; i < 128; i++) {
+				clear()
+				ctx.events.onceFront(event, noop)
+				channel.when().many(2, noop)
+				const broadcast = ctx.events.waitFor(event)
+				const unicast = channel.waitFor()
+				expect(ctx.events.emit(event, 'match')).toBe(2)
+				expect(channel.emit('match')).toBe(2)
+				expect(channel.emit('second')).toBe(1)
+				expect(await broadcast).toEqual(['match'])
+				expect(await unicast).toEqual(['match'])
+				expect(ctx.events.emit(event, 'gone')).toBe(0)
+				expect(channel.count()).toBe(0)
+			}
+			const cancelled = ctx.events.waitFor(event)
+			const cancellation = cancelled.catch((error: unknown) => error)
+			cancelled.cancel()
+			await expect(cancellation).resolves.toMatchObject({
+				message: expect.stringContaining('cancelled'),
+			})
+			await expect(channel.waitFor({ timeout: 0 })).rejects.toThrow('timeout')
+			expect(countRegistrations()).toBe(initialRegistrations)
+			expect(impl.stacks.flat().length).toBeLessThan(128)
 		})
 	})
 })

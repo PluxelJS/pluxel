@@ -7,16 +7,11 @@ import { TodoPlugin } from '@example/todo-plugin'
 describe('HttpPlugin', () => {
 	it('exposes a validated Todo API backed by a required Plugin dependency', async () => {
 		const host = await createHost({
-			plugins: [HttpPlugin, TodoPlugin],
+			plugins: [
+				{ plugin: HttpPlugin },
+				{ plugin: TodoPlugin, config: { maxItems: 2, seedTitle: 'First task' } },
+			],
 			services: [elysia()],
-			config: {
-				records: [
-					{
-						owner: TodoPlugin.nodeAddress(),
-						config: { maxItems: 2, seedTitle: 'First task' },
-					},
-				],
-			},
 		})
 		try {
 			await host.startNode(HttpPlugin.nodeAddress())

@@ -7,6 +7,7 @@ import { tmpdir } from 'node:os'
 import { describe, expect, it } from 'vitest'
 import type { UserConfig } from 'vite-plus/pack'
 import { pluxel } from '@pluxel/rolldown'
+import { createDiskFixture } from '@pluxel/test/fixtures'
 
 describe('tsdown application plugin', () => {
 	it('preserves ordinary plugin order and native output preferences while installing the freezer once', async () => {
@@ -56,50 +57,115 @@ describe('tsdown application plugin', () => {
 		)
 	})
 
-	it('captures managed driver selection through the public application plugin', async () => {
-		const drivers: ('pglite' | 'postgres')[] = []
-		const plugin = pluxel({ variant: 'headless', managedDatabaseDrivers: drivers, lint: false })
-		drivers.push('pglite')
-		const result = (await plugin.tsdownConfig!(
-			{ entry: './app.ts', plugins: [plugin] },
-			{},
-		)) as UserConfig
-		const [generated] = (await result.plugins) as Array<
-			Array<{
-				name: string
-				resolveId?: (
-					this: object,
-					id: string,
-					importer: string,
-					options: object,
-				) => Promise<unknown>
-			}>
-		>
-		const externals = generated!.find((entry) => entry?.name === 'pluxel:nf3-externals')!
-		for (const driver of ['pglite', 'postgres']) {
-			await expect(
-				externals.resolveId!.call({}, `#pluxel/database-driver/${driver}`, '/app/app.ts', {}),
-			).resolves.toBe(`\0pluxel:omitted-managed-database:${driver}`)
-		}
-	})
-
-	it('rejects invalid managed driver selections and modules-only misuse before building', () => {
-		for (const managedDatabaseDrivers of [null, 'pglite']) {
-			expect(() => Reflect.apply(pluxel, undefined, [{ managedDatabaseDrivers }])).toThrow(
-				'managedDatabaseDrivers must be an array',
-			)
-		}
-		expect(() =>
-			Reflect.apply(pluxel, undefined, [{ managedDatabaseDrivers: ['sqlite'] }]),
-		).toThrow('managedDatabaseDrivers[0] must be "pglite" or "postgres"')
-		const moduleSelections: Array<readonly string[] | undefined> = [[], undefined]
-		for (const managedDatabaseDrivers of moduleSelections) {
-			expect(() =>
-				Reflect.apply(pluxel, undefined, [{ delivery: 'modules', managedDatabaseDrivers }]),
-			).toThrow('modules includes standalone-only managedDatabaseDrivers')
-		}
+	it('rejects a separate database driver selection at build time', () => {
+		expect(() => Reflect.apply(pluxel, undefined, [{ managedDatabaseDrivers: [] }])).toThrow(
+			'unsupported managedDatabaseDrivers',
+		)
 	})
 })
+
+it.each([
+	['pglite', '@electric-sql/pglite', 'pg'],
+	['postgres', 'pg', '@electric-sql/pglite'],
+])(
+	'standalone traces only the native driver imported by %s()',
+	async (installer, selected, other) => {
+		await using fixture = await createDiskFixture({
+			'package.json': JSON.stringify({ name: 'pg-service-delivery', type: 'module' }),
+			'app.ts': `import { defineHostApplication } from '@pluxel/host'
+import { ${installer} } from '@pluxel/services/pg/${installer}'
+export default defineHostApplication(() => ({ services: [${installer}()] }))`,
+			'build.mjs': `import { build } from ${JSON.stringify(import.meta.resolve('vite-plus/pack'))}
+import { pluxel } from '@pluxel/rolldown'
+await build({ entry: 'app.ts', plugins: [pluxel({ variant: 'headless', lint: false })], config: false })`,
+		})
+		const scope = join(fixture.path, 'node_modules/@pluxel')
+		await mkdir(scope, { recursive: true })
+		for (const name of ['core', 'host', 'services', 'rolldown']) {
+			await symlink(
+				fileURLToPath(new URL(`../../${name}/`, import.meta.url)),
+				join(scope, name),
+				'dir',
+			)
+		}
+		await promisify(execFile)(process.execPath, ['build.mjs'], { cwd: fixture.path })
+		const deployment = JSON.parse(
+			await readFile(join(fixture.path, 'dist/pluxel-deployment.json'), 'utf8'),
+		)
+		expect(deployment.residualDependencies.packages).toContain(selected)
+		expect(deployment.residualDependencies.packages).not.toContain(other)
+	},
+	60_000,
+)
+
+it('runs the selected SQLite driver from a relocated standalone deployment', async () => {
+	await using fixture = await createDiskFixture({
+		'package.json': JSON.stringify({
+			name: 'sqlite-delivery',
+			type: 'module',
+			exports: './notes.ts',
+		}),
+		'notes.ts': `import { BasePlugin, Plugin } from '@pluxel/core'
+import { defineDatabase, Sqlite } from '@pluxel/services/sqlite'
+import { integer, sqliteTable } from 'drizzle-orm/sqlite-core'
+export const notes = sqliteTable('notes', { id: integer().primaryKey() })
+export const definition = defineDatabase({ schema: { notes } })
+@Plugin()
+export class Notes extends BasePlugin {
+  async init() {
+    const handle = await this.ctx.service(Sqlite).use(definition)
+    const [row] = await handle.run(db => db.insert(notes).values({}).returning())
+    console.log('SQLITE_ROW=' + row.id)
+  }
+}`,
+		'app.ts': `import { defineHostApplication } from '@pluxel/host'
+import { libsql } from '@pluxel/services/sqlite/libsql'
+import { Notes } from './notes'
+export default defineHostApplication(() => ({
+  services: [libsql({ directory: './data' })],
+  plugins: [{ plugin: Notes, autoStart: true }],
+}))`,
+		'drizzle/0000_notes.sql': 'CREATE TABLE notes (id INTEGER PRIMARY KEY)',
+		'drizzle/pluxel-migrations.json': JSON.stringify({ lineage: 'main' }),
+		'drizzle/meta/_journal.json': JSON.stringify({
+			dialect: 'sqlite',
+			entries: [{ idx: 0, tag: '0000_notes', when: 1, breakpoints: true }],
+		}),
+		'build.mjs': `import { build } from ${JSON.stringify(import.meta.resolve('vite-plus/pack'))}
+import { pluxel } from '@pluxel/rolldown'
+await build({entry:'app.ts', plugins:[pluxel({variant:'headless',lint:false})], config:false})`,
+	})
+	const modules = join(fixture.path, 'node_modules')
+	await mkdir(join(modules, '@pluxel'), { recursive: true })
+	for (const name of ['core', 'host', 'services', 'rolldown']) {
+		await symlink(
+			fileURLToPath(new URL(`../../${name}/`, import.meta.url)),
+			join(modules, '@pluxel', name),
+			'dir',
+		)
+	}
+	await symlink(
+		fileURLToPath(new URL('../../services/node_modules/drizzle-orm', import.meta.url)),
+		join(modules, 'drizzle-orm'),
+		'dir',
+	)
+	const run = promisify(execFile)
+	await run(process.execPath, ['build.mjs'], { cwd: fixture.path })
+	await using destination = await createDiskFixture({})
+	await rename(join(fixture.path, 'dist'), join(destination.path, 'release'))
+	const release = join(destination.path, 'release')
+	const deployment = JSON.parse(await readFile(join(release, 'pluxel-deployment.json'), 'utf8'))
+	expect(deployment.residualDependencies.packages).toContain('libsql')
+	expect(deployment.residualDependencies.packages).not.toContain('pg')
+	for (const expected of [1, 2]) {
+		const { stdout } = await run(
+			process.execPath,
+			['--input-type=module', '-e', "const app = await import('./app.mjs'); await app.stop()"],
+			{ cwd: release },
+		)
+		expect(stdout).toContain(`SQLITE_ROW=${expected}`)
+	}
+}, 60_000)
 
 it('freezes a Host-only application without evaluating its async factory and runs fresh configuration outside the workspace', async () => {
 	const root = await mkdtemp(join(tmpdir(), 'pluxel-host-application-'))
@@ -119,11 +185,11 @@ it('freezes a Host-only application without evaluating its async factory and run
 			join(root, 'app.ts'),
 			`
 import { defineHostApplication, defineHostService } from '@pluxel/host';
-import { defineContextCapability, installRootCapability } from '@pluxel/core/host';
-const Selected = defineContextCapability('Selected');
+import { installRootService } from '@pluxel/core/host';
+export class Selected { constructor(readonly value: string) {} }
 export default defineHostApplication(async ({env}) => {
   if (env.APPLICATION_STAGE !== 'run') throw new Error('FACTORY_EXECUTED_DURING_BUILD');
-  return { plugins: [], services: [defineHostService({name:'Selected',capabilities:[installRootCapability(Selected,{create:()=>env.APPLICATION_VALUE})],prepare({effects}) { process.stdout.write('SERVICE_READY:'+env.APPLICATION_VALUE+'\\n'); effects.defer(()=>{process.stdout.write('SERVICE_CLOSED\\n')}) }})] };
+  return { plugins: [], services: [defineHostService({name:'Selected',provides:[installRootService(Selected,{create:()=>new Selected(env.APPLICATION_VALUE ?? '')})],prepare({effects}) { process.stdout.write('SERVICE_READY:'+env.APPLICATION_VALUE+'\\n'); effects.defer(()=>{process.stdout.write('SERVICE_CLOSED\\n')}) }})] };
 });`,
 		)
 		const script = join(root, 'build.mts')
@@ -266,12 +332,14 @@ it('delivers an application-owned fetch export after launch without opening a li
 			`
 import { BasePlugin, Plugin } from '@pluxel/core';
 import { defineHostApplication } from '@pluxel/host';
-import { elysia, createElysiaHandler } from '@pluxel/services/elysia';
+import { ElysiaApp, elysia, createElysiaHandler } from '@pluxel/services/elysia';
 import { t } from 'elysia';
 @Plugin()
 class Echo extends BasePlugin {
  protected init() {
-  this.ctx.elysia.get('/echo', {query:t.Object({message:t.String()})}, ({query}) => query.message);
+  const router = this.ctx.service(ElysiaApp);
+  if (!router) throw new Error('Elysia service is not installed');
+  router.get('/echo', {query:t.Object({message:t.String()})}, ({query}) => query.message);
  }
 }
 let handler: ReturnType<typeof createElysiaHandler> | undefined;
@@ -281,7 +349,7 @@ export function fetch(request: Request): Promise<Response> {
 }
 export const endpointName = 'echo';
 export default defineHostApplication(() => ({
- plugins:[Echo], services:[elysia()], policy:{autoStart:[Echo]},
+ plugins:[{plugin:Echo,autoStart:true}], services:[elysia()],
  launch({host}) { handler=createElysiaHandler(host); }
 }));`,
 		)
@@ -291,7 +359,7 @@ export default defineHostApplication(() => ({
 			`
 import { build } from ${JSON.stringify(import.meta.resolve('vite-plus/pack'))};
 import { pluxel } from ${JSON.stringify(new URL('../src/application.ts', import.meta.url).href)};
-await build({cwd:${JSON.stringify(root)},entry:'app.ts',plugins:[pluxel({variant:'headless',managedDatabaseDrivers:[],lint:false})],config:false});`,
+await build({cwd:${JSON.stringify(root)},entry:'app.ts',plugins:[pluxel({variant:'headless',lint:false})],config:false});`,
 		)
 		await promisify(execFile)(process.execPath, ['--import', import.meta.resolve('tsx'), script], {
 			timeout: 30000,

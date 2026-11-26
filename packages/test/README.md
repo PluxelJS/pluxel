@@ -12,7 +12,7 @@ import { createTestHost } from '@pluxel/test'
 import { elysia } from '@pluxel/services/elysia'
 
 await using host = await createTestHost({ services: [elysia()] })
-await host.start(MyPlugin)
+await host.start(MyPlugin.nodeAddress())
 ```
 
 | 入口           | 用途                                                                             |

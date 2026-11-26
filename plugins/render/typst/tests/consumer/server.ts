@@ -16,7 +16,7 @@ import type { Plugin } from 'vite'
 import { fontFamilies, sourceExample } from './source-example'
 import { exampleTitles, type ExampleId } from './examples'
 import { createDocumentService } from './document-private/server'
-import { DocumentInputError } from './document-private/project'
+import { DocumentInputError, documentAsset, documentAssetPath } from './document-private/project'
 
 const run = promisify(execFile)
 const maxClients = 8
@@ -173,8 +173,12 @@ export function consumerCompiler(options: Readonly<{ publicOrigin?: string }> = 
 					],
 				})
 				// This is an isolated browser acceptance host, accessed only through public test APIs.
-				await host.start(FontsPlugin, { initialConfig: { files, maxFontBytes: 32 * 1024 * 1024 } })
-				typst = await host.start(TypstPlugin, { initialConfig: { maxSessions: maxClients } })
+				await host.start(FontsPlugin.nodeAddress(), {
+					initialConfig: { files, maxFontBytes: 32 * 1024 * 1024 },
+				})
+				typst = await host.start(TypstPlugin.nodeAddress(), {
+					initialConfig: { maxSessions: maxClients },
+				})
 				documents = createDocumentService({
 					typst,
 					directory: join(directory, 'documents'),
@@ -208,14 +212,14 @@ export function consumerCompiler(options: Readonly<{ publicOrigin?: string }> = 
 					response.end('该资源不可访问。')
 					return
 				}
-				if (routePath?.startsWith('/document-api/')) {
+				if (routePath === documentAssetPath || routePath?.startsWith('/document-api/')) {
 					void (async () => {
 						response.setHeader('Cache-Control', 'no-store')
 						try {
 							if (closing || !documents) throw new DocumentInputError('CLOSED', '文档服务已关闭。')
-							if (request.method === 'GET' && routePath === '/document-api/asset/architecture') {
+							if (request.method === 'GET' && routePath === documentAssetPath) {
 								response.setHeader('Content-Type', 'image/svg+xml')
-								response.end(documents.asset())
+								response.end(documentAsset)
 								return
 							}
 							if (request.method === 'GET' && routePath === '/document-api/page') {
@@ -282,7 +286,11 @@ export function consumerCompiler(options: Readonly<{ publicOrigin?: string }> = 
 							response.end(
 								JSON.stringify(
 									known
-										? { code: error.code, message: error.message }
+										? {
+												code: error.code,
+												message: error.message,
+												...(error.issues ? { issues: error.issues } : {}),
+											}
 										: {
 												code: 'DOCUMENT_FAILED',
 												message: '文档操作失败，当前输入仍保留在页面中。',

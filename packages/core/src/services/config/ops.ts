@@ -22,12 +22,11 @@ function objectOutput(value: unknown, label: string): ConfigRecord {
 	return immutableConfigRecord(value as ConfigRecord) as ConfigRecord
 }
 
-function validationErrors(issues: readonly ConfigIssue[]): ConfigValidationErrors {
-	const fields: Record<string, Array<{ message: string; path: string[] }>> = Object.create(null)
+export function groupConfigIssues(issues: readonly ConfigIssue[]): ConfigValidationErrors {
+	const fields: Record<string, ConfigIssue[]> = Object.create(null)
 	for (const issue of issues) {
-		const path = (issue.path ?? []).map(String)
-		const key = path[0] ?? '_root'
-		;(fields[key] ??= []).push({ message: issue.message, path })
+		const key = issue.path.length > 0 ? String(issue.path[0]) : '_root'
+		;(fields[key] ??= []).push(issue)
 	}
 	return { _root: fields }
 }
@@ -66,6 +65,6 @@ export async function validateConfigRecord(
 	input: Readonly<ConfigRecord>,
 ): Promise<{ ok: true; output: ConfigRecord } | { ok: false; errors: ConfigValidationErrors }> {
 	const result = await safeParseStandardSchema(schema, input)
-	if (result.success === false) return { ok: false, errors: validationErrors(result.issues) }
+	if (result.success === false) return { ok: false, errors: groupConfigIssues(result.issues) }
 	return { ok: true, output: objectOutput(result.output, 'Plugin config schema') }
 }

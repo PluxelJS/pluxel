@@ -3,17 +3,19 @@
 ## Public surface
 
 - `packages/cli/bin/pluxel.mjs`：唯一命令入口。
-- `packages/cli/package.json`：只导出 `./package.json`，不转发 runtime、HMR 或 build API。
+- `packages/cli/package.json`：导出 `./pncat` 配置入口与 `./package.json`。
 
 需要 library API 时直接使用领域包：
 
+- 外部 Host 操作：`@pluxel/agent-sdk/client`；
 - build / Rolldown plugin：`@pluxel/rolldown/internal/cli`（官方 CLI 协作）、`@pluxel/rolldown/vite`；
 
 ## Command loading
 
 - `src/cli.ts`：root wiring，只静态加载命令 manifest。
-- `src/command-manifest.ts`：帮助文本、参数和 lazy command 映射。
+- `src/command-manifest.ts`：CLI 自有领域的帮助、参数与 lazy command 映射，挂载 SDK 的 dev children。
 - `src/commands/`、`src/scaffold/`：仅在对应命令执行时加载。
+- `@pluxel/agent-sdk/internal/cli`：agent 命令及其终端适配，所有权与内部导出见 [Agent Workflow](../../engineering/AGENT_WORKFLOW.md#终端适配与命令挂载)。`src/commands/dev.ts` 仅保留服务启动和 status，Host 发现复用 SDK。
 - `src/source/`：source checkout 扫描、package/repository DAG、machine-local pnpm overlay、诊断与有锁执行。
 
 Scaffold 内部边界：
@@ -41,6 +43,6 @@ CLI scaffold 只有 Plugin package identity 和 bundled `plugin` template。完�
 
 ## Ownership
 
-- CLI：参数解析、交互、输出和命令编排；
+- CLI：唯一 executable、命令挂载、自有领域的交互与输出、服务进程管理；
 - Rolldown：构建 overlay、import tracking 和 workspace build helpers；
 - Host-vite：Vite 开发/生产模块求值、更新与开发控制台；Services 的开发入口组合官方服务附件。

@@ -3,8 +3,4 @@ node = "24.22.2"
 pnpm = "11.28.10"
 hk = "2.11.0"
 pitchfork = "2.33.0"
-viteplus = "1.4.0"
-
-[env]
-_.path = ["node_modules/.bin"]
-PNPM_CONFIG_PM_ON_FAIL = "ignore"
+"github:voidzero-dev/vite-plus" = "1.4.0"

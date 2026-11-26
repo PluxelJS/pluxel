@@ -27,14 +27,24 @@
 			"@pluxel/hmr": "./src/workbench.ts",
 			"default": "./dist/workbench.mjs"
 		},
-		"./package.json": "./package.json"
+		"./package.json": "./package.json",
+		"./control": {
+			"types": "./dist/control/index.d.mts",
+			"import": "./dist/control/index.mjs",
+			"default": "./dist/control/index.mjs"
+		}
 	},
 	"publishConfig": {
 		"exports": {
 			".": "./dist/index.mjs",
 			"./marketplace": "./dist/marketplace.mjs",
 			"./workbench": "./dist/workbench.mjs",
-			"./package.json": "./package.json"
+			"./package.json": "./package.json",
+			"./control": {
+				"types": "./dist/control/index.d.mts",
+				"import": "./dist/control/index.mjs",
+				"default": "./dist/control/index.mjs"
+			}
 		}
 	},
 	"scripts": {
@@ -47,6 +57,10 @@
 		"mdast-util-from-markdown": "catalog:prod",
 		"mdast-util-gfm": "catalog:prod",
 		"micromark-extension-gfm": "catalog:prod",
+		"resolve-pkg-maps": "catalog:prod",
+		"semver": "catalog:prod",
+		"shiki": "catalog:frontend",
+		"undici": "catalog:prod",
 		"valibot": "catalog:validation",
 		"valibot-form": "workspace:^",
 		"yaml": "catalog:prod"
@@ -65,6 +79,7 @@
 		"@types/mdast": "catalog:types",
 		"@types/react": "catalog:types",
 		"@types/react-dom": "catalog:types",
+		"@types/semver": "catalog:types",
 		"capnweb": "catalog:prod",
 		"jsdom": "catalog:dev",
 		"react": "catalog:frontend",
@@ -102,9 +117,10 @@
 		}
 	},
 	"pluxel": {
-		"workbenchCapnweb": "0.12.0",
+		"workbenchCapnweb": "0.13.1",
 		"artifactRoot": "dist",
 		"nodeArtifacts": true,
-		"workbenchArtifacts": true
+		"workbenchArtifacts": true,
+		"control": "./dist/control/manifest.json"
 	}
 }

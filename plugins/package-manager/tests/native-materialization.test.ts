@@ -58,7 +58,12 @@ it('materializes successive in-memory manifests and preserves publication on nat
 				await mkdir(resolve(directory, 'package'), { recursive: true })
 				await writeFile(
 					resolve(directory, 'package/package.json'),
-					JSON.stringify({ name, version, main: 'index.js' }),
+					JSON.stringify({
+						name,
+						version,
+						peerDependencies: { '@pluxel/core': '*' },
+						exports: './index.js',
+					}),
 				)
 				await writeFile(
 					resolve(directory, 'package/index.js'),

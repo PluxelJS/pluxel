@@ -1,34 +1,46 @@
 import { workbench } from '@pluxel/workbench'
 import type { PackageManagerApi } from './contracts.ts'
 
-export const PackageManagerWorkbench = workbench.define({
+export const PackageManagerWorkbench = workbench.define(import.meta.url, {
 	marketplace: workbench.view<PackageManagerApi>({
-		renderer: workbench.entry(import.meta.url, './ui/marketplace-page.tsx'),
-		placement: workbench.route('/market', {
+		renderer: './ui/marketplace-page.tsx',
+		placement: {
+			kind: 'route',
+			path: '/market',
 			title: 'Plugin marketplace',
-			icon: workbench.icons.CloudUpload,
+			icon: 'cloud-upload',
 			navigation: { label: 'Marketplace' },
 			order: 75,
-		}),
+		},
 	}),
 	manager: workbench.view<PackageManagerApi>({
-		renderer: workbench.entry(import.meta.url, './ui/manager.tsx'),
-		placement: workbench.route('/packages', {
+		renderer: './ui/manager.tsx',
+		placement: {
+			kind: 'route',
+			path: '/packages',
 			title: 'Plugin packages',
-			icon: workbench.icons.CloudUpload,
+			icon: 'cloud-upload',
 			navigation: { label: 'Packages' },
 			order: 80,
-		}),
+		},
 	}),
 })
 
 export type {
+	RegistryCandidate,
+	RegistrySearch,
+	RegistryInspection,
+	LocalPackageLocation,
 	ManagedPackage,
 	PackageManagerApi,
 	PackageManagerSnapshot,
 	PackageMarket,
 	PackageInstallPlan,
+	PackageInstallConfirmation,
+	PackageHostImpact,
 	PackagePreparationResult,
+	MarketCatalogFilters,
+	MarketCatalogFacets,
 	MarketPackageQuery,
 	MarketPackageSummary,
 	MarketPackagePage,
@@ -41,3 +53,4 @@ export type {
 	PackageMutationFailure,
 	PackageMutationResult,
 } from './contracts.ts'
+export type { PackageDocument, LocalPackageDependency } from './package-document.ts'

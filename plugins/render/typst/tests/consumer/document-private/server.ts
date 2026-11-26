@@ -1,21 +1,25 @@
-import { mkdir, readFile, rename, rm, writeFile } from 'node:fs/promises'
-import { dirname, join } from 'node:path'
-import type { TypstPlugin, TypstSession } from '@pluxel/plugin-typst'
-import type { TypstSourceFiles } from '@pluxel/plugin-typst/source'
-import type { DocumentView } from '../document-contract'
+import { mkdir, mkdtemp, readFile, rename, rm, writeFile } from 'node:fs/promises'
+import { basename, dirname, join } from 'node:path'
+import type { TypstPlugin, TypstSession, TypstTemplate } from '@pluxel/plugin-typst'
+import type { DocumentSource, DocumentView } from '../document-contract'
 import {
+	chapterPath,
 	DocumentInputError,
 	DocumentProject,
 	documentAsset,
+	documentAssetPath,
+	documentDirectory,
 	documentEntry,
 	documentSeed,
+	documentTemplate,
+	readChapterDirectory,
 } from './project'
 
 interface Client {
 	documentId: string
+	savedVersion: string | undefined
 	model: DocumentProject
 	session: TypstSession
-	root: string
 	tail: Promise<unknown>
 	closing: boolean
 	compiled?: {
@@ -29,7 +33,7 @@ interface Client {
 	issue?: { code: string; message: string }
 }
 
-/** Same native provider as the source demos; no source API or native metadata crosses this boundary. */
+/** Example host owns authorized edits and saved chapter files. Each lease owns its compiler session. */
 export function createDocumentService(options: {
 	typst: TypstPlugin
 	directory: string
@@ -37,38 +41,100 @@ export function createDocumentService(options: {
 	onError(error: unknown): void
 }) {
 	const clients = new Map<string, Promise<Client>>()
+	const savedOperations = new Map<string, Promise<void>>()
 	const savedPath = (id: string) => join(options.directory, id, 'saved.json')
-	const asset = () => Buffer.from(documentAsset)
+	const templateRoot = join(options.directory, 'template')
+	let template: Promise<TypstTemplate> | undefined
 
-	async function saved(id: string): Promise<TypstSourceFiles> {
-		try {
-			return JSON.parse(await readFile(savedPath(id), 'utf8')) as TypstSourceFiles
-		} catch (error) {
-			if ((error as NodeJS.ErrnoException).code !== 'ENOENT') throw error
-			return documentSeed()
-		}
+	async function prepareTemplate(): Promise<TypstTemplate> {
+		const asset = join(templateRoot, documentAssetPath.slice(1))
+		await mkdir(dirname(asset), { recursive: true })
+		await Promise.all([
+			writeFile(asset, documentAsset),
+			writeFile(join(templateRoot, documentEntry), documentTemplate),
+		])
+		return { root: templateRoot, entry: documentEntry }
 	}
 
-	async function writeWorkspace(client: Client) {
-		await rm(client.root, { recursive: true, force: true })
-		await mkdir(client.root, { recursive: true })
-		for (const [path, value] of Object.entries(client.model.files())) {
-			await mkdir(dirname(join(client.root, path)), { recursive: true })
-			await writeFile(join(client.root, path), value)
+	function withSavedDocument<T>(id: string, operation: () => Promise<T>): Promise<T> {
+		const result = (savedOperations.get(id) ?? Promise.resolve()).then(operation)
+		const finished = result.then(
+			() => undefined,
+			() => undefined,
+		)
+		savedOperations.set(id, finished)
+		return result.finally(() => {
+			if (savedOperations.get(id) === finished) savedOperations.delete(id)
+		})
+	}
+
+	// The marker names a complete, immutable directory of ordinary chapter files.
+	async function savedVersion(id: string): Promise<string | undefined> {
+		let marker: string
+		try {
+			marker = await readFile(savedPath(id), 'utf8')
+		} catch (error) {
+			if ((error as NodeJS.ErrnoException).code === 'ENOENT') return
+			throw error
 		}
+		const version: unknown = JSON.parse(marker)
+		if (typeof version !== 'string' || !/^version-[a-z0-9]{6}$/i.test(version))
+			throw new DocumentInputError('MIGRATION_REQUIRED', '已有保存文件需要先转换为 Typst 章节。')
+		return version
+	}
+
+	async function readSaved(id: string) {
+		const version = await savedVersion(id)
+		if (version === undefined) return { version, files: documentSeed() }
+		const root = join(dirname(savedPath(id)), version)
+		const directory = await readFile(join(root, documentDirectory), 'utf8')
+		const chapters = await Promise.all(
+			readChapterDirectory(directory).map(async ({ id: chapterId }) => {
+				const path = chapterPath(chapterId)
+				return [path, await readFile(join(root, path), 'utf8')] as const
+			}),
+		)
+		return { version, files: Object.fromEntries([[documentDirectory, directory], ...chapters]) }
+	}
+
+	async function save(client: Client) {
+		return withSavedDocument(client.documentId, async () => {
+			const previous = await savedVersion(client.documentId)
+			if (previous !== client.savedVersion)
+				throw new DocumentInputError('CONFLICT', '另一会话已保存，请重新打开文档后再修改。')
+			if (previous && !client.model.dirty) return
+			const marker = savedPath(client.documentId)
+			const parent = dirname(marker)
+			await mkdir(parent, { recursive: true })
+			const root = await mkdtemp(join(parent, 'version-'))
+			const version = basename(root)
+			const pending = join(parent, `${version}.tmp`)
+			try {
+				await mkdir(join(root, 'chapters'))
+				for (const [path, source] of Object.entries(client.model.files()))
+					await writeFile(join(root, path), source)
+				await writeFile(pending, JSON.stringify(version), { flag: 'wx' })
+				await rename(pending, marker)
+			} catch (cause) {
+				await Promise.allSettled([
+					rm(pending, { force: true }),
+					rm(root, { recursive: true, force: true }),
+				])
+				throw cause
+			}
+			client.savedVersion = version
+			client.model.markSaved()
+			if (previous)
+				await rm(join(parent, previous), { recursive: true, force: true }).catch(options.onError)
+		})
 	}
 
 	async function compile(client: Client) {
 		if (client.compiled?.revision === client.model.revision) return
 		try {
-			await writeWorkspace(client)
-			const compiled = await client.session.update({
-				files: {},
-				template: { root: client.root, entry: documentEntry },
-			})
+			const compiled = await client.session.update({ files: client.model.compileFiles() })
 			client.compiled = {
 				nativeRevision: compiled.revision,
-
 				...client.model.navigation(compiled.preview.navigation),
 			}
 			client.issue = undefined
@@ -94,16 +160,17 @@ export function createDocumentService(options: {
 		if (!options.canOpen())
 			throw new DocumentInputError('BUSY', '打开的文档过多，请先关闭其他演示。')
 		const pending = (async () => {
-			const root = join(options.directory, id, 'working')
-			const model = new DocumentProject(await saved(documentId))
-			await mkdir(root, { recursive: true })
-			// open() captures a full template, so the initial files must already exist.
-			for (const [path, value] of Object.entries(model.files())) {
-				await mkdir(dirname(join(root, path)), { recursive: true })
-				await writeFile(join(root, path), value)
+			const saved = await withSavedDocument(documentId, () => readSaved(documentId))
+			const model = new DocumentProject(saved.files)
+			const session = await options.typst.open(await (template ??= prepareTemplate()))
+			return {
+				documentId,
+				savedVersion: saved.version,
+				model,
+				session,
+				tail: Promise.resolve(),
+				closing: false,
 			}
-			const session = await options.typst.open({ root, entry: documentEntry })
-			return { documentId, root, model, session, tail: Promise.resolve(), closing: false }
 		})()
 		clients.set(id, pending)
 		try {
@@ -115,19 +182,21 @@ export function createDocumentService(options: {
 	}
 
 	function view(id: string, client: Client): DocumentView {
-		const model = client.model
+		const { model, compiled } = client
 		return {
 			dirty: model.dirty,
 			...model.view(),
-			preview: client.compiled
+			preview: compiled
 				? {
-						revision: client.compiled.revision,
-						points: client.compiled.points,
-						links: client.compiled.links,
-						targets: client.compiled.targets,
-						pages: client.compiled.pages.map((page) => ({
-							...page,
-							url: `/document-api/page?client=${id}&revision=${client.compiled!.revision}&page=${page.page}`,
+						revision: compiled.revision,
+						points: compiled.points,
+						links: compiled.links,
+						targets: compiled.targets,
+						pages: compiled.pages.map(({ page, width, height }) => ({
+							page,
+							width,
+							height,
+							url: `/document-api/page?client=${id}&revision=${compiled.revision}&page=${page}`,
 						})),
 					}
 				: null,
@@ -145,7 +214,6 @@ export function createDocumentService(options: {
 			await client.session.dispose()
 		} finally {
 			clients.delete(id)
-			await rm(client.root, { recursive: true, force: true })
 		}
 	}
 
@@ -154,11 +222,10 @@ export function createDocumentService(options: {
 			return clients.size
 		},
 		has: (id: string) => clients.has(id),
-		asset,
 		async execute(
 			id: string,
 			request: Record<string, unknown>,
-		): Promise<DocumentView | Uint8Array | undefined> {
+		): Promise<DocumentView | DocumentSource | Uint8Array | undefined> {
 			if (request.action === 'close') {
 				await close(id)
 				return
@@ -181,8 +248,13 @@ export function createDocumentService(options: {
 				switch (request.action) {
 					case 'open':
 						break
+					case 'source':
+						return {
+							revision: client.model.revision,
+							source: client.model.source(request.chapterId),
+						}
 					case 'edit':
-						client.model.edit(request.chapterId, request.document)
+						client.model.edit(request.chapterId, request.content)
 						break
 					case 'create':
 						client.model.create(request.chapterId, request.title)
@@ -199,14 +271,9 @@ export function createDocumentService(options: {
 					case 'redo':
 						client.model.redo()
 						break
-					case 'save': {
-						const destination = savedPath(client.documentId)
-						await mkdir(dirname(destination), { recursive: true })
-						await writeFile(`${destination}.tmp`, JSON.stringify(client.model.files()))
-						await rename(`${destination}.tmp`, destination)
-						client.model.markSaved()
+					case 'save':
+						await save(client)
 						break
-					}
 					default:
 						throw new DocumentInputError('INVALID_ACTION', '不支持这项文档操作。')
 				}
@@ -218,7 +285,8 @@ export function createDocumentService(options: {
 		},
 		async image(id: string, revision: number, page: number) {
 			const client = await clients.get(id)
-			if (!client || client.closing) throw new DocumentInputError('CLOSED', '文档已关闭。')
+			if (!client || client.closing)
+				throw new DocumentInputError('CLOSED', '文档已关闭，请重新打开。')
 			const result = client.tail.then(async () => {
 				if (
 					!client.compiled ||

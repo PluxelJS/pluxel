@@ -1,5 +1,7 @@
+import { CatalogLayout } from '@pluxel/services/management/service'
 import { requireFs, requireHostDocuments } from '@pluxel/core/internal'
 import {
+	defineServiceRef,
 	formatPluginDefinitionReference,
 	type PluginDefinitionAddress,
 	type PluginNodeAddress,
@@ -16,6 +18,7 @@ import {
 	type PluginCatalogLayoutEntry,
 } from '../../src/management/services/management/catalog-groups.ts'
 
+const CatalogLayoutRef = defineServiceRef<CatalogLayout>()
 const hosts: ServiceInternalTestHost[] = []
 afterEach(async () => {
 	vi.restoreAllMocks()
@@ -44,7 +47,7 @@ async function setup() {
 	hosts.push(host)
 	return {
 		host,
-		layout: host.ctx.root.pluginCatalogLayout!,
+		layout: host.ctx.root.service(CatalogLayout),
 		storage: requireHostDocuments(host.ctx, 'management'),
 	}
 }
@@ -129,7 +132,7 @@ describe('editable group document', () => {
 	it('does not allocate management or write defaults just to read a catalog', async () => {
 		const disabled = await createServiceInternalTestHost({ workbench: false })
 		hosts.push(disabled)
-		expect(disabled.ctx.root.pluginCatalogLayout).toBeUndefined()
+		expect(disabled.ctx.root.service(CatalogLayoutRef)).toBeUndefined()
 		const { layout, storage } = await setup()
 		expect(await layout.listSections([entry('A', ['B']), entry('B')])).toHaveLength(1)
 		expect(await storage.getText('plugin-groups.json')).toBeUndefined()

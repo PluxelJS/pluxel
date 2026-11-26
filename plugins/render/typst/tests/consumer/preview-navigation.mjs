@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict'
 import { chooseWorkspaceFile } from './workspace-ui.mjs'
 
-function sourcePoint(files, preview, path, text) {
+export function sourcePoint(files, preview, path, text) {
 	const source = files[path]
 	assert.equal(typeof source, 'string', `Missing source: ${path}`)
 	const offset = source.indexOf(text)
@@ -15,6 +15,26 @@ function sourcePoint(files, preview, path, text) {
 	)
 	assert.ok(point, `Native sourcemap is missing ${path}:${line}:${column} (${text})`)
 	return { point, text }
+}
+
+export async function clickPreviewPoint(page, point) {
+	const pageElement = page.locator('.preview-pane:visible .typst-page').nth(point.page - 1)
+	const screenPoint = () =>
+		pageElement.evaluate((element, target) => {
+			const matrix = element.getScreenCTM()
+			const x = target.x + target.width / 2
+			const y = target.y + target.height / 2
+			return {
+				x: matrix.a * x + matrix.c * y + matrix.e,
+				y: matrix.b * x + matrix.d * y + matrix.f,
+			}
+		}, point)
+	const before = await screenPoint()
+	await page.locator('.preview-pane:visible .preview-scroll').evaluate((element, y) => {
+		element.scrollTop += y - element.getBoundingClientRect().top - element.clientHeight / 2
+	}, before.y)
+	const screen = await screenPoint()
+	await page.mouse.click(screen.x, screen.y)
 }
 
 /** Exercise native preview hits through the actual rendered SVG, without editor commands. */
@@ -34,23 +54,7 @@ export async function checkPreviewNavigation(page, files, preview) {
 		}, path)
 	}
 	const clickText = async ({ point, text }) => {
-		const pageElement = page.locator('.preview-pane:visible .typst-page').nth(point.page - 1)
-		const screenPoint = () =>
-			pageElement.evaluate((element, target) => {
-				const matrix = element.getScreenCTM()
-				const x = target.x + target.width / 2
-				const y = target.y + target.height / 2
-				return {
-					x: matrix.a * x + matrix.c * y + matrix.e,
-					y: matrix.b * x + matrix.d * y + matrix.f,
-				}
-			}, point)
-		const before = await screenPoint()
-		await page.locator('.preview-pane:visible .preview-scroll').evaluate((element, y) => {
-			element.scrollTop += y - element.getBoundingClientRect().top - element.clientHeight / 2
-		}, before.y)
-		const screen = await screenPoint()
-		await page.mouse.click(screen.x, screen.y)
+		await clickPreviewPoint(page, point)
 		await page.waitForFunction(
 			({ path, expected }) => {
 				const element = [...document.querySelectorAll('.workspace-panel .tiptap')].find(
@@ -91,8 +95,27 @@ export async function checkPreviewNavigation(page, files, preview) {
 	)
 
 	await page.getByRole('button', { name: '源码', exact: true }).click()
-	await page.getByRole('textbox', { name: '文件源码' }).waitFor()
-	await clickText(sourcePoint(files, preview, analysis, '本季度营收增长'))
+	const raw = page.getByRole('textbox', { name: '文件源码' })
+	await raw.waitFor()
+	const original = await raw.inputValue()
+	const draft = original + '\n// 未应用草稿'
+	await raw.fill(draft)
+	await page.waitForFunction(() =>
+		[...document.querySelectorAll('.preview-pane button')].some(
+			(button) => button.textContent === '下载 PDF' && button.disabled,
+		),
+	)
+	const body = sourcePoint(files, preview, analysis, '本季度营收增长')
+	await clickPreviewPoint(page, body.point)
+	assert.equal(await raw.isVisible(), true, 'A preview click must keep the unapplied source open')
+	assert.equal(await raw.inputValue(), draft)
+	await page.getByRole('button', { name: '重新载入当前源码' }).click()
+	await page.waitForFunction(() =>
+		[...document.querySelectorAll('.preview-pane button')].some(
+			(button) => button.textContent === '下载 PDF' && !button.disabled,
+		),
+	)
+	await clickText(body)
 	await clickText(sourcePoint(files, preview, actions, '营收趋势见'))
 
 	await chooseWorkspaceFile(page, analysis)
@@ -105,7 +128,7 @@ export async function checkPreviewNavigation(page, files, preview) {
 	})
 	return [
 		'预览点击同文件靠下正文，编辑器聚焦并滚动到对应文字',
-		'源码模式点击预览，回到同文件结构化编辑并定位到对应文字',
+		'未应用的源码草稿暂停预览跳转，清除草稿后恢复精确定位',
 		'预览点击跨文件文字，切换文件并聚焦可见的对应选区',
 	]
 }

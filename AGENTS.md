@@ -6,20 +6,21 @@
 
 ## 按任务读取
 
-| 任务                                             | 必读入口                                                                                                                            |
-| ------------------------------------------------ | ----------------------------------------------------------------------------------------------------------------------------------- |
-| 工作区工具、提交检查、开发服务                   | [工作区工具链](docs/development/workspace-toolchain.md)；检查涉及的 mise.toml、vite.config.ts、hk.pkl、pitchfork.toml 与已有服务    |
-| 插件业务、配置、日志                             | [插件开发](docs/plugin-development/index.md)选择目标主题                                                                            |
-| 应用装配、部署、服务扩展                         | [Host 配置](docs/host/configuration.md)对应章节，扩展再读 host/services                                                             |
-| Workbench 导航、布局或视觉                       | [交互设计](engineering/WORKBENCH_DESIGN.md)、[Frontend](engineering/FRONTEND.md)                                                    |
-| 文档编写与组织                                   | [文档职责](engineering/DOCUMENTATION.md)                                                                                            |
-| 框架、Context、生命周期、工具链或包边界          | [工程原则](engineering/DESIGN_PRINCIPLES.md)、[系统边界](engineering/PLUGIN_SYSTEM.md)，再从[工程索引](engineering/README.md)选领域 |
-| 公共 API、配置、类型、错误、扩展点或资源生命周期 | [API 设计规则](.agents/rules/library-api-design.md)的执行方式、硬约束及对应规则；检查 exports 与真实调用方                          |
-| 本地 Plugin 可恢复失败                           | [Better Result](docs/plugin-development/better-result.md)；保留原生 SDK、判定、回执和生命周期失败契约                               |
-| 在线操作                                         | [开发控制台](docs/development/dev-console.md)                                                                                       |
-| 隔离回归                                         | [插件测试](docs/plugin-development/testing.md)；测试设施内部读[工程测试](engineering/TESTING.md)                                    |
+| 任务                                             | 必读入口                                                                                                                                            |
+| ------------------------------------------------ | --------------------------------------------------------------------------------------------------------------------------------------------------- |
+| 工作区工具、提交检查、开发服务                   | [工作区工具链](docs/development/workspace-toolchain.md)；检查涉及的 mise.toml、vite.config.ts、hk.pkl、pitchfork.toml 与已有服务                    |
+| 插件业务、配置、日志                             | [插件开发](docs/plugin-development/index.md)选择目标主题                                                                                            |
+| 插件发现、声明与源码位置                         | [Agent SDK](docs/development/agent-sdk.md)；普通函数从 `@pluxel/agent-sdk/source` 查询，进程内 Host 操作从 `/host` 选择，外部 Node 调用用 `/client` |
+| 应用装配、部署、服务扩展                         | [内置插件](docs/host/fixed-plugins.md)、[装配](docs/host/configuration.md)、[移植](docs/host/runtime-portability.md)；扩展见 host/services          |
+| Workbench 导航、布局或视觉                       | [交互设计](engineering/WORKBENCH_DESIGN.md)、[Frontend](engineering/FRONTEND.md)                                                                    |
+| 文档编写与组织                                   | [文档职责](engineering/DOCUMENTATION.md)                                                                                                            |
+| 框架、Context、生命周期、工具链或包边界          | [工程原则](engineering/DESIGN_PRINCIPLES.md)、[系统边界](engineering/PLUGIN_SYSTEM.md)，再从[工程索引](engineering/README.md)选领域                 |
+| 公共 API、配置、类型、错误、扩展点或资源生命周期 | [API 设计规则](.agents/rules/library-api-design.md)的执行方式、硬约束及对应规则；检查 exports 与真实调用方                                          |
+| 本地 Plugin 可恢复失败                           | [Better Result](docs/plugin-development/better-result.md)；保留原生 SDK、判定、回执和生命周期失败契约                                               |
+| 在线操作                                         | [开发控制台](docs/development/dev-console.md)                                                                                                       |
+| 隔离回归                                         | [插件测试](docs/plugin-development/testing.md)；测试设施内部读[工程测试](engineering/TESTING.md)                                                    |
 
-先满足本任务必读约束，链接按相关性展开，未变化的文档不重读。明确修改点、契约、所有者、调用方和验证方式后开始实现；事实冲突或未知跨域影响再补查。普通查找用 `rg` 与 exports；inspect 用于声明与应用绑定，不代替任意 import 分析。
+先满足本任务必读约束，链接按相关性展开，未变化的文档不重读。明确修改点、契约、所有者、调用方和验证方式后开始实现；事实冲突或未知跨域影响再补查。普通查找用 `rg` 与 exports；inspect 查询声明与应用绑定，源码位置属于执行查询的环境，当前磁盘与运行接纳版本的关系见源码查询指南。
 
 ## 仓库约束
 
@@ -30,7 +31,7 @@
 
 ## 服务与在线操作
 
-mise 管工具、环境和 PATH，package scripts 管操作入口，Vite Task 管依赖与缓存，hk 管检查，Pitchfork 管托管进程；不再定义 mise tasks，可选 enter hook 仅触发已有只读诊断。
+仓库、应用脚手架和插件模板遵循[统一命令入口](docs/development/workspace-toolchain.md#统一命令入口)：依赖管理使用 `vp`，项目命令使用 `vp exec` 和 `vp run`。新增或修改模板时同步 README、AGENTS、安装行为与完成提示，工具版本与仓库基线一致。package scripts 管操作入口，Vite Task 管依赖与缓存，hk 管检查，Pitchfork 管托管进程。`mise.toml` 仅提供工具安装与版本固定，Vite+ 使用官方 GitHub 发布的原生全局 CLI。
 
 修改服务前检查配置与状态，优先用 Pitchfork 原生 start/stop/restart/status/list/logs/wait；添加后台进程、端口扫描、重试、轮询或生命周期脚本前，查[工作区指南](docs/development/workspace-toolchain.md)链接的官方能力和已安装 CLI 帮助。并行 worktree 隔离 namespace 与数据目录，只操作本任务所属服务。
 
@@ -38,15 +39,18 @@ mise 管工具、环境和 PATH，package scripts 管操作入口，Vite Task �
 
 1. `pluxel dev status` 确认 profile、Vite root、实例与应用状态；后续 `dev run` 保持选择，多个匹配实例才加 `--instance`。
 2. 提交普通 TypeScript 导出函数，检查运行结果、领域/应用报告与日志。
-3. 保存 `receipt`；`dev result/cancel` 使用原 receipt，不转投重启后的实例。
+3. 保存 `receipt`；`script result/cancel` 使用原 receipt，不转投重启后的实例。
 
 在运行中的应用上进行多文件或连续源码修改前，用同一目标的 `dev hmr pause` 等待当前批次结算；完成检查后 `dev hmr apply`，核对 HMR 与应用报告及实际行为。失败保持暂停继续修复，成功且原模式为 auto 时才 `dev hmr resume`。控制范围与待处理变化见[HMR 批次控制](docs/development/dev-console.md#hmr-批次控制)；不通过重启服务代替 apply。
 
 profile 选择、日志命令、服务就绪与应用 ready 的区别由 skill 和指南说明。隔离 test host 不能证明在线状态。
 
+Node 与 Vite 项目脚本统一使用普通 TypeScript 导出函数和 `satisfies Script`（`@pluxel/agent-sdk/host`）。通过 `sdk.plugin(Plugin.nodeAddress())` 选择插件，`const { instance } = await plugin.instance()` 借用业务实例，`sdk.ctx` 直接使用当前 run 的内建能力，`sdk.ctx.service(Service)` 借用应用安装的根服务。SDK 控制操作成功直接返回值，失败抛出保留领域信息的 `ScriptError`；只在需要恢复时 catch，原插件业务方法保留自己的返回协议。调用与失败处理见[自动化脚本](docs/development/scripts.md)，插件地址与生成类型见[插件控制](docs/development/plugin-control.md)。配置修改后核对领域报告与实际采用。
+
 ## 完成变更
 
-- 按风险运行相关检查，报告实际结果与未验证边界；类型、运行时、公开导出和示例表达同一契约。
+- 日常改动按风险运行直接相关的检查。在所属包用 `vp test run tests/<file>.test.ts` 运行指定测试，必要时扩到包级或受影响的调用方。全仓 `vp run test` 和 `vp run verify` 用于明确的整仓验收。报告实际结果与未验证边界。见[局部验证](docs/development/workspace-toolchain.md#局部验证)。
+- 类型、运行时、公开导出和示例应表达同一契约。
 - 用户可见用法同步 `docs/`，内部边界同步所属工程文档；一处维护事实，其他入口链接。替换契约后搜索旧符号、入口和链接，包括生成项目的 AGENTS。
-- 公开包用户可见变更添加 `.tegami/*.md`，含明确包 bump 类型和至少一个 Markdown 标题；纯内部重构、测试或文档变更无需空 changelog。
+- 仅在准备发布时统一整理 `.tegami/*.md`。对比上次已发布版本与待发布版本的最终成果，记录用户可见变化、包 bump 和迁移要求；忽略过程提交、已撤回设计和过渡实现。日常开发无需新增或更新，格式见[发布流程](engineering/RELEASING.md#发布说明格式)。
 - 不手改 package 版本或 `.tegami/publish-lock.yaml`；交给 Tegami。

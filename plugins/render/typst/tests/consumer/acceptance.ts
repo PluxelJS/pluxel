@@ -142,7 +142,6 @@ it('consumes isolated built source, editor, browser and native artifacts', async
 	}
 	const dependencies: Record<string, string> = {
 		'@pluxel/plugin-typst': `file:${staged.get('@pluxel/plugin-typst')}`,
-		valibot: await installedSpec('valibot'),
 	}
 	const nodeTypes = await manifest(rootRequire.resolve('@types/node/package.json'))
 	const devDependencies: Record<string, string> = {
@@ -225,7 +224,7 @@ it('consumes isolated built source, editor, browser and native artifacts', async
 	async function consumerBuild(input: string, outDir: string, semanticOnly = false) {
 		const modules: string[] = []
 		const semanticForbidden =
-			/@r4ai(?:\/|$)|typst_ast.*\.wasm|@pluxel\/plugin-typst(?:$|\/source(?:\/|$)|\/document$)|\/(?:src|dist)\/source(?:\/|[.-])|\/src\/document\/project\.|\/dist\/(?:document|index|worker|native-binding)\.mjs|node:/i
+			/@r4ai(?:\/|$)|typst_ast.*\.wasm|@pluxel\/plugin-typst(?:$|\/source(?:\/|$)|\/document$)|\/(?:src|dist)\/source(?:\/|[.-])|\/src\/document\/(?:convert|body-[^/]+)\.|\/dist\/(?:document|index|worker|native-binding)\.mjs|node:/i
 		function semanticModule(id: string) {
 			if (semanticOnly)
 				assert.ok(!semanticForbidden.test(id), `Source/server module in semantic browser: ${id}`)
@@ -313,17 +312,17 @@ it('consumes isolated built source, editor, browser and native artifacts', async
 	])
 	await writeFile(
 		join(app, 'base-check.mts'),
-		`import { defineTypstDocument } from '@pluxel/plugin-typst/template'; import { TypstPreviewView, pointAtSource, type SourcePosition, type TypstDiagnostic } from '@pluxel/plugin-typst/browser'; import * as v from 'valibot'; const document = defineTypstDocument({ template: 'main.typ', schema: v.object({ name: v.string() }) }); const position: SourcePosition = { path: 'main.typ', line: 1, column: 1 }; const diagnostic: TypstDiagnostic = { severity: 'error', message: 'example', range: { start: { line: 0, character: 0 }, end: { line: 0, character: 1 } } }; void [document, TypstPreviewView, pointAtSource([], position, 1), diagnostic];`,
+		`import { TypstPreviewView, pointAtSource, type SourcePosition, type TypstDiagnostic } from '@pluxel/plugin-typst/browser'; const position: SourcePosition = { path: 'main.typ', line: 1, column: 1 }; const diagnostic: TypstDiagnostic = { severity: 'error', message: 'example', range: { start: { line: 0, character: 0 }, end: { line: 0, character: 1 } } }; void [TypstPreviewView, pointAtSource([], position, 1), diagnostic];`,
 	)
 	await checkTypes(['base-check.mts'])
 	await writeFile(
 		join(app, 'base.mjs'),
-		`${importGuard(['@tiptap', 'react', 'react-dom', 'modern-monaco', '@pluxel/workbench', 'electron'])} await import('@pluxel/plugin-typst/template'); await import('@pluxel/plugin-typst/browser'); hooks.deregister();`,
+		`${importGuard(['@tiptap', 'react', 'react-dom', 'modern-monaco', '@pluxel/workbench', 'electron'])} await import('@pluxel/plugin-typst/browser'); hooks.deregister();`,
 	)
 	await command(process.execPath, ['base.mjs'], app, log)
 	await writeFile(
 		join(app, 'base-browser.ts'),
-		`import { TypstPreviewView, pointAtSource } from '@pluxel/plugin-typst/browser'; import { defineTypstDocument } from '@pluxel/plugin-typst/template'; document.body.textContent = [typeof TypstPreviewView, typeof pointAtSource, typeof defineTypstDocument].join(',');`,
+		`import { TypstPreviewView, pointAtSource } from '@pluxel/plugin-typst/browser'; document.body.textContent = [typeof TypstPreviewView, typeof pointAtSource].join(',');`,
 	)
 	await writeFile(
 		join(app, 'base.html'),
@@ -331,7 +330,7 @@ it('consumes isolated built source, editor, browser and native artifacts', async
 	)
 	await consumerBuild('base.html', 'base-dist')
 	stages.push(
-		'Browser app without Tiptap/React or native server peers: template/browser strict types, imports and production browser build',
+		'Browser app without Tiptap/React or native server peers: preview types, imports and production browser build',
 	)
 
 	await cp(join(fixtureRoot, 'acceptance-project'), join(app, 'project'), { recursive: true })
@@ -351,8 +350,9 @@ it('consumes isolated built source, editor, browser and native artifacts', async
  assert.ok(bytes.byteLength>100000,'Parser WASM is present in the copied artifact');
  const browser=await createBrowser({files,parserWasm:bytes});
  for(const path of ['sections/analysis.typ','sections/actions.typ']){
-  assert.deepEqual(project.open(path).document,browser.open(path).document);
-  assert.equal(project.edit({projection:project.open(path),document:project.open(path).document}).ok,true);
+  const {document,revision}=project.open(path);
+  assert.deepEqual(document,browser.open(path).document);
+  assert.equal(project.edit({path,baseRevision:revision,document}).ok,true);
  }
  assert.deepEqual({...project.snapshot().files},files);
  assert.equal(project.diagnostics().some(issue=>issue.severity==='error'),false,JSON.stringify(project.diagnostics()));
@@ -365,40 +365,6 @@ it('consumes isolated built source, editor, browser and native artifacts', async
 	stages.push(
 		'Source Node and Web parser run without Tiptap/React; WASM copied asset resolves; projections match and no-op retains every source byte',
 	)
-	await writeFile(
-		join(app, 'document.mjs'),
-		`
- import assert from 'node:assert/strict'; import {readFile,writeFile} from 'node:fs/promises';
- ${importGuard(['@tiptap', 'react', 'react-dom', 'modern-monaco', 'electron'])}
- const {createTypstSourceProject}=await import('@pluxel/plugin-typst/source');
- const {createTypstDocumentProject}=await import('@pluxel/plugin-typst/document');
- const files=JSON.parse(await readFile('files.json','utf8'));
- const source=createTypstSourceProject({files});
- const documents=[{id:'analysis',title:'分析',path:'sections/analysis.typ'},{id:'actions',title:'行动',path:'sections/actions.typ'}];
- const project=createTypstDocumentProject({project:source,documents});
- const before=project.view();
- const safe=view=>{const wire=JSON.stringify(view);for(const secret of ['sections/','.typ','#upper','fig:revenue','eq:model','"path":','"source":','"label":'])assert.ok(!wire.includes(secret),'Private source escaped semantic view: '+secret);const visit=node=>{assert.ok(!node.type.startsWith('typst'));for(const child of node.content??[])visit(child)};for(const body of view.documents)visit(body.document)};
- safe(before);assert.equal(before.documents.length,2);
- for(const body of before.documents)assert.equal(project.edit({baseRevision:source.revision,id:body.id,document:body.document}).ok,true);
- assert.deepEqual({...source.snapshot().files},files);
- const body=structuredClone(project.view().documents.find(body=>body.id==='analysis'));
- const replace=node=>{if(node.type==='text')node.text=node.text.replace('初始中文正文','独立文档验收');for(const child of node.content??[])replace(child)};
- replace(body.document);
- const changed=project.edit({baseRevision:source.revision,id:body.id,document:body.document});
- assert.equal(changed.ok,true);safe(changed.value);
- assert.equal(source.snapshot().files['sections/analysis.typ'],files['sections/analysis.typ'].replace('初始中文正文','独立文档验收'));
- assert.equal(project.edit({baseRevision:before.revision,id:body.id,document:body.document}).ok,false);
- const reopened=createTypstDocumentProject({project:createTypstSourceProject({files:source.snapshot().files}),documents});
- safe(reopened.view());assert.match(JSON.stringify(reopened.view().documents),/独立文档验收/);
- await writeFile('document-view.json',JSON.stringify(changed.value));
- hooks.deregister();
- `,
-	)
-	await command(process.execPath, ['document.mjs'], app, log)
-	stages.push(
-		'Built server document project runs without Tiptap/React; semantic no-op, Chinese writeback, stale rejection, reopen and private-source exclusion cross the public package boundary',
-	)
-
 	const pluginManifest = await manifest(join(packageRoot, 'package.json'))
 	for (const name of Object.keys(pluginManifest.peerDependencies).filter(
 		(dependency) =>
@@ -419,6 +385,43 @@ it('consumes isolated built source, editor, browser and native artifacts', async
 		'electron',
 	])
 	await writeFile(
+		join(app, 'document.mjs'),
+		String.raw`
+ import assert from 'node:assert/strict'; import {readFile,writeFile} from 'node:fs/promises';
+ ${importGuard(['react', 'react-dom', '@tiptap/react', '@myriaddreamin/typst-ts-node-compiler', 'modern-monaco', 'electron'])}
+ const {parseTypstDocument,printTypstDocument}=await import('@pluxel/plugin-typst/document');
+ const accepted=result=>{assert.ok(result.ok,JSON.stringify(result));return result.value};
+ assert.equal(typeof document,'undefined');
+ const parsed=accepted(parseTypstDocument('= 初始中文正文 <object-analysis>\n\n见 #ref(<chapter-actions>)。'));
+ assert.ok(parsed.mapping.some(span=>span.from<span.to&&span.position<span.endPosition));
+ assert.equal(parsed.document.content[0].attrs.label,'object-analysis');
+ const changed=structuredClone(parsed.document);
+ changed.content[0].content[0].text='独立文档验收';
+ const printed=accepted(printTypstDocument(changed));
+ assert.match(printed.source,/独立文档验收/);
+ assert.match(printed.source,/<object-analysis>/);
+ assert.equal(printed.document.content[1].content.find(node=>node.type==='reference').attrs.target,'chapter-actions');
+ await writeFile('document.typ',printed.source);
+ const reopened=accepted(parseTypstDocument(await readFile('document.typ','utf8')));
+ assert.deepEqual(reopened.document,printed.document);
+ assert.equal(accepted(printTypstDocument(reopened.document)).source,printed.source);
+ const unsupported=parseTypstDocument('#let editorial-note = 1\n正文');
+ assert.equal(unsupported.ok,false);
+ assert.equal(unsupported.issues[0].code,'UNSUPPORTED_SYNTAX');
+ const invalid=printTypstDocument({type:'doc',content:[{type:'paragraph',attrs:{path:'server-note.typ'}}]});
+ assert.equal(invalid.ok,false);
+ assert.equal(invalid.issues[0].code,'INVALID_DOCUMENT');
+ await writeFile('document-view.json',JSON.stringify({revision:1,document:reopened.document,references:[
+  {id:'chapter-actions',title:'行动',kind:'heading'}
+ ]}));
+ hooks.deregister();
+ `,
+	)
+	await command(process.execPath, ['document.mjs'], app, log)
+	stages.push(
+		'Built document codec runs with the headless Tiptap model; Typst input, Chinese tree edits, stable labels, strict admission and a canonical file round trip cross the public package boundary',
+	)
+	await writeFile(
 		join(app, 'source-check.mts'),
 		`
  import {createTypstSourceProject, type TypstSourceProject} from '@pluxel/plugin-typst/source';
@@ -434,25 +437,21 @@ it('consumes isolated built source, editor, browser and native artifacts', async
 	await writeFile(
 		join(app, 'document-check.mts'),
 		`
- import {createTypstSourceProject} from '@pluxel/plugin-typst/source';
- import {createTypstDocumentProject,type TypstDocumentProject,type TypstDocumentSnapshot,type TypstDocumentNavigation,type TypstDocumentPreviewData,type TypstDocumentSelection,type TypstDocumentResult} from '@pluxel/plugin-typst/document';
- const source=createTypstSourceProject({files:{'private/body.typ':'正文'}});
- const project:TypstDocumentProject=createTypstDocumentProject({project:source,documents:[{id:'body',title:'正文',path:'private/body.typ',label:'private-heading'}]});
- const view:TypstDocumentSnapshot=project.view();
- const body=view.documents[0]!;
- const edited:TypstDocumentResult<TypstDocumentSnapshot>=project.edit({baseRevision:view.revision,id:body.id,document:body.document});
- function compiled(navigation:Parameters<TypstDocumentProject['navigation']>[0]['navigation']){
-  const result:TypstDocumentResult<TypstDocumentNavigation>=project.navigation({revision:source.revision,navigation});
-  if(!result.ok)return result.issues.map(issue=>issue.message);
-  const preview:TypstDocumentPreviewData={...result.value,pages:result.value.pages.map(page=>({...page,url:'/authenticated-page/'+page.page}))};
-  const selection:TypstDocumentSelection={documentId:body.id,position:1,explicit:true};
-  return {preview,selection,location:view.references[0]?.location};
+ import type {JSONContent} from '@tiptap/core';
+ import {parseTypstDocument,printTypstDocument,type TypstDocumentNavigation,type TypstDocumentPreviewData,type TypstDocumentSelection,type TypstDocumentResult} from '@pluxel/plugin-typst/document';
+ function roundTrip(source:string){
+  const parsed=parseTypstDocument(source);
+  if(!parsed.ok)return parsed.issues;
+  const edited:TypstDocumentResult<{source:string;document:JSONContent}>=printTypstDocument(parsed.value.document);
+  return edited;
  }
- // @ts-expect-error Semantic snapshots do not publish their source files.
- view.files;
- // @ts-expect-error Semantic document locations have no source path.
- view.references[0]?.location?.path;
- void [compiled,edited];
+ function compiled(navigation:TypstDocumentNavigation, selection:TypstDocumentSelection){
+  const preview:TypstDocumentPreviewData={...navigation,pages:navigation.pages.map(page=>({...page,url:'/authenticated-page/'+page.page}))};
+  // @ts-expect-error Semantic document locations have no source path.
+  selection.path;
+  return {preview,selection};
+ }
+ void [roundTrip,compiled];
  `,
 	)
 	await checkTypes(['source-check.mts', 'document-check.mts'])
@@ -475,7 +474,7 @@ it('consumes isolated built source, editor, browser and native artifacts', async
  const stale=project.open('sections/actions.typ');
  assert.equal(project.renameLabel({baseRevision:project.revision,from:'fig:revenue',to:'fig:income'}).ok,true);
  assert.match(project.snapshot().files['sections/actions.typ'],/@fig:income/);
- assert.equal(project.edit({projection:stale,document:stale.document}).ok,false);
+ assert.equal(project.edit({path:stale.path,baseRevision:stale.revision,document:stale.document}).ok,false);
  assert.equal(project.undo().ok,true);assert.deepEqual(project.snapshot().files,edited.files);
  assert.equal(project.redo().ok,true);
  const saved=project.snapshot().files;
@@ -531,15 +530,18 @@ it('consumes isolated built source, editor, browser and native artifacts', async
  import {useState} from 'react';import {createRoot} from 'react-dom/client';
  import {TypstDocumentEditor} from '@pluxel/plugin-typst/tiptap/document/react';
  import {TypstDocumentPreview,type TypstDocumentSelection,type TypstDocumentPreviewData} from '@pluxel/plugin-typst/document/react';
- import type {TypstDocumentSnapshot} from '@pluxel/plugin-typst/document';
+ import type {JSONContent} from '@tiptap/core';
+ import type {TypstDocumentReference} from '@pluxel/plugin-typst/document';
  import '@pluxel/plugin-typst/tiptap/style.css';
- const view=await fetch('/document-view.json').then(response=>response.json()) as TypstDocumentSnapshot;
- const body=view.documents[0]!;
+ const view=await fetch('/document-view.json').then(response=>response.json()) as {
+  revision:number;document:JSONContent;references:readonly TypstDocumentReference[];
+ };
+ const documentId='analysis';
  function App(){
-  const [content,setContent]=useState(body.document);
-  const [selection,setSelection]=useState<TypstDocumentSelection>({documentId:body.id,position:1});
+  const [content,setContent]=useState(view.document);
+  const [selection,setSelection]=useState<TypstDocumentSelection>({documentId,position:1,revision:view.revision});
   const [preview]=useState<TypstDocumentPreviewData|null>(null);
-  return <main><TypstDocumentEditor content={content} onChange={setContent} references={view.references} onSelection={position=>setSelection({documentId:body.id,position})} onReveal={position=>setSelection({documentId:body.id,position,explicit:true})} onReference={(documentId,position)=>setSelection({documentId,position,explicit:true})}/><TypstDocumentPreview preview={preview} revision={view.revision} selection={selection} onSelect={location=>setSelection(location)}/></main>;
+  return <main><TypstDocumentEditor content={content} onChange={setContent} references={view.references} onSelection={position=>setSelection({documentId,position,revision:view.revision})} onReveal={position=>setSelection({documentId,position,revision:view.revision,explicit:true})} onReference={(documentId,position)=>setSelection({documentId,position,revision:view.revision,explicit:true})}/><TypstDocumentPreview preview={preview} revision={view.revision} selection={selection} onSelect={location=>setSelection(location)}/></main>;
  }
  createRoot(document.getElementById('app')!).render(<App/>);
  `,
@@ -551,7 +553,7 @@ it('consumes isolated built source, editor, browser and native artifacts', async
 	await checkTypes(['document.tsx'], true)
 	await consumerBuild('document.html', 'document-dist', true)
 	stages.push(
-		'Built semantic document editor and preview strict-check and production-build together using the server safe snapshot; import hooks and module evidence reject source parsers, WASM and Node/server exports',
+		'Built semantic document editor and preview strict-check and production-build together using the converted native Typst body; import hooks and module evidence reject source parsers, WASM and Node/server exports',
 	)
 	const installedRoot = await realpath(join(app, 'node_modules/@pluxel/plugin-typst'))
 	assert.ok(!installedRoot.startsWith(workspace))
@@ -576,10 +578,11 @@ it('consumes isolated built source, editor, browser and native artifacts', async
 		'.json': 'application/json',
 		'.wasm': 'application/wasm',
 	}
-	await page.route('https://typst-artifact.test/**', async (route) => {
-		const path = new URL(route.request().url()).pathname
-		const absolute = resolve(app, 'dist', '.' + (path === '/' ? '/index.html' : path))
-		if (!absolute.startsWith(resolve(app, 'dist') + '/')) return route.abort()
+	await page.route(/^https:\/\/typst-(?:document-)?artifact\.test\//, async (route) => {
+		const { hostname, pathname } = new URL(route.request().url())
+		const dist = hostname === 'typst-document-artifact.test' ? 'document-dist' : 'dist'
+		const absolute = resolve(app, dist, '.' + (pathname === '/' ? '/index.html' : pathname))
+		if (!absolute.startsWith(resolve(app, dist) + '/')) return route.abort()
 		try {
 			await route.fulfill({
 				status: 200,
@@ -592,6 +595,11 @@ it('consumes isolated built source, editor, browser and native artifacts', async
 	})
 	let browserFiles: Record<string, string>
 	try {
+		await page.goto('https://typst-document-artifact.test/document.html')
+		const documentEditor = page.locator('.tiptap')
+		await documentEditor.waitFor()
+		assert.match((await documentEditor.textContent()) ?? '', /独立文档验收/)
+		stages.push('Shared Chromium mounts the built semantic editor from converted Typst')
 		await page.goto('https://typst-artifact.test/')
 		const editor = page.locator('.tiptap')
 		await editor.waitFor()

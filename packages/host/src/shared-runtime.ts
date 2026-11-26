@@ -1,16 +1,17 @@
-import { lstatSync, readFileSync } from 'node:fs'
+import { lstatSync, readFileSync, realpathSync } from 'node:fs'
 import { dirname, join, resolve } from 'node:path'
 import { parse as parseYaml } from 'yaml'
+import { resolveNativeImport } from './native-import'
 
 /** Fixed framework interoperability boundaries. This is not a package-sharing registry. */
 export const sharedRuntimes = {
 	workbenchCapnweb: {
 		name: 'capnweb',
 		marker: 'workbenchCapnweb',
-		label: 'Workbench capnweb',
-		host: 'Workbench',
-		owner: '@pluxel/workbench',
-		entry: '@pluxel/workbench',
+		label: 'capnweb',
+		host: 'capnweb',
+		owner: '@pluxel/host',
+		entry: '@pluxel/host',
 	},
 	tinybase: {
 		name: 'tinybase',
@@ -23,6 +24,46 @@ export const sharedRuntimes = {
 } as const
 
 export type SharedRuntime = (typeof sharedRuntimes)[keyof typeof sharedRuntimes]
+
+/** The running Host owns the supported version. Builders pass the Host selected for their target. */
+export function assertWorkbenchApplicationRuntime(
+	applicationEntry: string,
+	hostManifest = resolveNativeImport(import.meta.dirname, '@pluxel/host/package.json'),
+): string {
+	const entry = realpathSync(applicationEntry)
+	const manifestPath = nearestPackageManifest(entry)
+	if (!manifestPath)
+		throw new TypeError(`[host/workbench] No application package.json owns ${entry}`)
+	const runtime = sharedRuntimes.workbenchCapnweb
+	const supportedVersion = admitSharedRuntimeOwner(
+		hostManifest,
+		resolveNativeImport(dirname(hostManifest), runtime.name),
+		runtime,
+		'host/workbench',
+	)
+	let installed: string | undefined
+	try {
+		installed = resolveNativeImport(dirname(manifestPath), runtime.name)
+	} catch (cause) {
+		if (
+			!(
+				cause instanceof Error &&
+				'code' in cause &&
+				['MODULE_NOT_FOUND', 'ERR_MODULE_NOT_FOUND'].includes(String(cause.code))
+			)
+		)
+			throw cause
+	}
+	assertSharedRuntimeHost({
+		runtime,
+		manifestPath,
+		supportedVersion,
+		actualEntry: installed,
+		actualVersion: installed && installedSharedRuntimeVersion(installed, runtime),
+		operation: 'host/workbench',
+	})
+	return supportedVersion
+}
 
 export interface SharedRuntimePackage {
 	manifestPath: string
@@ -164,7 +205,7 @@ export function assertSharedRuntimeHost(input: {
 	throw new Error(
 		`[${operation}] Host ${runtime.label} admission failed for ${String(manifest.name ?? manifestPath)} (${manifestPath}): ` +
 			`dependencies.${runtime.name} ${String(dependency ?? '<missing>')}; resolved ${actualVersion ?? '<missing>'} at ${actualEntry ?? '<missing>'}; ` +
-			`Host ${runtime.host} supports ${supportedVersion}. Install this exact version as a direct dependency of ${runtime.owner}.`,
+			`Host ${runtime.host} supports ${supportedVersion}. Install this exact version as a direct dependency of ${String(manifest.name ?? manifestPath)}.`,
 	)
 }
 

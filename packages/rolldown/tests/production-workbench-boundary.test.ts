@@ -24,9 +24,24 @@ it('bridges an installed target through a relocated Workbench application and di
 				'dir',
 			)
 		}
+		const { version: capnwebVersion } = JSON.parse(
+			await readFile(
+				new URL('../../host/node_modules/capnweb/package.json', import.meta.url),
+				'utf8',
+			),
+		) as { version: string }
 		await put(
 			'package.json',
-			JSON.stringify({ name: 'workbench-deployment-probe', type: 'module' }),
+			JSON.stringify({
+				name: 'workbench-deployment-probe',
+				type: 'module',
+				dependencies: { capnweb: capnwebVersion },
+			}),
+		)
+		await symlink(
+			fileURLToPath(new URL('../../host/node_modules/capnweb/', import.meta.url)),
+			join(root, 'node_modules/capnweb'),
+			'dir',
 		)
 		await put(
 			'mutable/node_modules/installed-target/package.json',
@@ -34,8 +49,8 @@ it('bridges an installed target through a relocated Workbench application and di
 				name: 'installed-target',
 				type: 'module',
 				exports: './index.mjs',
-				pluxel: { workbenchCapnweb: '0.12.0' },
-				peerDependencies: { capnweb: '0.12.0' },
+				pluxel: { workbenchCapnweb: capnwebVersion },
+				peerDependencies: { capnweb: capnwebVersion },
 			}),
 		)
 		await put(
@@ -60,7 +75,7 @@ export { Dynamic }
 			`${capnwebDirectory}/package.json`,
 			JSON.stringify({
 				name: 'capnweb',
-				version: '0.12.0',
+				version: capnwebVersion,
 				type: 'module',
 				exports: './index.mjs',
 			}),
@@ -71,20 +86,19 @@ export { Dynamic }
 			'app.ts',
 			`
 import { defineHostApplication } from '@pluxel/host'
-import { pluginSource } from '@pluxel/host/sources'
 import { workbenchService } from '@pluxel/workbench/service'
 import { WorkbenchHost } from '@pluxel/workbench/server'
 export default defineHostApplication(() => ({
  name: 'workbench-boundary',
  plugins: [],
  services: [workbenchService()],
- sources: [pluginSource({ kind: 'directory', path: ${JSON.stringify(join(root, 'mutable/entries'))}, include: ['*.mjs'] })],
+ sources: [{ directory: ${JSON.stringify(join(root, 'mutable/entries'))}, include: ['*.mjs'] }],
  prepare: ({ host }) => {
-  const session = host.ctx.require(WorkbenchHost).createSession({ provider: 'probe', subject: 'reader' }, () => {})
+  const session = host.ctx.service(WorkbenchHost).createSession({ provider: 'probe', subject: 'reader' }, () => {})
   globalThis.__hostRpcTarget = Object.getPrototypeOf(session.target.constructor)
   session.dispose()
  },
- policy: { autoStart: [{ definition: { entry: { kind: 'package-root', packageName: 'installed-target' }, exportName: 'Dynamic' }, variant: 'default' }] },
+ pluginNodes: [{ definition: { entry: { kind: 'package-root', packageName: 'installed-target' }, exportName: 'Dynamic' }, autoStart: true }],
 }))
 `,
 		)
@@ -123,6 +137,19 @@ try {
 				],
 				{ timeout: 30000, maxBuffer: 4 * 1024 * 1024 },
 			)
+		const applicationManifestFile = join(deployed, 'package.json')
+		const deployedManifest = JSON.parse(await readFile(applicationManifestFile, 'utf8'))
+		for (const version of [undefined, '0.13.0']) {
+			await writeFile(
+				applicationManifestFile,
+				JSON.stringify({
+					...deployedManifest,
+					dependencies: { ...deployedManifest.dependencies, capnweb: version },
+				}),
+			)
+			await expect(run()).rejects.toThrow(`dependencies.capnweb ${version ?? '<missing>'}`)
+		}
+		await writeFile(applicationManifestFile, JSON.stringify(deployedManifest))
 		const compatible = await run()
 		expect(compatible.stdout).toContain('WORKBENCH_TARGET_SHARED')
 		await put(
@@ -134,9 +161,10 @@ try {
 				exports: './index.mjs',
 			}),
 		)
-		await expect(run()).rejects.toThrow(
-			/installed-target.*peerDependencies\.capnweb 0\.12\.0.*resolved 0\.13\.0.*Host Workbench supports 0\.12\.0/,
-		)
+		const rejected = run()
+		await expect(rejected).rejects.toThrow(/installed-target.*resolved 0\.13\.0/)
+		await expect(rejected).rejects.toThrow(`peerDependencies.capnweb ${capnwebVersion}`)
+		await expect(rejected).rejects.toThrow(`Host capnweb supports ${capnwebVersion}`)
 	} finally {
 		await rm(root, { recursive: true, force: true })
 	}

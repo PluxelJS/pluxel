@@ -1,4 +1,4 @@
-import { describe, expect, it } from 'vitest'
+import { describe, expect, it, vi } from 'vitest'
 import * as v from 'valibot'
 import {
 	extractField,
@@ -77,7 +77,78 @@ describe('extractField / extractFormFields', () => {
 			fieldName: 'token',
 			path: 'token',
 		})
-		expect(field?.kind).toBe('string')
-		expect((field as any).control).toBe('password')
+		expect(field).toMatchObject({ kind: 'string', control: 'password' })
+	})
+
+	it('expands strict objects and marks only the overlapping intersection entry as read-only', () => {
+		expect(extractFormFields(v.strictObject({}))).toEqual([])
+		expect(() => extractFormFields(v.number())).toThrow(/Form root/)
+
+		const fields = extractFormFields(
+			v.intersect([
+				v.object({ left: v.number(), both: v.string() }),
+				v.strictObject({ right: v.boolean(), both: v.number() }),
+			]),
+		)
+		expect(fields).toEqual([
+			expect.objectContaining({ name: 'left', kind: 'number' }),
+			expect.objectContaining({
+				name: 'both',
+				kind: 'unsupported',
+				meta: { label: 'Both', readOnly: true },
+				reason: 'Intersection contains duplicate key "both"',
+			}),
+			expect.objectContaining({ name: 'right', kind: 'boolean' }),
+		])
+	})
+
+	it('distinguishes a missing key from an explicit null without calling defaults', () => {
+		const fallback = vi.fn(() => 3)
+		const lazy = vi.fn(() => v.string())
+		const fields = extractFormFields(
+			v.strictObject({
+				optional: v.optional(v.number(), fallback),
+				nullable: v.nullable(v.number()),
+				nullish: v.nullish(v.number()),
+				exactOptional: v.exactOptional(v.number()),
+				undefinedable: v.undefinedable(v.number()),
+				fallback: v.fallback(v.number(), fallback),
+				nonNullable: v.nonNullable(v.nullable(v.number())),
+				lazy: v.lazy(lazy),
+			}),
+		)
+
+		expect(fields.map(({ name, required, nullable }) => [name, required, nullable])).toEqual([
+			['optional', false, false],
+			['nullable', true, true],
+			['nullish', false, true],
+			['exactOptional', false, false],
+			['undefinedable', true, false],
+			['fallback', false, false],
+			['nonNullable', true, false],
+			['lazy', true, false],
+		])
+		expect(fallback).not.toHaveBeenCalled()
+		expect(lazy).not.toHaveBeenCalled()
+	})
+
+	it('stops gathering input constraints at the first transform even in a nested pipe', () => {
+		const check = vi.fn((input: number) => input > 0)
+		const transform = vi.fn((input: number) => input * 10)
+		const primitive = v.pipe(v.number(), v.minValue(1), v.check(check), v.transform(transform))
+		const transformed = v.pipe(primitive, v.minValue(10), v.maxValue(20), numberMeta({ step: 1 }))
+		const array = v.pipe(
+			v.array(v.number()),
+			v.transform(() => [1, 2]),
+			v.minLength(2),
+		)
+		const [amount, items] = extractFormFields(v.strictObject({ amount: transformed, items: array }))
+
+		expect(amount).toMatchObject({ kind: 'number', min: 1, step: 1 })
+		expect(amount).not.toHaveProperty('max')
+		expect(items).not.toHaveProperty('min')
+		expect(check).not.toHaveBeenCalled()
+		expect(transform).not.toHaveBeenCalled()
+		expect(v.parse(transformed, 1)).toBe(10)
 	})
 })

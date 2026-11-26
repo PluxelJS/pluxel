@@ -1,4 +1,4 @@
-import { requireFs, enterOwnerInvocation } from '@pluxel/core/internal'
+import { requireFs, requireVaultHost, enterOwnerInvocation } from '@pluxel/core/internal'
 import { BasePlugin, Plugin, type Context } from '@pluxel/core'
 import { createHost } from '@pluxel/host'
 import { afterEach, expect, it, vi } from 'vitest'
@@ -7,7 +7,7 @@ import { mkdtemp, rm } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { Passthrough } from '@pluxel/core/fs'
-import { Vault, vault, type VaultStorageApi } from '../src/vault'
+import type { VaultStorageApi } from '@pluxel/core/vault'
 
 const directories: string[] = []
 afterEach(async () => {
@@ -21,7 +21,7 @@ let ownerVault: VaultStorageApi
 class VaultOwner extends BasePlugin {
 	init() {
 		ownerContext = this.ctx
-		ownerVault = this.ctx.require(Vault)
+		ownerVault = this.ctx.vault
 	}
 }
 
@@ -36,10 +36,47 @@ function waitForClose(signal: AbortSignal): Promise<void> {
 		: new Promise((resolve) => signal.addEventListener('abort', () => resolve(), { once: true }))
 }
 
+it.each(['root', 'owner'] as const)(
+	'drains a first credential read admitted before immediate %s closure',
+	async (scope) => {
+		const host = await createHost({
+			plugins: [{ plugin: VaultOwner }],
+			coreConfig: { vault: { backend: 'bindings' } },
+		})
+		try {
+			if (scope === 'owner') await host.startNode(VaultOwner.nodeAddress())
+			const retained =
+				scope === 'owner' ? ownerVault : requireVaultHost(host.ctx).forOwner(host.ctx)
+			const accepted = retained.kv().get('missing')
+			const closing = scope === 'root' ? host.close() : host.stopNode(VaultOwner.nodeAddress())
+			await expect(accepted).resolves.toMatchObject({ exists: false, writable: false })
+			await closing
+			await expect(retained.kv().get('stale')).rejects.toThrow('stopped')
+		} finally {
+			await host.close()
+		}
+	},
+)
+
+it('releases the owner cleanup when a Vault watch is disposed', async () => {
+	await using host = await createHost({
+		plugins: [{ plugin: VaultOwner }],
+		coreConfig: { vault: { backend: 'bindings' } },
+	})
+	await host.startNode(VaultOwner.nodeAddress())
+	using defer = vi.spyOn(ownerContext.effects, 'defer')
+	const watched = await ownerVault.kv().watch('record', () => {})
+	const registered = defer.mock.results[0]?.value
+	expect(registered?.active).toBe(true)
+	watched.dispose()
+	watched.dispose()
+	expect(registered?.active).toBe(false)
+})
+
 it('drains an accepted transaction before generation stop and rejects retained KV and blob handles', async () => {
 	const host = await createHost({
-		plugins: [VaultOwner],
-		services: [vault()],
+		plugins: [{ plugin: VaultOwner }],
+		services: [],
 	})
 	const entered = Promise.withResolvers<void>()
 	const release = Promise.withResolvers<void>()
@@ -100,8 +137,7 @@ it('keeps complete blob IO admitted through Host close, then flushes the final s
 			durableMounts: ['/'],
 		},
 	}
-	const services = [vault()]
-	const host = await createHost({ plugins: [], services, runtime: { ...config } })
+	const host = await createHost({ plugins: [], services: [], coreConfig: { ...config } })
 	const directory = await requireFs(host.ctx).directory('services/vault')
 	const rename = directory.rename
 	vi.spyOn(directory, 'rename').mockImplementation(async (from, to) => {
@@ -115,7 +151,7 @@ it('keeps complete blob IO admitted through Host close, then flushes the final s
 			if (String(to).endsWith('state.enc')) events.push('snapshot flushed')
 		}
 	})
-	const rootVault = host.ctx.require(Vault)
+	const rootVault = requireVaultHost(host.ctx).forOwner(host.ctx)
 	const blob = rootVault.blobs().open('root-blob')
 	try {
 		await rootVault.kv().set('final', 'persisted')
@@ -139,9 +175,9 @@ it('keeps complete blob IO admitted through Host close, then flushes the final s
 		release.resolve()
 		await host.close()
 	}
-	const reopened = await createHost({ plugins: [], services, runtime: { ...config } })
+	const reopened = await createHost({ plugins: [], services: [], coreConfig: { ...config } })
 	try {
-		const storage = reopened.ctx.require(Vault)
+		const storage = requireVaultHost(reopened.ctx).forOwner(reopened.ctx)
 		await expect(storage.kv().get('final')).resolves.toMatchObject({ value: 'persisted' })
 		await expect(storage.blobs().open('root-blob').readText()).resolves.toBe('payload')
 	} finally {

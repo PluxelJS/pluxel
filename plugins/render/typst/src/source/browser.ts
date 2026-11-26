@@ -28,5 +28,9 @@ export type {
 	TypstSourceReference,
 } from './types.js'
 
-export { findTypstEditorPosition, findTypstSourcePosition } from './positions.js'
+export {
+	findTypstEditorPosition,
+	findTypstSourceOffset,
+	findTypstSourcePosition,
+} from './positions.js'
 export type { TypstSourcePosition } from './positions.js'

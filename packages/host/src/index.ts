@@ -1,4 +1,22 @@
-export { createHost, type HostOptions, type HostApplication, type PluginHost } from './host'
+import type { PortableApplication } from './application'
+import { startEmbeddedApplication, type HostInputs } from './embedded-application'
+import { snapshotCoreFacilitiesConfig } from '@pluxel/core/host'
+import { createHostFromOptions, type HostOptions, type PluginHost } from './host'
+
+/** Prepare a Node Host with ZenFS. Plugin generations start through host.start(). */
+export function createHost(options: HostOptions): Promise<PluginHost> {
+	return createHostFromOptions(options, snapshotCoreFacilitiesConfig)
+}
+
+/** Start and accept an isolated root from reusable declarations. The caller owns its lifetime. */
+export function startHost(
+	application: PortableApplication,
+	input?: HostInputs,
+): Promise<PluginHost> {
+	return startEmbeddedApplication(application, snapshotCoreFacilitiesConfig, input)
+}
+
+export type { HostOptions, HostApplication, PluginHost } from './host'
 export {
 	HostStatePersistenceError,
 	PluginGraphRejectedError,
@@ -10,6 +28,8 @@ export {
 	PluginCatalogError,
 	type PluginCatalogErrorCode,
 	type PluginCatalogSnapshot,
+	type PluginControlMetadata,
+	type PluginControlMaterial,
 } from './catalog'
 export type {
 	HostStateSnapshot,
@@ -18,6 +38,14 @@ export type {
 	HostDependencyOverrideState,
 	HostPolicyOptions,
 	HostPolicyInput,
+	HostPolicyPatch,
+	HostPolicyResetTarget,
+	HostGlobalPolicyField,
+	HostNodePolicyTarget,
+	HostNodePolicyMode,
+	HostAutoStartChoice,
+	HostForkChoice,
+	HostDependencyOverrideChoice,
 	HostPolicyValues,
 	HostPolicyField,
 	HostPolicyModes,
@@ -26,7 +54,12 @@ export type {
 } from './policy'
 export type { HostInputMode } from './input-mode'
 export type { HostPersistenceResult, HostPersistenceRetention } from './persistence'
-export type { HostConfigOptions, HostConfigRecordInput, ConfigInputPatch } from './config-records'
+export type { HostConfigOptions, ConfigInputPatch } from './config-records'
+export type {
+	HostPluginDeclaration,
+	HostPluginNodesDeclaration,
+	HostPluginNodeOptions,
+} from './node-declarations'
 export type { PluginSource } from './sources'
 
 export {
@@ -45,13 +78,9 @@ export {
 	type HostPluginConfigResultOk,
 	type HostPluginConfigResultErr,
 } from './config'
-export type {
-	HostDocumentStorage,
-	HostDocumentOptions,
-	HostDocumentFacilities,
-} from './document-storage'
+export type { HostDocumentStorage, HostDocumentOptions } from './document-storage'
 export type { HostConfigSource } from './config-store'
-export type { HostStateConfigurationSnapshot } from './state-store'
+export type { HostStateConfigurationSnapshot, HostNodePolicySelection } from './state-store'
 export type { HostPolicy, HostPolicyResult } from './policy-management'
 
 export type {
@@ -72,8 +101,7 @@ export {
 	prepareHostApplication,
 	type HostStartupContext,
 	type ResolvedHostApplication,
-} from './application'
-export type { HostRuntimeOptions } from './host'
+} from './node-application'
 export { HostApplicationStartupError, type HostApplicationStartup } from './application-start'
 
 export type {
@@ -87,10 +115,9 @@ export type { RuntimeUpdateSnapshot } from './execution'
 export {
 	envBinding,
 	fileBinding,
+	InputBindingError,
 	type HostEnvironmentBinding,
 	type HostFileBinding,
 	type InputMapping,
 	type VaultInputMapping,
 } from './bindings'
-
-export { InputBindingError } from './input-bindings'

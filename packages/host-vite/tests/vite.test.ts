@@ -1,6 +1,7 @@
-import { mkdir, writeFile } from 'node:fs/promises'
+import { mkdir, symlink, writeFile } from 'node:fs/promises'
 import { join } from 'node:path'
-import { pathToFileURL } from 'node:url'
+import { fileURLToPath, pathToFileURL } from 'node:url'
+import type { ConcretePluginDefinitionDeclaration } from '@pluxel/core/internal'
 import { createDiskFixture } from '@pluxel/test/fixtures'
 import { describe, expect, it } from 'vitest'
 import {
@@ -56,6 +57,9 @@ describe('host-vite Vite plugin stack', () => {
 	it('rejects unknown Host options rather than silently ignoring misspelled configuration', () => {
 		const options = { entry: 'app.ts', devConsol: true }
 		expect(() => host(options)).toThrow('[host-vite] unsupported devConsol')
+		expect(() => host({ entry: 'app.ts', onUpdateSettled: null })).toThrow(
+			'[host-vite] onUpdateSettled must be a function',
+		)
 	})
 
 	it('pins selected service entries to their native application installation', async () => {
@@ -533,100 +537,66 @@ describe('host-vite Vite plugin stack', () => {
 		await server.close()
 	})
 
-	it('lowers root and PluginPart constructor dependencies through the Vite Module Runner', async () => {
-		await using fixture = await createDiskFixture({}, { tempDir: process.cwd() })
-		const root = fixture.path
-		const modulePath = join(root, 'plugin.ts')
-		await writePackage(
-			root,
-			'@pluxel/core',
-			{
-				name: '@pluxel/core',
-				type: 'module',
-				exports: {
-					'.': './index.js',
-					'./internal': './internal.js',
-					'./toolchain': './toolchain.js',
-				},
-			},
-			[
-				"import { addresses } from './state.js'",
-				'export class BasePlugin { static definitionAddress() { const value = addresses.get(this); if (!value) throw new Error("missing address"); return value } }',
-				'export class PluginPart {}',
-				'export function Plugin() { return (target) => target }',
-			].join('\n'),
-		)
-		await Promise.all([
-			writeFile(
-				join(root, 'node_modules', '@pluxel/core', 'state.js'),
-				[
-					'export const facts = new WeakMap()',
-					'export const addresses = new WeakMap()',
-					'export const partRequires = new WeakMap()',
-					'export const partOccurrences = new WeakMap()',
-					'',
-				].join('\n'),
-			),
-			writeFile(
-				join(root, 'node_modules', '@pluxel/core', 'toolchain.js'),
-				[
-					"import { addresses, facts, partOccurrences, partRequires } from './state.js'",
-					'export function __setPluginDefinition(target, value) { facts.set(target, value); addresses.set(target, value.definition) }',
-					'export function __setPluginParts(target, value) { partOccurrences.set(target, value.occurrences) }',
-					'export function __setPluginPartRequires(target, value) { partRequires.set(target, value.requires) }',
-				].join('\n'),
-			),
-			writeFile(
-				join(root, 'node_modules', '@pluxel/core', 'internal.js'),
-				[
-					"import { facts, partOccurrences, partRequires } from './state.js'",
-					'function collectPartRequires(owner, output) { for (const occurrence of partOccurrences.get(owner) ?? []) { output.push(...(partRequires.get(occurrence.Part) ?? [])); collectPartRequires(occurrence.Part, output) } }',
-					'export function consumePluginDefinitionCandidate(target) { const value = facts.get(target); if (!value) throw new Error("missing candidate"); facts.delete(target); const constructorRequires = value.constructorRequires ?? []; const lifted = [...constructorRequires]; collectPartRequires(target, lifted); const seen = new Set(); const requires = lifted.filter((item) => { const key = JSON.stringify(item); if (seen.has(key)) return false; seen.add(key); return true }); return { implementation: target, declaration: { address: value.definition, constructorRequires, requires } } }',
-				].join('\n'),
-			),
-		])
-		await writeFile(
-			modulePath,
-			[
-				"import { BasePlugin, Plugin, PluginPart } from '@pluxel/core'",
-				"import { consumePluginDefinitionCandidate } from '@pluxel/core/internal'",
-				'@Plugin()',
-				'export class Provider extends BasePlugin {}',
-				'@Plugin()',
-				'export class Consumer extends BasePlugin { constructor(readonly provider: Provider) { super() } }',
-				'class ProviderPart extends PluginPart<PartConsumer> { constructor(readonly provider: Provider) { super() } }',
-				'@Plugin()',
-				'export class PartConsumer extends BasePlugin { readonly first = this.parts.use(ProviderPart); readonly second = this.parts.use(ProviderPart) }',
-				'export function providerDefinition() { return Provider.definitionAddress() }',
-				'export function consumerRequires() { return consumePluginDefinitionCandidate(Consumer).declaration.requires }',
-				'export function partConsumerFacts() { return consumePluginDefinitionCandidate(PartConsumer).declaration }',
-				'',
-			].join('\n'),
-		)
+	it('loads real constructor and Part dependency facts through the Vite Module Runner', async () => {
+		await using fixture = await createDiskFixture({
+			'package.json': '{ "type": "module" }',
+			'optional.ts': `
+import { BasePlugin, Plugin } from '@pluxel/core'
+@Plugin() export class Audit extends BasePlugin {}
+`,
+			'plugin.ts': `
+import { BasePlugin, definePluginRef, Plugin, PluginPart } from '@pluxel/core'
+import { consumePluginDefinitionCandidate } from '@pluxel/core/internal'
+import type { Audit } from './optional'
+const AuditRef = definePluginRef<Audit>()
+@Plugin() export class Provider extends BasePlugin {}
+class Leaf extends PluginPart<Branch> {
+	constructor(readonly provider: Provider) { super() }
+	init() { this.plugins.use(AuditRef, () => {}) }
+}
+class Branch extends PluginPart<Consumer> { readonly leaf = this.parts.use(Leaf) }
+@Plugin() export class Consumer extends BasePlugin {
+	constructor(readonly provider: Provider) { super() }
+	readonly first = this.parts.use(Branch)
+	readonly second = this.parts.use(Branch)
+}
+export function readDeclaration() { return consumePluginDefinitionCandidate(Consumer).declaration }
+`,
+		})
+		const scope = fixture.getPath('node_modules/@pluxel')
+		await mkdir(scope, { recursive: true })
+		await symlink(fileURLToPath(new URL('../../core', import.meta.url)), join(scope, 'core'), 'dir')
 
 		await withTestViteServer(
 			{
-				root,
-				plugins: hostSourcePlugins({ lintGuard: false, configSource: false }),
+				root: fixture.path,
+				plugins: [hostSingletons(), ...hostSourcePlugins({ lintGuard: false })],
 			},
 			async (server) => {
-				const mod = await importHostModule<{
-					providerDefinition(): {
-						entry: { kind: string; sourceSpace: string; path: string }
-						exportName: string
-					}
-					consumerRequires(): unknown[]
-					partConsumerFacts(): { constructorRequires: unknown[]; requires: unknown[] }
-				}>(server, modulePath)
-				expect(mod.providerDefinition()).toEqual({
+				const { readDeclaration } = await importHostModule<{
+					readDeclaration(): ConcretePluginDefinitionDeclaration
+				}>(server, fixture.getPath('plugin.ts'))
+				const declaration = readDeclaration()
+				const provider = {
 					entry: { kind: 'source-entry', sourceSpace: 'app', path: 'plugin.ts' },
 					exportName: 'Provider',
+				}
+				const audit = {
+					entry: { kind: 'source-entry', sourceSpace: 'app', path: 'optional.ts' },
+					exportName: 'Audit',
+				}
+				expect(declaration).toMatchObject({
+					constructorRequires: [provider],
+					requires: [provider],
+					optional: [audit],
 				})
-				expect(mod.consumerRequires()).toEqual([mod.providerDefinition()])
-				expect(mod.partConsumerFacts()).toMatchObject({
-					constructorRequires: [],
-					requires: [mod.providerDefinition()],
-				})
+				expect(declaration.dependencyRequests).toEqual([
+					{ definition: provider, mode: 'required', partPath: [] },
+					{ definition: provider, mode: 'required', partPath: ['first', 'leaf'] },
+					{ definition: audit, mode: 'optional', partPath: ['first', 'leaf'] },
+					{ definition: provider, mode: 'required', partPath: ['second', 'leaf'] },
+					{ definition: audit, mode: 'optional', partPath: ['second', 'leaf'] },
+				])
 			},
 		)
 	})

@@ -12,7 +12,7 @@ it('retains native Vite options and forwards the application config policy to th
 			resolve(root, 'app.mjs'),
 			`export default startup => ({
  plugins: [],
- runtime: { documents: { config: { readOnly: true } } },
+ config: { document: { readOnly: true } },
  prepare({host}) { startup.bindings.capture(host) }
 })`,
 		)
@@ -86,12 +86,11 @@ import { Owner } from './owner.ts'
 const declaredLimit = 200
 const configMode = 'saved-first'
 export default startup => ({
- plugins: [Owner],
- config: { mode: configMode, records: [{ owner: Owner, config: { limit: declaredLimit } }] },
- policy: { startTimeoutMs: 12345 },
- runtime: {
+ plugins: [{ plugin: Owner, config: { limit: declaredLimit } }],
+ config: { mode: configMode },
+ policy: { document: false, execution: { startTimeoutMs: 12345 } },
+ coreConfig: {
   zenfs: { mounts: { '/': { backend: Passthrough, fs, prefix: startup.bindings.prefix } } },
-  documents: { state: false },
  },
  prepare({host}) { startup.bindings.capture(host, Owner.nodeAddress()) }
 })

@@ -1,15 +1,12 @@
 import { workbenchFederationExpose, workbenchFederationProducerName } from '@pluxel/core/federation'
+import type { HostService } from '@pluxel/host'
 import { WorkbenchBackend } from '../services/workbench'
 import { createWorkbenchService } from '../installation'
 import type { WorkbenchArtifactLookup } from '../services/workbench/WorkbenchArtifactService'
 import type { WorkbenchContentArtifactLookup } from '../services/workbench/WorkbenchContentArtifactService'
-import {
-	readWorkbenchContentSlot,
-	readWorkbenchMarkdownDocument,
-	type WorkbenchMarkdownDocument,
-} from '../workbench/definition'
+import { readWorkbenchContentSlot, type WorkbenchContentSlotMap } from '../workbench/definition'
 
-export function testWorkbenchService() {
+export function testWorkbenchService(): HostService {
 	return createWorkbenchService(
 		{},
 		(root, options) =>
@@ -42,13 +39,13 @@ const testWorkbenchArtifacts: WorkbenchArtifactLookup = Object.freeze({
 })
 
 const testWorkbenchContents: WorkbenchContentArtifactLookup = Object.freeze({
-	resolveContent(definition, descriptor, declaration) {
+	resolveContent(definition, descriptor, slots) {
 		if (descriptor.kind !== 'content') return undefined
-		if (!declaration) {
+		if (!slots) {
 			throw new Error('[workbench] test Content lookup requires the current declaration')
 		}
 		const entry = Object.freeze({ descriptor })
-		const plan = testWorkbenchContentPlan(declaration)
+		const plan = testWorkbenchContentPlan(slots)
 		return Object.freeze({
 			artifact: Object.freeze({
 				profile: 1,
@@ -63,8 +60,7 @@ const testWorkbenchContents: WorkbenchContentArtifactLookup = Object.freeze({
 	},
 })
 
-function testWorkbenchContentPlan(declaration: WorkbenchMarkdownDocument) {
-	const slots = readWorkbenchMarkdownDocument(declaration).slots
+function testWorkbenchContentPlan(slots: WorkbenchContentSlotMap) {
 	return Object.freeze({
 		version: 1 as const,
 		kind: 'workbench-content' as const,

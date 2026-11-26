@@ -6,7 +6,7 @@ import {
 	matchWorkbenchRoute,
 	workbenchRoutesOverlap,
 	type CompiledWorkbenchRoute,
-} from './routes'
+} from '../../../src/workbench/routes'
 
 export type WorkbenchDirectoryRoute = Readonly<{
 	entry: WorkbenchLayoutEntry
@@ -31,6 +31,7 @@ const reservedRoots = new Set([
 	'plugins',
 	'plugin-graph',
 	'security',
+	'outbound-http',
 	'logs',
 	'workbench',
 	'workbench-standalone',

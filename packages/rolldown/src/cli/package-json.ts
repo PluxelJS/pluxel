@@ -2,57 +2,6 @@ import { access, readFile, writeFile } from 'node:fs/promises'
 import { dirname, resolve } from 'pathe'
 import type { WorkspacePackageJson } from '../workspace/package-json'
 
-const PACKAGE_FIELD_ORDER = [
-	'$schema',
-	'name',
-	'version',
-	'private',
-	'description',
-	'keywords',
-	'homepage',
-	'bugs',
-	'repository',
-	'funding',
-	'license',
-	'author',
-	'sideEffects',
-	'type',
-	'imports',
-	'exports',
-	'main',
-	'module',
-	'browser',
-	'types',
-	'typesVersions',
-	'typings',
-	'bin',
-	'man',
-	'files',
-	'workspaces',
-	'scripts',
-	'resolutions',
-	'overrides',
-	'dependencies',
-	'devDependencies',
-	'dependenciesMeta',
-	'peerDependencies',
-	'peerDependenciesMeta',
-	'optionalDependencies',
-	'bundledDependencies',
-	'bundleDependencies',
-	'packageManager',
-	'engines',
-	'publishConfig',
-] as const
-
-const SORTED_OBJECT_FIELDS = new Set([
-	'dependencies',
-	'devDependencies',
-	'optionalDependencies',
-	'peerDependencies',
-	'scripts',
-])
-
 export async function resolvePackageJsonPath(start: string): Promise<string> {
 	let current = resolve(start)
 	while (true) {
@@ -73,31 +22,8 @@ export async function writeWorkspacePackageJson(
 	path: string,
 	pkg: WorkspacePackageJson,
 ): Promise<void> {
-	await writeFile(path, `${JSON.stringify(sortPackageJson(pkg), null, '\t')}\n`)
-}
-
-export function sortPackageJson(pkg: WorkspacePackageJson): WorkspacePackageJson {
-	const sorted: WorkspacePackageJson = {}
-	const originalKeys = Object.keys(pkg)
-	const knownKeysPresent = PACKAGE_FIELD_ORDER.filter((key) => Object.hasOwn(pkg, key)) as string[]
-
-	for (const key of originalKeys) {
-		const currentIndex = knownKeysPresent.indexOf(key)
-		if (currentIndex === -1) {
-			sorted[key] = pkg[key]
-			continue
-		}
-		for (let i = 0; i <= currentIndex; i++) {
-			const knownKey = knownKeysPresent[i]
-			if (knownKey && !Object.hasOwn(sorted, knownKey)) sorted[knownKey] = pkg[knownKey]
-		}
-	}
-
-	for (const key of SORTED_OBJECT_FIELDS) {
-		const value = sorted[key]
-		if (isPlainObject(value)) sorted[key] = sortObject(value)
-	}
-	return sorted
+	// Rules own generated fields. Package field ordering belongs to the author's formatter.
+	await writeFile(path, `${JSON.stringify(pkg, null, '\t')}\n`)
 }
 
 async function fileExists(path: string): Promise<boolean> {
@@ -107,12 +33,4 @@ async function fileExists(path: string): Promise<boolean> {
 	} catch {
 		return false
 	}
-}
-
-function isPlainObject(value: unknown): value is Record<string, unknown> {
-	return typeof value === 'object' && value !== null && !Array.isArray(value)
-}
-
-function sortObject(value: Record<string, unknown>): Record<string, unknown> {
-	return Object.fromEntries(Object.entries(value).sort(([a], [b]) => a.localeCompare(b)))
 }

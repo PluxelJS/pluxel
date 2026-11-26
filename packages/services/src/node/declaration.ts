@@ -21,7 +21,7 @@ type NodeModuleDescriptor = Readonly<{
 	artifactKey?: string
 }>
 
-/** Declare a Node ESM source entry for `ctx.nodeModules.use()`. */
+/** Declare a Node ESM source entry for `ctx.service(NodeModules).use()`. */
 export function defineNodeModule(
 	moduleUrl: string | URL,
 	entryPath: string,

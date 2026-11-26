@@ -3,23 +3,19 @@ import { fileURLToPath } from 'node:url'
 import { promisify } from 'node:util'
 import { describe, expect, it } from 'vitest'
 
-const execFileAsync = promisify(execFile)
-const runner = fileURLToPath(new URL('./support/typst-dynamic-runner.mts', import.meta.url))
-const entry = fileURLToPath(new URL('./support/typst.dynamic.ts', import.meta.url))
+const verify = fileURLToPath(new URL('./fixtures/dynamic-worker/verify.mts', import.meta.url))
+const cwd = new URL('../', import.meta.url)
 
 describe('@pluxel/plugin-takumi-markdown optional math dynamic artifact', () => {
 	it('runs generated formula SVG assets through the dynamic runtime and final Takumi renderer', async () => {
-		const packageRoot = fileURLToPath(new URL('../', import.meta.url))
 		await expect(
-			execFileAsync(process.execPath, ['--import', 'tsx', runner], {
-				cwd: packageRoot,
-				env: {
-					...process.env,
-					CI: '1',
-					PLUXEL_MARKDOWN_MATH_DYNAMIC_ENTRY: entry,
-				},
+			promisify(execFile)(process.execPath, ['--import', 'tsx', verify], {
+				cwd,
+				env: { ...process.env, CI: '1' },
 				timeout: 120_000,
 			}),
-		).resolves.toBeDefined()
+		).resolves.toMatchObject({
+			stdout: expect.stringContaining('Verified Markdown math and unsafe formula rejection'),
+		})
 	}, 150_000)
 })

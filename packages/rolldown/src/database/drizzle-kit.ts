@@ -2,9 +2,15 @@ import { spawn } from 'node:child_process'
 import { createRequire } from 'node:module'
 import { readFile, readdir, writeFile } from 'node:fs/promises'
 import { dirname, join, relative } from 'pathe'
-import { listMigrationSqlFiles } from './artifact.ts'
+import { listMigrationSqlFiles, type DatabaseDialect } from './artifact.ts'
+import { scopeGeneratedPostgresSql, type PostgresSnapshot } from './postgres-sql.ts'
 
-export type DrizzleKitPlan = Readonly<{ root: string; schema: string; out: string }>
+export type DrizzleKitPlan = Readonly<{
+	root: string
+	schema: string
+	out: string
+	dialect: DatabaseDialect
+}>
 type DrizzleKitOutput = 'inherit' | 'capture'
 
 const MAX_CAPTURED_OUTPUT = 64 * 1024
@@ -16,7 +22,9 @@ export async function runDrizzleKit(
 	output: DrizzleKitOutput = 'inherit',
 ): Promise<void> {
 	const existingFiles =
-		command === 'generate' ? new Set(await listMigrationSqlFiles(plan.out)) : null
+		command === 'generate' && plan.dialect === 'postgresql'
+			? new Set(await listMigrationSqlFiles(plan.out))
+			: null
 	const require = createRequire(import.meta.url)
 	let binary: string
 	try {
@@ -33,7 +41,7 @@ export async function runDrizzleKit(
 					binary,
 					command,
 					'--dialect',
-					'postgresql',
+					plan.dialect,
 					'--schema',
 					relative(plan.root, plan.schema),
 					'--out',
@@ -44,7 +52,7 @@ export async function runDrizzleKit(
 					binary,
 					command,
 					'--dialect',
-					'postgresql',
+					plan.dialect,
 					'--out',
 					relative(plan.root, plan.out),
 					...extra,
@@ -52,7 +60,7 @@ export async function runDrizzleKit(
 	await new Promise<void>((resolvePromise, reject) => {
 		const child = spawn(process.execPath, args, {
 			cwd: plan.root,
-			stdio: output === 'inherit' ? 'inherit' : ['ignore', 'pipe', 'pipe'],
+			stdio: output === 'inherit' ? ['inherit', 'inherit', 'pipe'] : ['ignore', 'pipe', 'pipe'],
 		})
 		let diagnostics = ''
 		const capture = (chunk: Buffer | string) => {
@@ -60,12 +68,22 @@ export async function runDrizzleKit(
 			diagnostics += String(chunk).slice(0, MAX_CAPTURED_OUTPUT - diagnostics.length)
 		}
 		child.stdout?.on('data', capture)
-		child.stderr?.on('data', capture)
+		let stderr = ''
+		child.stderr?.on('data', (chunk: Buffer) => {
+			stderr = (stderr + String(chunk)).slice(-MAX_CAPTURED_OUTPUT)
+			if (output === 'inherit') process.stderr.write(chunk)
+			else capture(chunk)
+		})
 		child.once('error', reject)
-		child.once('exit', (code, signal) => {
-			if (code === 0) resolvePromise()
+		child.once('close', (code, signal) => {
+			// Kit 0.31 logs caught schema evaluation errors and can still exit zero.
+			const schemaError =
+				command === 'generate' &&
+				/^[\w.]*Error(?: \[[A-Z0-9_]+\])?:/m.test(stderr) &&
+				/^\s+at /m.test(stderr)
+			if (code === 0 && !schemaError) resolvePromise()
 			else {
-				const detail = diagnostics.trim()
+				const detail = (schemaError ? stderr : diagnostics).trim()
 				reject(
 					new Error(
 						`[database] drizzle-kit ${command} failed (${signal ?? code})${detail ? `\n${detail}` : ''}`,
@@ -77,54 +95,32 @@ export async function runDrizzleKit(
 	if (existingFiles) await normalizeGeneratedOwnerReferences(plan.out, existingFiles)
 }
 
-/** Drizzle Kit sometimes qualifies a pgTable() FK target as public even though the
- * corresponding CREATE TABLE is unqualified. Plugin migrations run in an isolated
- * owner schema; only targets declared as unqualified tables in this snapshot may
- * inherit that search path. Explicit public or other-schema targets stay intact. */
+/** Normalize only SQL that Kit just generated. Applied migrations retain their exact bytes. */
 export async function normalizeGeneratedOwnerReferences(
 	out: string,
 	existingFiles: ReadonlySet<string>,
 ): Promise<void> {
-	const sqlFiles = await listMigrationSqlFiles(out)
-	const generated = sqlFiles.filter((file) => !existingFiles.has(file))
+	const files = await listMigrationSqlFiles(out)
+	const generated = files.filter((file) => !existingFiles.has(file))
 	if (generated.length === 0) return
-	const metadataFiles = await readdir(join(out, 'meta'))
-	const snapshots = metadataFiles.filter((file) => file.endsWith('_snapshot.json')).sort()
-	const latest = snapshots.at(-1)
-	if (!latest) throw new Error('[database] generated migration has no Drizzle schema snapshot')
-	const snapshot = JSON.parse(await readFile(join(out, 'meta', latest), 'utf8')) as {
-		tables?: Record<string, { name?: unknown; schema?: unknown }>
-	}
-	const owned = new Set(
-		Object.values(snapshot.tables ?? {})
-			.filter((table) => table.schema === '' && typeof table.name === 'string')
-			.map((table) => table.name as string),
-	)
-	const explicitPublic = new Set(
-		Object.values(snapshot.tables ?? {})
-			.filter((table) => table.schema === 'public' && typeof table.name === 'string')
-			.map((table) => table.name as string),
-	)
+	const meta = join(out, 'meta')
+	const metadata = await readdir(meta)
+	const snapshots = metadata.filter((file) => file.endsWith('_snapshot.json'))
+	snapshots.sort((left, right) => left.localeCompare(right, 'en', { numeric: true }))
+	const readSnapshot = async (file: string): Promise<PostgresSnapshot> =>
+		JSON.parse(await readFile(join(meta, file), 'utf8'))
+
 	for (const file of generated) {
+		const index = snapshots.indexOf(`${file.split('_', 1)[0]}_snapshot.json`)
+		if (index === -1)
+			throw new Error(`[database] generated migration ${file} has no Drizzle schema snapshot`)
 		const path = join(out, file)
-		const original = await readFile(path, 'utf8')
-		const normalized = original
-			.split('--> statement-breakpoint')
-			.map((statement) =>
-				/\bFOREIGN KEY\b/u.test(statement)
-					? statement.replaceAll(
-							/\bREFERENCES(\s+)"public"\."([^"]+)"/gu,
-							(full, spacing: string, table: string) => {
-								if (owned.has(table) && explicitPublic.has(table))
-									throw new Error(
-										`[database] ambiguous generated foreign key target public.${table}: both owner and explicit public tables exist`,
-									)
-								return owned.has(table) ? `REFERENCES${spacing}"${table}"` : full
-							},
-						)
-					: statement,
-			)
-			.join('--> statement-breakpoint')
+		const [original, current, previous] = await Promise.all([
+			readFile(path, 'utf8'),
+			readSnapshot(snapshots[index]!),
+			index > 0 ? readSnapshot(snapshots[index - 1]!) : undefined,
+		])
+		const normalized = await scopeGeneratedPostgresSql(original, path, current, previous)
 		if (normalized !== original) await writeFile(path, normalized, 'utf8')
 	}
 }

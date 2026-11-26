@@ -23,7 +23,7 @@ const squareWorker = defineWorkerTask<{ value: number }, { squared: number }>(
 @Plugin()
 export class PluginHttpWorkerDemo extends BasePlugin {
 	override async init(): Promise<void> {
-		this.ctx.require(ElysiaApp).group('/demo/worker', (app) =>
+		this.ctx.service(ElysiaApp).group('/demo/worker', (app) =>
 			app
 				.get('/status', async () => this.getWorkerStatus())
 				.get('/square/:value', async ({ params, set }) => {
@@ -49,7 +49,7 @@ export class PluginHttpWorkerDemo extends BasePlugin {
 	}
 
 	private async square(value: number): Promise<SquareResult> {
-		const result = await this.ctx.require(Workers).run(squareWorker, { value })
+		const result = await this.ctx.service(Workers).run(squareWorker, { value })
 		return {
 			input: value,
 			squared: result.squared,

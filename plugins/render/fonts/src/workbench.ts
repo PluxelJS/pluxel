@@ -13,16 +13,18 @@ export type {
 	ManagedFontSnapshot,
 } from './workbench-contracts.ts'
 
-/** Fonts owns both renderers and APIs; consumers only place the selection Attachment. */
-export const FontsWorkbench = workbench.define({
+/** Font management View and reusable selector for the bound FontsPlugin node's shared default family. */
+export const FontsWorkbench = workbench.define(import.meta.url, {
 	manager: workbench.view<FontsManagerApi>({
-		renderer: workbench.entry(import.meta.url, './ui/manager.tsx'),
-		placement: workbench.tab({
+		renderer: './ui/manager.tsx',
+		placement: {
+			kind: 'tab',
 			label: 'Fonts',
-			icon: workbench.icons.Typography,
-		}),
+			icon: 'typography',
+		},
 	}),
+	/** Edits this FontsPlugin node's default family preference, shared by all consumers bound to it. */
 	selection: workbench.attachment<FontSelectionApi>({
-		renderer: workbench.entry(import.meta.url, './ui/selection.tsx'),
+		renderer: './ui/selection.tsx',
 	}),
 })

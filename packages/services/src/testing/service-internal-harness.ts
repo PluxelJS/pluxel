@@ -14,6 +14,7 @@ import {
 	requirePluginService,
 	type ConcretePluginDefinitionCandidate,
 	type PluginService,
+	resolveContextService,
 } from '@pluxel/core/internal'
 import {
 	collectPluginLifecycleNotStarted,
@@ -22,7 +23,7 @@ import {
 	type PluginNodeHandle,
 } from '@pluxel/core/internal/test'
 import { type ServiceInternalTestHostOptions } from './options'
-import { resolveContextCapability } from '@pluxel/core/host'
+
 import {
 	applyHostStatePatch,
 	createPluginCatalogSnapshot,
@@ -168,7 +169,7 @@ export async function createServiceInternalTestHarness(
 		return candidate
 	}
 	const definitionAddress = (plugin: PluginConstructor): PluginDefinitionAddress =>
-		addressByImplementation.get(plugin) ?? plugin.definitionAddress()
+		addressByImplementation.get(plugin) ?? plugin.address()
 	const targetAddress = (target: ServiceInternalTestTarget): PluginNodeAddress =>
 		typeof target === 'function'
 			? { definition: definitionAddress(target), variant: 'default' }
@@ -211,8 +212,7 @@ export async function createServiceInternalTestHarness(
 					{ type: 'remove-node-policy', node: address },
 					{
 						type: 'remove-fork',
-						definition: address.definition,
-						forkId: address.forkId,
+						node: address,
 					},
 				)
 				continue
@@ -347,7 +347,7 @@ export async function createServiceInternalTestHarness(
 		stateStore,
 		fetch: async (request: Request): Promise<Response> => {
 			const { ElysiaRuntime } = await import('../elysia/runtime')
-			return resolveContextCapability(ctx, ElysiaRuntime).fetch(request)
+			return resolveContextService(ctx, ElysiaRuntime).fetch(request)
 		},
 		add,
 		remove,
@@ -392,9 +392,9 @@ export async function createServiceInternalTestHarness(
 				definition: definitionAddress(plugin),
 				variant: 'fork' as const,
 				forkId,
-			}) as PluginNodeHandle<TPlugin>
-			stageState({ type: 'ensure-fork', definition: address.definition, forkId })
-			return address
+			})
+			stageState({ type: 'ensure-fork', node: address })
+			return address as PluginNodeHandle<TPlugin>
 		},
 		override: (
 			consumer: ServiceInternalTestTarget,

@@ -5,15 +5,10 @@ import { join } from 'node:path'
 import { setImmediate } from 'node:timers/promises'
 import { configure, getConfig, reset, type Config, type LogRecord } from '@logtape/logtape'
 import { BasePlugin, Plugin, type RootContext } from '@pluxel/core'
-import { logtape, zenfs } from '@pluxel/core/config'
 import { Passthrough } from '@pluxel/core/fs'
 import { createCoreContextHost, prepareCoreContext } from '@pluxel/core/host'
 import { requireHostDocuments } from '@pluxel/core/internal'
-import {
-	Logging,
-	createPluginLogPolicyStore,
-	parsePluginLogPolicySnapshot,
-} from '@pluxel/core/logging'
+import { createPluginLogPolicyStore, parsePluginLogPolicySnapshot } from '@pluxel/core/logging'
 import { createHost, defineHostService } from '@pluxel/host'
 import { expect, it } from 'vitest'
 
@@ -36,20 +31,27 @@ it('prepares Core-only logging once and disposes its native resources with the r
 		},
 	})
 	const shape = createCoreContextHost({
-		logtape: logtape(() => {
+		logtape: () => {
 			factories++
 			void prepareCoreContext(root)
 			return { sinks: { native: sink }, loggers: [{ category: ['pluxel'], sinks: ['native'] }] }
-		}),
+		},
 	})
 	const root: RootContext = shape.createRoot()
 	try {
-		expect(root.require(Logging)).toBe(root.logging)
+		expect(root.logging).toBeDefined()
+		expect(root.logging).toBe(root.logging)
+		expect(Object.isFrozen(root.logging)).toBe(true)
+		for (const key of ['install', 'initializePolicy', 'dispose', 'contextBinding', 'management'])
+			expect(key in root.logging!).toBe(false)
 		expect(factories).toBe(0)
 		expect(getConfig()).toBeNull()
 		await Promise.all([prepareCoreContext(root), prepareCoreContext(root)])
 		await prepareCoreContext(root)
 		expect(factories).toBe(1)
+		const { flush, describe } = root.logging!
+		await flush()
+		expect(describe().state).toBe('installed')
 		root.logger.info('Core-only prepared')
 		expect(records.some((record) => record.message.join('') === 'Core-only prepared')).toBe(true)
 	} finally {
@@ -78,9 +80,9 @@ it.each(['resolved', 'rejected'] as const)(
 			},
 		})
 		const root = createCoreContextHost({
-			logtape: logtape(
-				{ sinks: { native: sink }, loggers: [] },
-				{
+			logtape: {
+				input: { sinks: { native: sink }, loggers: [] },
+				options: {
 					policyLoadFailure: 'fail',
 					policyStore: () => ({
 						async load() {
@@ -92,9 +94,9 @@ it.each(['resolved', 'rejected'] as const)(
 						async save() {},
 					}),
 				},
-			),
+			},
 		}).createRoot()
-		const manager = root.require(Logging)
+		const manager = root.logging!
 		const initialLevel = manager.policy.snapshot().defaultLevel
 		const preparation = prepareCoreContext(root).then(
 			() => ({ ok: true as const }),
@@ -163,21 +165,21 @@ it('keeps logging through service and Plugin cleanup, and commits policy before 
 			},
 		},
 	)
-	const storage = zenfs({
+	const storage = {
 		mounts: { '/': { backend: Passthrough, fs: nodeFs, prefix: directory } },
 		durableMounts: ['/'],
-	})
+	}
 	try {
 		const host = await createHost({
-			plugins: [LifecycleLogger],
-			runtime: {
+			plugins: [{ plugin: LifecycleLogger }],
+			coreConfig: {
 				zenfs: storage,
-				logtape: logtape(
-					{
+				logtape: {
+					input: {
 						sinks: { native: sink },
 						loggers: [{ category: ['pluxel'], sinks: ['native'], lowestLevel: 'trace' }],
 					},
-					{
+					options: {
 						policyStore(root) {
 							const store = createPluginLogPolicyStore(requireHostDocuments(root, 'logging'))
 							return {
@@ -191,16 +193,20 @@ it('keeps logging through service and Plugin cleanup, and commits policy before 
 							}
 						},
 					},
-				),
+				},
 			},
 			services: [
 				defineHostService({
 					name: 'LoggingLifecycleProbe',
-					capabilities: [],
+					provides: [],
 					prepare({ ctx, effects }) {
 						ctx.logger.info('service prepare')
-						effects.defer(() => ctx.logger.info('service runtime'), { phase: 'runtime' })
-						effects.defer(() => ctx.logger.info('service final'), { phase: 'final' })
+						effects.defer(() => ctx.logger.info('service runtime'), {
+							phase: 'runtime',
+						})
+						effects.defer(() => ctx.logger.info('service final'), {
+							phase: 'final',
+						})
 						ctx.effects.defer(
 							() => {
 								ctx.logger.info('root final')
@@ -237,7 +243,7 @@ it('keeps logging through service and Plugin cleanup, and commits policy before 
 		for (const event of expected) expect(events.indexOf(event)).toBeLessThan(disposal)
 		expect(events.filter((event) => event === 'native disposed')).toHaveLength(1)
 		expect(getConfig()).toBeNull()
-		const reopened = await createHost({ plugins: [], runtime: { zenfs: storage }, services: [] })
+		const reopened = await createHost({ plugins: [], coreConfig: { zenfs: storage }, services: [] })
 		try {
 			const raw = await requireHostDocuments(reopened.ctx, 'logging').getText(
 				'plugin-policy/pluxel.json',
@@ -281,10 +287,10 @@ it('rolls back native resources when strict policy preparation fails before serv
 	await expect(
 		createHost({
 			plugins: [],
-			runtime: {
-				logtape: logtape(
-					{ sinks: { native: sink }, loggers: [] },
-					{
+			coreConfig: {
+				logtape: {
+					input: { sinks: { native: sink }, loggers: [] },
+					options: {
 						policyLoadFailure: 'fail',
 						policyStore: () => ({
 							async load() {
@@ -293,12 +299,12 @@ it('rolls back native resources when strict policy preparation fails before serv
 							async save() {},
 						}),
 					},
-				),
+				},
 			},
 			services: [
 				defineHostService({
 					name: 'NeverPrepared',
-					capabilities: [],
+					provides: [],
 					prepare() {
 						servicePreparations++
 					},

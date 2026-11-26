@@ -34,7 +34,7 @@ it('resolves the production example Vault binding and executes its review branch
 	)
 	const { host } = await setup()
 	await using _owned = host
-	const consumer = await host.start(InvoiceConsumer)
+	const consumer = await host.start(InvoiceConsumer.nodeAddress())
 	expect(await consumer.check(image)).toMatchObject({
 		state: 'review',
 		result: { status: 'needs_review', fields: ['kind'] },
@@ -202,7 +202,7 @@ it.each([Consumer, InvoicePlugin])(
 		const pending = consumer.extract().catch((error: unknown) => error)
 		await entered.promise
 		await expect(consumer.extract()).rejects.toMatchObject({ code: 'BUSY' })
-		await host.stop(owner)
+		await host.stop(owner.nodeAddress())
 		expect(await pending).toMatchObject({ code: 'NOT_RUNNING' })
 	},
 )

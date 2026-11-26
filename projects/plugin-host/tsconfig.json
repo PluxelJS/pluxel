@@ -3,8 +3,9 @@
 	"compilerOptions": {
 		"experimentalDecorators": true,
 		"jsx": "react-jsx",
-		"lib": ["ES2023", "ESNext.Disposable", "DOM", "DOM.Iterable"],
-		"types": ["vite/client"]
+		"lib": ["ES2024", "ESNext.Disposable", "DOM", "DOM.Iterable"],
+		"customConditions": ["@pluxel/hmr", "@pluxel/source"],
+		"types": ["node", "vite/client"]
 	},
 	"include": ["src", "dev", "*.config.ts"]
 }

@@ -2,6 +2,8 @@
 
 本页解释一份 Plugin 声明如何成为运行能力。跨领域规则见 [工程不变量](DESIGN_PRINCIPLES.md)，具体修改任务只在 [工程导航](README.md) 分流。插件作者从[用户指南](../docs/getting-started/index.md)开始。
 
+编译器从源码提取依赖声明，Core 根据已加载的插件定义构建运行图。Vite 的模块图负责开发期源码失效与重新求值。设备或 Worker 的新 JS 执行环境可以直接用已编译定义启动；插件文件何时安装、采用哪个版本、何时销毁引擎，都由应用所有者决定。 [跨平台契约](../docs/host/runtime-portability.md#开发与交付)
+
 ## 唯一执行路径
 
 ```text
@@ -13,14 +15,14 @@ Plugin / PluginPart 源码声明
   → 可选 Workbench 发布业务能力的 UI 投影
 ```
 
-| 所有者               | 持有的事实与责任                                                    | 边界                                              |
-| -------------------- | ------------------------------------------------------------------- | ------------------------------------------------- |
-| Context              | 同步、严格惰性、固定 shape 的 capability kernel                     | 不管理 IO 或 Plugin lifecycle                     |
-| Core                 | identity、DI graph、generation、effects、配置事实与固定 FS/TinyBase | 不决定来源、领域保存策略、HTTP 或进程策略         |
-| Host                 | 服务准备/关闭、catalog、运行意图、配置持久策略、协调事务            | 使用 Core 唯一的 graph/lifecycle                  |
-| Services             | 显式安装 HTTP、Commands、Database、Vault、Management 等能力         | 每项能力拥有自己的资源与 owner view               |
-| Host-vite / Rolldown | Vite 执行与更新、语义编译、源码查询与发行制品                       | native 不加载编译工具；生产 Vite 显式持有执行工具 |
-| Workbench            | publication、layout、opened targets、Shell/renderer                 | 投影业务能力，不持有业务状态或业务依赖            |
+| 所有者               | 持有的事实与责任                                                     | 边界                                              |
+| -------------------- | -------------------------------------------------------------------- | ------------------------------------------------- |
+| Context              | 同步、严格惰性、固定 shape 的 capability kernel                      | 不管理 IO 或 Plugin lifecycle                     |
+| Core                 | identity、DI graph、generation、effects、配置事实与固定 Context 能力 | 宿主选择来源、领域保存与进程策略                  |
+| Host                 | 服务准备/关闭、catalog、运行意图、配置持久策略、协调事务             | 使用 Core 唯一的 graph/lifecycle                  |
+| Services             | 显式安装入站 HTTP、Commands、Pg、Management 等能力                   | 每项能力拥有自己的资源与 owner view               |
+| Host-vite / Rolldown | Vite 执行与更新、语义编译、源码查询与发行制品                        | native 不加载编译工具；生产 Vite 显式持有执行工具 |
+| Workbench            | publication、layout、opened targets、Shell/renderer                  | 投影业务能力，不持有业务状态或业务依赖            |
 
 Services 组合入口可选择 Workbench，Workbench 消费 Services 叶子入口；实际模块依赖和导出约束由 [GOVERNANCE](GOVERNANCE.md) 维护。
 
@@ -39,9 +41,9 @@ required dependency 只写 constructor，工具链从 root import provenance 生
 
 Part occurrence 有 config/diagnostic path，没有独立 node、override 或 lifecycle。Part 对外只暴露业务 API，不暴露 root owner、Context attribution path 或 service locator。每个具体 Plugin/Part 最多一个 `configs.use(ObjectSchema)` field；Part schema 按 occurrence path 聚合为同一 Plugin record。
 
-Host 在 root 创建前固定 Context 服务集合；Plugin 不安装 capability。Core 固定提供 logger、effects、events、配置事实与 FS/TinyBase，其他服务由应用显式组合。`ctx.events` 是可经 module augmentation 扩展的 host 广播；沿 dependency edge 的固定协议使用具名 `EvtChannel` 属性。事件类型声明本身不建立 graph dependency。
+Host 在 root 创建前固定 Context 服务集合，应用显式组合扩展服务。Core 提供 logger、effects、events、配置事实、TinyBase、Vault 和受管出站 HTTP。文件能力由 Host 装配提供，`ctx.events` 是可经 module augmentation 扩展的 host 广播。沿 dependency edge 的固定协议使用具名 `EvtChannel` 属性，类型声明本身不建立 graph dependency。 [Host 装配](HOST.md#服务与资源) · [出站 HTTP](OUTBOUND_HTTP.md)
 
-Workbench 通过可选 `ctx.workbench?.publish()` 接入。业务 Plugin 不依赖 UI 是否安装；页面 API 使用 fresh Cap’n Web `RpcTarget`，Attachment 的 API/renderer 由 provider 拥有、placement 由 consumer 拥有。
+Workbench 通过可选 `ctx.service(WorkbenchRef)?.publish()` 接入。业务 Plugin 不依赖 UI 是否安装；页面 API 使用 fresh Cap’n Web `RpcTarget`，Attachment 的 API/renderer 由 provider 拥有、placement 由 consumer 拥有。
 
 ## 从声明到运行：三个不同对象
 
@@ -65,7 +67,7 @@ Constructor dependency facade 固定 provider generation 和 caller Context。Pa
 
 ## 服务、来源与宿主策略
 
-Core 固定提供 FS 与 TinyBase，日志输出通过 `runtime.logtape` 选择；`standardServices()` 组合 HTTP、Commands、NodeModules 与 Workers；`servicesPreset()` 再选择 Vault、Management、管理命令及可选 Workbench。Database 由应用单独选择。安装顺序与 root/service/generation 资源边界见 [HOST](HOST.md)。
+Node 的 `servicesPreset()` 组合入站 HTTP、Commands、NodeModules、Workers、Management、管理命令及可选 Workbench。`workbench: false` 保留管理能力，定制宿主和隔离测试直接组合单项安装器。Pg 由应用单独选择。安装顺序与 root/service/generation 资源边界见 [HOST](HOST.md)。
 
 固定 imports 与动态来源共用应用声明、catalog 和运行意图。动态来源只发布/删除普通 ESM entry；Package Manager 是显式安装的普通 Plugin，自己拥有 acquisition、registry、安装状态和 UI。生产来源加载与开发 HMR 各有边界，不能从“支持动态来源”推断“支持生产热替换”。
 

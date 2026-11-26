@@ -1,28 +1,20 @@
 import { createHash } from 'node:crypto'
 import { existsSync } from 'node:fs'
 import { mkdir, mkdtemp, readFile, readdir, rm, writeFile } from 'node:fs/promises'
-import { basename, join, resolve } from 'pathe'
+import { join, resolve } from 'pathe'
 import {
 	databaseManifestFile,
-	listMigrationSqlFiles,
-	loadDatabaseArtifact,
-	migrationChecksum,
-	type DatabaseBuildArtifact,
-	type DatabaseEvolutionArtifact,
-	type DatabaseMigrationManifest,
+	readDatabaseHistory,
+	writeDatabaseLineage,
+	type DatabaseDialect,
 } from './artifact.ts'
 import { runDrizzleKit } from './drizzle-kit.ts'
 
-export type GeneratedResetDatabaseArtifact = Readonly<{
-	migrationsDir: string
-	artifact: DatabaseBuildArtifact
-	cleanup: () => Promise<void>
-}>
-
-export async function generateResetDatabaseArtifact(options: {
+export async function generateResetDatabaseHistory(options: {
 	root: string
 	schema: string
-}): Promise<GeneratedResetDatabaseArtifact> {
+	dialect: DatabaseDialect
+}) {
 	const root = resolve(options.root)
 	const schema = resolve(root, options.schema)
 	if (!existsSync(schema)) throw new Error(`[database] schema module not found: ${schema}`)
@@ -39,47 +31,19 @@ export async function generateResetDatabaseArtifact(options: {
 	try {
 		await runDrizzleKit(
 			'generate',
-			{ root, schema, out: stagingOut },
+			{ root, schema, dialect: options.dialect, out: stagingOut },
 			['--name', 'baseline'],
 			'capture',
 		)
-		const lineage = await resetLineageFromSnapshot(stagingOut)
-		const migrations = await readGeneratedMigrations(stagingOut)
-		if (migrations.length === 0) {
-			throw new Error('[database] reset-on-schema-change database must define at least one table')
-		}
-		await rm(join(stagingOut, 'meta'), { recursive: true, force: true })
-		await writeManifest(stagingOut, {
-			version: 2,
-			evolution: 'reset-on-schema-change',
-			lineage,
-			migrations,
-		})
-		return {
-			migrationsDir: stagingOut,
-			artifact: await loadDatabaseArtifact(stagingOut),
-			cleanup: () => rm(stagingRoot, { recursive: true, force: true }),
-		}
-	} catch (error) {
+		const lineage = await prepareResetJournal(stagingOut)
+		await writeDatabaseLineage(stagingOut, lineage)
+		return await readDatabaseHistory(stagingOut, options.dialect)
+	} finally {
 		await rm(stagingRoot, { recursive: true, force: true })
-		throw error
 	}
 }
 
-async function readGeneratedMigrations(
-	out: string,
-): Promise<DatabaseMigrationManifest['migrations']> {
-	const migrations: Array<{ id: string; file: string; checksum: string }> = []
-	for (const file of await listMigrationSqlFiles(out)) {
-		const contents = await readFile(join(out, file), 'utf8')
-		const sql = contents.trim()
-		if (!sql) throw new Error(`[database] generated migration ${file} is empty`)
-		migrations.push({ id: basename(file, '.sql'), file, checksum: migrationChecksum(sql) })
-	}
-	return migrations
-}
-
-async function resetLineageFromSnapshot(out: string): Promise<string> {
+async function prepareResetJournal(out: string): Promise<string> {
 	const meta = join(out, 'meta')
 	const metaFiles = await readdir(meta)
 	const snapshots = metaFiles.filter((file) => file.endsWith('_snapshot.json')).sort()
@@ -88,14 +52,22 @@ async function resetLineageFromSnapshot(out: string): Promise<string> {
 			`[database] reset baseline must generate exactly one schema snapshot, received ${snapshots.length}`,
 		)
 	}
-	const snapshot = JSON.parse(await readFile(join(meta, snapshots[0]!), 'utf8')) as Record<
-		string,
-		unknown
-	>
+	const snapshotPath = join(meta, snapshots[0]!)
+	const snapshot = JSON.parse(await readFile(snapshotPath, 'utf8')) as Record<string, unknown>
 	const { id: _id, prevId: _prevId, ...schema } = snapshot
 	const hash = createHash('sha256')
 	hash.update('pluxel-database-reset-v1')
 	hash.update(stableJson(schema))
+	// A reset lineage has exactly one baseline. Keep its journal independent of build time.
+	const journalPath = join(meta, '_journal.json')
+	const journal = JSON.parse(await readFile(journalPath, 'utf8')) as { entries: { when: number }[] }
+	if (journal.entries.length !== 1) {
+		throw new Error(
+			'[database] reset-on-schema-change database must produce one baseline migration',
+		)
+	}
+	journal.entries[0]!.when = 0
+	await writeFile(journalPath, JSON.stringify(journal, null, 2) + '\n', 'utf8')
 	return `reset-${hash.digest('hex').slice(0, 40)}`
 }
 
@@ -108,11 +80,4 @@ function stableJson(value: unknown): string {
 			.join(',')}}`
 	}
 	return JSON.stringify(value) ?? 'null'
-}
-
-async function writeManifest(
-	out: string,
-	manifest: DatabaseMigrationManifest & Readonly<{ evolution: DatabaseEvolutionArtifact }>,
-): Promise<void> {
-	await writeFile(join(out, databaseManifestFile), `${JSON.stringify(manifest, null, 2)}\n`, 'utf8')
 }

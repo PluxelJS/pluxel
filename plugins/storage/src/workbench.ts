@@ -59,9 +59,10 @@ const S3OperationsStatus = v.object({
 
 export type S3OperationsStatus = v.InferOutput<typeof S3OperationsStatus>
 
-export const S3Workbench = workbench.define({
+export const S3Workbench = workbench.define(import.meta.url, {
 	buckets: workbench.content({
-		document: workbench.markdown(import.meta.url, './workbench-credentials.md', {
+		document: './workbench-credentials.md',
+		slots: {
 			status: workbench.data(S3OperationsStatus),
 			rotate: workbench.action({
 				label: 'Replace Vault credentials',
@@ -69,12 +70,14 @@ export const S3Workbench = workbench.define({
 				confirm:
 					'This replaces the selected bucket Vault record. New requests use the updated credentials; existing requests may complete with their previous snapshot.',
 			}),
-		}),
-		placement: workbench.route('/storage/s3', {
+		},
+		placement: {
+			kind: 'route',
+			path: '/storage/s3',
 			title: 'S3 buckets',
-			icon: workbench.icons.ShieldLock,
+			icon: 'shield-lock',
 			navigation: { label: 'S3 buckets' },
 			order: 70,
-		}),
+		},
 	}),
 })

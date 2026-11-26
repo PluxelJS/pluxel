@@ -7,24 +7,26 @@ description: 掌握 Pluxel 插件的核心模型、依赖注入、生命周期�
 
 ## 核心机制
 
-无论开发何种业务插件，以下几项基础设施始终开箱即用，无需额外配置或安装宿主服务：
+插件通过 Context 使用框架内建能力。移植插件时，先核对目标宿主提供的网络、存储和日志后端。 [跨平台宿主契约](../host/runtime-portability.md)
 
 - **[依赖与拓扑](./model.md)**：通过构造函数参数直接注入必需依赖；通过 `definePluginRef` 接入可选依赖，构建清晰的拓扑图。
 - **[生命周期与清理](./lifecycle.md)**：通过 `init()` 钩子启动后台任务，使用 `ctx.effects.defer()` 登记资源释放回调，确保热重载与退出时无泄漏。
 - **[配置模型](./configuration.md)**：使用 Valibot Schema 统一定义配置类型、默认值、运行时校验与 Workbench 管理表单。
 - **[事件通知](./events.md)**：利用 `ctx.events` 广播或订阅跨插件事件，松耦合串联业务流程。
 - **[结构化日志](./logging.md)**：使用 `ctx.logger` 输出携带上下文的结构化日志，方便本地调试与运维排查。
+- **[受管出站 HTTP](./outbound-http.md)**：通过 `ctx.wretch` 或 `ctx.fetch` 请求外部服务，沿用宿主的代理和出站限制。
+- **插件状态与文件**　用 TinyBase 保存节点状态，用 `ctx.fs()` 读写文件。需要跨重启恢复时，在打开资源时请求持久后端。 [TinyBase](./tinybase.md) · [文件系统](./fs.md)
+- **部署凭据**　用 `ctx.vault` 读取部署方注入的记录。需要在运行中修改凭据时，由宿主提供可写的加密后端。 [Vault](./vault.md)
 - **[拆分内部逻辑（PluginPart）](./parts.md)**：对于逻辑庞大的插件，使用 `PluginPart` 拆分子模块与局部配置，随父插件统一启停。
 - **[插件测试](./testing.md)**：借助 `@pluxel/test` 在纯内存测试宿主中进行端到端隔离验证。
 
 ## 按需扩展服务
 
-当业务需要对外提供网络接口、持久化存储或后台计算时，可在宿主中按需启用对应的扩展服务：
+应用按业务需要安装以下服务。
 
 - **网络接口**：[HTTP / WebSocket](./http.md) 将路由挂载到宿主的 Elysia 引擎中。
 - **指令系统**：[Commands](./commands.md) 定义控制台命令、MCP 工具或文本交互指令。
-- **状态持久化**：[TinyBase](./tinybase.md) 维护响应式轻量状态；[文件存储（FS）](./fs.md) 读写持久化文件；[SQL 数据库](./database.md) 执行关系型数据库查询与迁移。
-- **密钥管理**：[Vault](./vault.md) 安全保存私密凭证与敏感配置。
+- **关系型数据**　通过宿主安装的数据库服务执行 SQL 查询与迁移。 [SQL 数据库](./database.md)
 - **Node 任务与 Worker**：[Node 制品与任务](./node-artifacts.md) 执行后台工作线程与计算密集型逻辑。
 - **可视化界面**：[Workbench 工作台](../workbench/index.md) 为插件定制可视化管理面板与交互视图。
 

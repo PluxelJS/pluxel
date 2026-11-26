@@ -19,13 +19,21 @@
 			"@pluxel/source": "./src/index.ts",
 			"default": "./dist/index.mjs"
 		},
+		"./application": {
+			"@pluxel/source": "./src/application.ts",
+			"default": "./dist/application.mjs"
+		},
 		"./bindings": {
 			"@pluxel/source": "./src/bindings.ts",
 			"default": "./dist/bindings.mjs"
 		},
-		"./browser": {
-			"@pluxel/source": "./src/browser.ts",
-			"default": "./dist/browser.mjs"
+		"./cloudflare": {
+			"@pluxel/source": "./src/cloudflare.ts",
+			"default": "./dist/cloudflare.mjs"
+		},
+		"./embedded": {
+			"@pluxel/source": "./src/embedded.ts",
+			"default": "./dist/embedded.mjs"
 		},
 		"./environment": {
 			"@pluxel/source": "./src/environment.ts",
@@ -35,8 +43,40 @@
 			"@pluxel/source": "./src/internal.ts",
 			"default": "./dist/internal.mjs"
 		},
+		"./internal/agent-types": {
+			"@pluxel/source": "./src/agent.ts",
+			"default": "./dist/internal/agent-types.mjs"
+		},
+		"./internal/agent/host": {
+			"@pluxel/source": "./src/agent-host.ts",
+			"default": "./dist/internal/agent/host.mjs"
+		},
+		"./internal/agent/node": {
+			"@pluxel/source": "./src/agent/node.ts",
+			"default": "./dist/internal/agent/node.mjs"
+		},
+		"./internal/agent/runtime": {
+			"@pluxel/source": "./src/agent-runtime.ts",
+			"default": "./dist/internal/agent/runtime.mjs"
+		},
+		"./internal/agent/socket": {
+			"@pluxel/source": "./src/agent/socket.ts",
+			"default": "./dist/internal/agent/socket.mjs"
+		},
+		"./internal/agent/transport": {
+			"@pluxel/source": "./src/agent/transport.ts",
+			"default": "./dist/internal/agent/transport.mjs"
+		},
+		"./internal/control-manifest": {
+			"@pluxel/source": "./src/control-manifest.ts",
+			"default": "./dist/internal/control-manifest.mjs"
+		},
+		"./internal/control-reference": {
+			"@pluxel/source": "./src/control-reference.ts",
+			"default": "./dist/internal/control-reference.mjs"
+		},
 		"./internal/protocol": {
-			"@pluxel/source": "./src/execution.ts",
+			"@pluxel/source": "./src/protocol.ts",
 			"default": "./dist/internal/protocol.mjs"
 		},
 		"./internal/shared-runtime": {
@@ -52,10 +92,20 @@
 	"publishConfig": {
 		"exports": {
 			".": "./dist/index.mjs",
+			"./application": "./dist/application.mjs",
 			"./bindings": "./dist/bindings.mjs",
-			"./browser": "./dist/browser.mjs",
+			"./cloudflare": "./dist/cloudflare.mjs",
+			"./embedded": "./dist/embedded.mjs",
 			"./environment": "./dist/environment.mjs",
 			"./internal": "./dist/internal.mjs",
+			"./internal/agent-types": "./dist/internal/agent-types.mjs",
+			"./internal/agent/host": "./dist/internal/agent/host.mjs",
+			"./internal/agent/node": "./dist/internal/agent/node.mjs",
+			"./internal/agent/runtime": "./dist/internal/agent/runtime.mjs",
+			"./internal/agent/socket": "./dist/internal/agent/socket.mjs",
+			"./internal/agent/transport": "./dist/internal/agent/transport.mjs",
+			"./internal/control-manifest": "./dist/internal/control-manifest.mjs",
+			"./internal/control-reference": "./dist/internal/control-reference.mjs",
 			"./internal/protocol": "./dist/internal/protocol.mjs",
 			"./internal/shared-runtime": "./dist/internal/shared-runtime.mjs",
 			"./sources": "./dist/sources.mjs",
@@ -80,18 +130,22 @@
 		"yaml": "catalog:prod"
 	},
 	"devDependencies": {
+		"@pluxel/agent-sdk": "workspace:*",
 		"@pluxel/core": "workspace:*",
 		"@pluxel/rolldown": "workspace:*",
 		"@pluxel/test": "workspace:*",
 		"@types/node": "catalog:types",
 		"@types/picomatch": "catalog:types",
 		"@types/semver": "catalog:types",
+		"capnweb": "catalog:prod",
+		"miniflare": "catalog:dev",
 		"playwright-core": "catalog:prod",
 		"valibot": "catalog:validation",
 		"vite-plus": "catalog:build"
 	},
 	"peerDependencies": {
-		"@pluxel/core": "workspace:^"
+		"@pluxel/core": "workspace:^",
+		"capnweb": "catalog:prod"
 	},
 	"engines": {
 		"node": ">=24"

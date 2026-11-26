@@ -1,6 +1,6 @@
 import { createContext, useContext, type ReactNode } from 'react'
 import type { BoundFieldProps } from './BoundField'
-import type { RendererProps } from '../renders/types'
+import type { RendererProps, ScalarRenderers } from '../renders/types'
 
 type FieldRendererComponent = (props: BoundFieldProps) => ReactNode
 
@@ -14,16 +14,20 @@ export function useValueRenderer(): ValueRenderer {
 }
 
 const FieldRendererContext = createContext<FieldRendererComponent | null>(null)
+export const ScalarRenderersContext = createContext<ScalarRenderers | undefined>(undefined)
 
 export function FieldRendererProvider(props: {
 	value: FieldRendererComponent
 	renderValue: ValueRenderer
+	renderers?: ScalarRenderers
 	children: ReactNode
 }) {
 	return (
 		<FieldRendererContext.Provider value={props.value}>
 			<ValueRendererContext.Provider value={props.renderValue}>
-				{props.children}
+				<ScalarRenderersContext.Provider value={props.renderers}>
+					{props.children}
+				</ScalarRenderersContext.Provider>
 			</ValueRendererContext.Provider>
 		</FieldRendererContext.Provider>
 	)

@@ -90,13 +90,19 @@ export function hostSingletons(options: Readonly<{ packages?: readonly string[] 
 				}
 			}
 			if (!resolveOptions?.ssr || this.environment.name !== HOST_VITE_ENVIRONMENT) return null
-			const base = shared.get(importPackageName(source))
+			// The public SDK is a Host namespace, with the same native identity in both loaders.
+			const specifier =
+				source === '@pluxel/agent-sdk/host' ? '@pluxel/host/internal/agent/host' : source
+			const base = shared.get(importPackageName(specifier))
 			if (base) {
-				const path = normalizePath(resolveNativeImport(base, source))
+				const path = normalizePath(resolveNativeImport(base, specifier))
 				if (_importer && !_importer.startsWith('\0')) {
-					const actual = resolveNativeImport(dirname(_importer.split('?')[0]!), source)
+					const importer = _importer.split('?')[0]!
+					const owner =
+						specifier === source ? importer : resolveNativeImport(dirname(importer), source)
+					const actual = resolveNativeImport(dirname(owner), specifier)
 					assertSharedPackageVersion({
-						specifier: source,
+						specifier,
 						actual,
 						canonical: path,
 						importer: _importer.split('?')[0],

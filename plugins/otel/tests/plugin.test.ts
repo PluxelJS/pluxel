@@ -1,5 +1,5 @@
 import { formatPluginNodeReference, BasePlugin, Plugin } from '@pluxel/core'
-import { standardServices } from '@pluxel/services'
+import { elysia } from '@pluxel/services/elysia'
 import { createTestHost } from '@pluxel/test'
 import {
 	type Counter,
@@ -28,10 +28,10 @@ class Consumer extends BasePlugin {
 		this.duration = meter.createHistogram('orders.duration', { unit: 's' })
 		meter.createGauge('queue.depth').record(3, { region: 'hk' })
 
-		const workers = meter.createObservableGauge('workers.active')
+		const activeWorkers = meter.createObservableGauge('workers.active')
 		const observeWorkers: ObservableCallback = (result) => result.observe(2, { region: 'hk' })
-		workers.addCallback(observeWorkers)
-		this.ctx.effects.defer(() => workers.removeCallback(observeWorkers))
+		activeWorkers.addCallback(observeWorkers)
+		this.ctx.effects.defer(() => activeWorkers.removeCallback(observeWorkers))
 	}
 
 	record(): void {
@@ -43,19 +43,30 @@ class Consumer extends BasePlugin {
 afterEach(() => vi.unstubAllEnvs())
 
 describe('OtelPlugin', () => {
+	it('starts OTLP tracing without Elysia when Prometheus is disabled', async () => {
+		await using host = await createTestHost({ services: [] })
+		const node = OtelPlugin.nodeAddress()
+		const otel = await host.start(node, {
+			initialConfig: { otlp: ['traces'], prometheus: false },
+		})
+
+		expect(host.isRunning(node)).toBe(true)
+		expect(otel.tracer.startSpan).toBeTypeOf('function')
+	})
+
 	it('exposes native caller-scoped OTel instruments through Prometheus pull', async () => {
 		vi.stubEnv('OTEL_EXPORTER_OTLP_METRICS_PROTOCOL', 'grpc')
 		{
 			await using host = await createTestHost({
-				services: standardServices(),
+				services: [elysia()],
 			})
-			await host.start(OtelPlugin, {
+			await host.start(OtelPlugin.nodeAddress(), {
 				catalog: [Consumer],
 				initialConfig: { otlp: [], prometheus: { path: '/metrics' } },
 			})
-			await host.start(Consumer)
+			await host.start(Consumer.nodeAddress())
 
-			const consumer = host.require(Consumer)
+			const consumer = host.require(Consumer.nodeAddress())
 			expect(consumer.meters[0]).toBe(consumer.meters[1])
 			consumer.record()
 

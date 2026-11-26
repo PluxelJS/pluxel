@@ -11,7 +11,7 @@ const reusableApi = (app: Elysia) =>
 class NativeElysiaCapabilities extends BasePlugin {
 	protected override init(): void {
 		this.ctx
-			.require(ElysiaApp)
+			.service(ElysiaApp)
 			.decorate('nativeOwner', 'capabilities')
 			.derive(({ request }) => ({
 				requestMarker: request.headers.get('x-marker') ?? 'missing',
@@ -52,7 +52,7 @@ class NativeElysiaCapabilities extends BasePlugin {
 class NativeElysiaIsolationA extends BasePlugin {
 	protected override init(): void {
 		this.ctx
-			.require(ElysiaApp)
+			.service(ElysiaApp)
 			.decorate('isolatedValue', 'a')
 			.get('/native-isolation/a', ({ isolatedValue }) => isolatedValue)
 	}
@@ -62,7 +62,7 @@ class NativeElysiaIsolationA extends BasePlugin {
 class NativeElysiaIsolationB extends BasePlugin {
 	protected override init(): void {
 		this.ctx
-			.require(ElysiaApp)
+			.service(ElysiaApp)
 			.decorate('isolatedValue', 'b')
 			.get('/native-isolation/b', ({ isolatedValue }) => isolatedValue)
 	}
@@ -73,7 +73,7 @@ describe('native Elysia authoring capability', () => {
 		{
 			await using host = await createTestHost({ services: [elysia()] })
 
-			await host.start(NativeElysiaCapabilities)
+			await host.start(NativeElysiaCapabilities.nodeAddress())
 
 			await expect(
 				host.http
@@ -132,7 +132,7 @@ describe('native Elysia authoring capability', () => {
 		{
 			await using host = await createTestHost({ services: [elysia()] })
 
-			await host.start([NativeElysiaIsolationA, NativeElysiaIsolationB])
+			await host.start([NativeElysiaIsolationA.nodeAddress(), NativeElysiaIsolationB.nodeAddress()])
 
 			await expect(
 				host.http

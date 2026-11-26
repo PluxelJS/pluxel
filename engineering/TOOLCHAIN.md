@@ -1,254 +1,105 @@
-# 工具链：声明事实与 Plugin 构建
+# 工具链：声明分析与 Plugin 构建
 
-本页拥有 Plugin 源码语义、lowering ABI、查询与 package build。静态应用装配见 [APPLICATION_BUILD](APPLICATION_BUILD.md)，Workbench/Node 制品编译见 [ARTIFACT_BUILD](ARTIFACT_BUILD.md)。
-
-| 任务                            | 本页入口                                                                                                               |
-| ------------------------------- | ---------------------------------------------------------------------------------------------------------------------- |
-| 查询源码与 bindings，保持无求值 | [Offline plugin inspection](#offline-plugin-inspection)                                                                |
-| CLI 路由或生成项目              | [CLI 与 scaffold 所有权](#cli-与-scaffold-所有权)                                                                      |
-| 源码包解析与跨仓库开发          | [Package source inference](#package-source-inference)、[Independent source workspaces](#independent-source-workspaces) |
-| 数据库 migration lowering       | [Database migrations](#database-migrations)                                                                            |
-| 修改 Plugin/Part 声明或构建 ABI | [Versioned Plugin lowering ABI](#versioned-plugin-lowering-abi)、[Plugin package build](#plugin-package-build)         |
+Rolldown 拥有 Plugin 源码分析、lowering ABI、静态查询和插件包构建。应用装配见 [Application Build](APPLICATION_BUILD.md)，Workbench/Node 制品见 [Artifact Build](ARTIFACT_BUILD.md)，CLI/跨仓库编排见 [CLI Workspaces](CLI_WORKSPACES.md)。
 
 ## Offline plugin inspection
 
-`@pluxel/rolldown/inspect` 的 `openProject()` 提供源码查询作用域：`overview()`、`plugins()`、`plugin()` 和 `file()` 返回冻结的普通数据、规范 definition identity 与源码位置。用户用法见[查询插件源码](../docs/development/inspection.md)。它不启动 Host、不求值项目模块、不执行 schema 或 package scripts；在线操作继续由 devconsole 拥有。
+`@pluxel/agent-sdk/source` 发布 `inspectPlugin`、`listPlugins`、`inspectFile`、`inspectProject` 普通函数，实现与类型由 Rolldown `inspect/` 拥有。每次调用建立有界读取快照，复核文件后返回冻结结果，并在调用内释放资源；查询间无共享 watcher、队列或索引，取消统一为 `InspectionError`。公开用法见[源码查询](../docs/development/inspection.md)。
 
-构建与查询共享同一套声明事实：`pluginSemanticsPlugin.ts` 的 `analyzeSemanticModule()` 生成 definition、direct dependency、
-Part target/mount 与源码范围，`lowerModule()` 单独生成注入代码；inspection 不执行 lowering 来取得信息。
-`configSourcePlugin.ts` 的 `extractConfigDeclarationFacts()` 统一声明校验和 field/schema 范围，构建再 render/normalize；
-`staticConfigEnvironment.ts` 统一 application factory、shadowing、对象字段、binding helper 和 mapping 规则，构建再执行 schema 还原与 transport 投影。
-这些是包内共享函数，不是新的 public analyzer 或持久化索引。
+源码发现沿显式 source-spaces 中的静态 import 图查定义，动态来源保留 gaps。结果注明 current-disk/query-process/runtimeMatch: unverified；Host 的 committed catalog 和生成控制材料各由运行面维护。
 
-`plugin(target, { application, include: ['config', 'inputs'] })` 在一次查询内固定 application root/entry/sourceSpaces。
-package target 从 entry 的解析上下文解析，source target 按正式 package 优先、最具体 source root、native realpath 和 containment 规则确认。
-没有 application 时继续保留 workspace 包优先的既有语义；有 application 时不能按包名改用另一份 workspace 源码。
-本次观察到同一 canonical definition 的冲突物理来源使查询失败。离线 resolver 不执行 Vite/custom hooks，不声称得到运行时 catalog。
-source-entry 支持定向查询，`plugins/file` 的 workspace 发现范围不隐式扩大。
+构建与查询共用以下分析入口：
 
-`inputs` 投影目标 Plugin 的 config env/file bindings 与应用级 config 表达式位置，不执行工厂、不读取部署值。可静态确认的 fork binding 记录 forkId；未知目标保留诊断，不猜默认节点。
-configPath 描述 schema input mapping，不是 normalized output；Part 按 occurrence 展开，config root 为 []，Part config path 为 occurrence path。
-依赖 aggregate 与 inputs 始终属于整个 Plugin，partPath 只缩小 parts/config/dependency origins。schema 符号证据不替代 Host 的运行期同对象校验。
-未解析的关系保留具名诊断与可用的源码位置；不能以空列表或 config:null 代替未知。
+- `pluginSemanticsPlugin.ts`：`analyzeSemanticModule` 生成 definition、direct dependency、Part/mount 和源码范围，`lowerModule` 生成注入代码。
+- `configSourcePlugin.ts`：`extractConfigDeclarationFacts` 校验声明并确定 field/schema 范围，构建再 render/normalize。
+- `staticConfigEnvironment.ts` 解析 application factory、shadowing、binding helper 和 mapping。构建以原始表达式及引用出处解析目标路径，再用 `projectRawInput` 投影 transport。
+- Workbench 源码查询沿当前插件的 `publish` 追踪定义与条目。查询结果属于作者源码，实际被绑定的节点由 Workbench 在消费方发布时校验。见[查询 Workbench 入口](../docs/development/inspection.md#workbench-entries)。
 
-每次查询创建新的 resolver 与观察集合，同次查询共用已读取源码和总预算，不保留 watcher 或跨查询索引。
-返回前复核成功读取的文件；revision 标识观察内容及显式应用解析选择，不能作为文件系统原子快照、负向解析候选的完整证明或 Host revision。
-分页 cursor 绑定查询与结果。读取预算、取消和 source_changed 必须穿过内部 resolver 的恢复路径，以查询级失败结束，不能降为缺失源码的 gap。
-当前查询覆盖 parts/config/dependencies/checks/inputs；Vault 业务用法、RPC 类型展开、运行时影响范围不在这个合同内。
+有 application 的查询在单次调用中固定 root/entry/sourceSpaces。package target 按该 entry 的上下文解析；source target 按正式 package、最具体 source root、native realpath/containment 选择。无 application 时 workspace 包优先。同 canonical definition 的物理来源冲突使查询失败；离线 resolver 不运行 Vite/custom hooks，定向 source-entry 查询也不扩张 plugins/file 的 workspace 发现范围。
 
-修改这些共享函数时，验证同源码/相同解析上下文的构建与查询事实一致，同时保留独立的已知预期，避免两个消费者重复同一错误。
-公开入口测试覆盖多 entry、实际 package 来源、source-space/symlink、动态缺口、重复 Part 和无求值。
-交付还需用构建后的 `/inspect` 入口在普通 Node 脚本中查询真实源码，检查返回位置能否支持下一步修改。
+inputs 返回 Plugin 的 env/file bindings 和应用配置表达式位置，不读取部署值或执行工厂。可静态确认的 fork 记录 forkId，其他关系保留诊断及源码位置。configPath 表达 input mapping，root 是 []，Part 按 occurrence path 展开；dependency aggregate 与 inputs 属于整个 Plugin，partPath 仅筛选 parts/config/dependency origins。未知关系保留 gap，schema 符号也不能替代 Host 的运行时同对象检查。
 
-## CLI 与 scaffold 所有权
+离线 config/Vault 投影沿原始表达式追踪 Valibot 工厂、真实重导出和目标字段。能覆盖目标的动态 spread、字段赋值和传给未知函数的可变对象，均在无法证明输入形状的位置报告。生成器复用 `projectRawInput` 的输入类型和失败分类，并把诊断关联到声明的源码位置和 binding 使用处。静态读取的文件进入 watch，修改依赖会更新 `.env.example`。可证明的封闭 Vault record 键在构建期核对，带业务 check 或 fallback 的键由 Host 验证。Control SDK 从原声明取得 input/output 类型。
 
-命令加载、模板 byte plan、starter 和 packed smoke 见 [CLI 与源码工作区](CLI_WORKSPACES.md#cli-与-scaffold-所有权)。
+供离线部署使用的 schema 在构造后应保持不变。解析器检查所追踪模块中针对字段表及别名的操作，其他模块运行时对已构造 schema 的改写超出了构建时可观察的范围。
+
+同次查询共享已读文件和总预算，返回前复核成功读取内容。revision 标记观察内容与显式解析选择；它不是 Host revision，也不覆盖原子文件系统状态或全部负向候选。分页 cursor 绑定查询/结果。预算、取消、source_changed 穿过 resolver 恢复路径，以查询级失败结束。可选 sections 见[源码查询](../docs/development/inspection.md#结构与依赖)，Vault 用法、RPC 类型展开和运行时影响分析另有边界。
+
+验证需要同源码/同解析上下文的构建与查询一致，另保留已知独立预期；覆盖多 entry、实际 package、symlink/source-space、动态 gap、重复 Part 和无求值。构建后的入口还须在普通 Node 中查真实源码，确认位置可用于下一步修改。
 
 ## Package source inference
 
-Plugin package provenance 要求显式 `exports` 子路径映射与根 named exports，不以 `@pluxel/hmr` 作为身份标记。
-推断 package plan 与读取其 public entries 使用同一个 source selector：优先 `@pluxel/hmr`、`@pluxel/source`、
-`development`；plain target 或 `import` / `default` 只有指向可执行 TypeScript 时才是 source entry。
-显式 source condition 可指向 JavaScript；普通 built JavaScript、`types` 和 declaration files 不触发源码推断。
-已建立的 Plugin package plan 仍扫描无条件 JavaScript 导出，不能借此绕过 Plugin-bearing subpath 校验。
-自动推断只为实际根导出 marked Plugin 的包建立 plan；普通源码库中的本地 Plugin 仍按 source-space 定位。
-显式 package build 继续要求至少一个 marked Plugin。嵌套条件按同一规则读取；Plugin-bearing subpath、重复 root export 与跨包 re-export 的拒绝规则不变。
+package provenance 来自显式 exports 和唯一根 named export。推断 package plan 与读取 public entries 共用 source selector，优先 `@pluxel/hmr`、`@pluxel/source`、development；plain/import/default 仅在指向可执行 TypeScript 时成为 source entry，显式 source condition 可指 JavaScript。built JS、types 和声明文件不触发源码推断。
 
-OXC 解析器对未安装的包或相对文件保留正常未命中；若已发现物理安装目录，则坏或不可读取的 `package.json`、exports 拒绝及缺失入口会附 importer、specifier、conditions、实际清单路径和原始 cause 报错。相邻的最近 package 清单损坏也不会越过它借用父包的 `type` 或 `name`。OXC 本身对若干失败仅返回字符串而无稳定错误码；无物理包目录的 alias/tsconfig 解析失败仍可能与普通未命中无法区分，调用方不得把空值解释为“必须安装依赖”的确定结论。
+自动 plan 仅覆盖根导出 marked Plugin 的包，普通源码库的本地 Plugin 仍按 source-space 定位；显式 package build 要求至少一个 marked Plugin。已建 plan 仍检查无条件 JS 导出，嵌套条件适用相同规则。Plugin-bearing subpath、重复根导出、跨包 re-export 的规则见 [Identity](PLUGIN_IDENTITY.md)。
 
-## Independent source workspaces
+OXC 对未安装包/相对文件返回正常未命中；已发现物理包时，坏 manifest、exports 拒绝、缺入口附 importer/specifier/conditions/清单路径/cause 报错，最近损坏清单也不会被父包替代。OXC 的部分失败没有稳定错误码，无物理目录时 alias/tsconfig 失败仍可能与未命中混淆，空值不能直接推断为缺安装。
 
-跨仓库 source registry、pnpm overlay、构建闭包与 bootstrap 见 [CLI 与源码工作区](CLI_WORKSPACES.md#independent-source-workspaces)。
+细分 alias/tsconfig 失败需要稳定的上游错误类型，或能用输入事实区分两种结果的回归样本。诊断保留原始 cause，错误文案的措辞不能作为分类依据。
 
 ## Database migrations
 
-`evolution: 'migrations'` 的 `pluxel database generate` 从当前 package 唯一的 `defineDatabase()` schema module 调用 Drizzle Kit，生成 PostgreSQL
-`drizzle/*.sql` 与 `drizzle/meta/`，并维护带 immutable `lineage` 的 checksum manifest。`pluxel database check` 同时运行
-Drizzle history 一致性检查、manifest rewrite 检查，并在临时副本中重新 generate 以拒绝 schema drift。普通变更只能追加
-migration；插件明确放弃原 lineage 时运行 `pluxel database rebase --lineage <new-id>`，工具先在 staging 生成全新 baseline，
-校验成功后再原子替换 `drizzle/`。这是同步更新 lineage、SQL、Drizzle meta 与 checksum manifest 的标准入口。
+`pluxel database generate` 从 `defineDatabase` 的导入来源确定 `postgresql` 或 `sqlite`，在临时目录运行对应的 Drizzle Kit。SQL、journal 和 snapshots 属于 Drizzle，Pluxel 清单只记录 lineage。校验器检查 journal 方言、SQL 文件覆盖和时间戳顺序。PG 根据 snapshot 调整生成的外键、枚举和序列的默认 schema 限定名，保留字面量、注释与已发布历史。SQLite 保留 Kit 输出。
 
-共享 production compiler 会识别从 `@pluxel/services/database` 导入的 module-level `defineDatabase()`；显式 evolution 必须在
-direct object 中使用 literal，未声明时保持默认 `migrations` 并从最近 package 的 `drizzle/` 读取、校验 artifact；
-`reset-on-schema-change` 没有 checked-in history；`generate`、`check`、`rebase` 会明确拒绝它，唯一作者路径是 compiler 从当前 schema 生成 baseline。它在 `.pluxel/` staging 中从空 history 生成 baseline，以去除随机 identity 后的规范化 Drizzle snapshot
-计算稳定 lineage，并删除无需部署的 meta。两种策略都把内部 artifact 参数注入 server output；独立插件 package 同时发布
-SQL 与 manifest 到 `dist/database/migrations/`。browser source graph 不包含 schema、Drizzle 或 SQL。
-Vite source adapter 在 server environment 使用相同 declaration 与 artifact 规则，并在 schema module transform 时注入当前
-artifact；reset baseline staging 在注入后立即清理，因此 HMR schema 变化会得到新 lineage，browser environment 不运行生成器。
+追加迁移和 `rebase --lineage <id>` 都在新历史通过校验后更新源文件。rebase 只替换迁移文件，保留同目录的其他内容。`check` 在隔离副本重新生成以检测 schema drift，`check --against <上一版迁移目录>` 核对同 lineage 已发布前缀的 tag、时间戳、breakpoints 和 SQL 原文哈希。
+
+Vite 和生产 compiler 都从声明所在包读取迁移，将 `readMigrationFiles()` 的结果嵌入服务端的 `defineDatabase` 调用。独立包从这次读取的数据生成 `dist/database/migrations`，保留 journal 和 SQL 原文及已捕获的 snapshots。插件代码和发布目录对应同一份历史。浏览器图不携带 SQL 或 Drizzle。开发服务器跟踪声明使用的 journal、lineage 清单与 SQL 文件。
+
+`reset-on-schema-change` 从空历史生成一个 baseline，以除去随机 identity 的规范化 Drizzle snapshot 计算 lineage。发布制品包含 SQL 和单条时间戳为 0 的原生 journal。临时目录在读取后释放。[服务端迁移](DATABASE.md#schema-evolution)
 
 ## Versioned Plugin lowering ABI
 
-Plugin semantic output 是已构建 Plugin 与 Core/runtime 之间的发布契约。generated module 只从
-`@pluxel/core/toolchain`导入 ABI v2 helper；默认 root 和 `/internal`
-不提供 setter alias。canonical helpers 是 `__setPluginDefinition`、`__setPluginConfig`、`__setPluginParts`、
-`__setPluginPartConfig`、`__setPluginPartRequires` 与 `__setPluginPartOptional`，每个 payload 都携带同一个 numeric
-`abiVersion`。v1 artifact 没有 Part constructor requirement facts，当前 Core 不提供隐式兼容窗口；Core、Host 与 Rolldown
-必须成套升级并重新构建 Plugin，版本不匹配以 `plugin_lowering_abi_unsupported` fail-fast。
+生成模块只从 `@pluxel/core/toolchain` 导入 ABI v2：`__setPluginDefinition`、`__setPluginConfig`、`__setPluginParts`、`__setPluginPartConfig`、`__setPluginPartRequires`、`__setPluginPartOptional`，payload 均携带相同 numeric `abiVersion`。Core/Host/Rolldown 需成套升级并重构 Plugin；v1 缺 Part constructor facts，按不支持版本拒绝。
 
-helper 只把 sealed immutable facts 写入 module-evaluation scoped `WeakMap` staging。canonical namespace 完成求值后，route 对每个 root
-constructor 调用 `consumePluginDefinitionCandidate()`；首次读取原子组合 decorator marker、definition、config 与 reachable Part facts，
-验证后删除 staging 并缓存唯一 frozen candidate object，同一 evaluated constructor 的后续 host/route 读取严格返回该对象。HMR 通过新 constructor
-产生新 candidate，不做 cache invalidation。Part facts 可跨多个 definition 复用，但没有 global facts revision、metadata clone、双读或
-candidate ingestion 后的 setter mutation。
+helper 将 sealed immutable facts 放入求值期 WeakMap staging。canonical namespace 求值后，route 调 `consumePluginDefinitionCandidate`，一次合并 marker/definition/config/reachable Part，验证、删除 staging 并缓存唯一 frozen candidate。后续读取返回同对象，HMR 由新 constructor 创建新 candidate。Part facts 可跨 definition 复用，候选接纳后不可再修改。
 
-lowering trust boundary 使用三个稳定 code：ABI 不支持为 `plugin_lowering_abi_unsupported`，declaration 缺失为
-`plugin_declaration_missing`，payload/identity/Part tree 不一致为 `plugin_declaration_invalid`。Plugin inheritance chain 中的
-ECMAScript instance `#private` field/method/accessor 在 semantic pass 以
-`plugin_caller_view_private_brand_unsupported` hard diagnostic 拒绝，避免 caller facade 在运行时才触发 private brand 错误。
-Plugin inheritance chain 的 function-valued instance field（arrow、function expression、`.bind()`）同样以
-`plugin_caller_view_callable_field_unsupported` hard diagnostic 拒绝；跨节点 callable surface 必须是 prototype method，accessor 只返回
-普通数据或有独立 receiver/withdrawal 契约的对象 handle。Core 仍对无法静态证明的动态 callable field 和 accessor-returned function
-保留 runtime fail-fast 防线。type-only `declare` instance field 不产生 caller facade 的 construction-time descriptor，以
-`plugin_caller_view_declared_field_unsupported` hard diagnostic 拒绝。
+ABI v2 分开 constructor 顺序与 graph：root `constructorRequires` 只含 direct ordered 参数，`candidate.requires` 是 root 后接 Part depth-first first-seen 的 definition 去重全集，每个 `PartNode.requires` 保留该 Part direct order。Part 参与 occurrence 构造与诊断，共用 owning Plugin 的图和 override。
 
-ABI v2 把 root constructor injection order 与 owner graph requirements 分开：definition payload 的 `constructorRequires` 只保存
-owning Plugin constructor 的 direct ordered 参数；candidate 的 `requires` 是 root 后接 reachable Part tree depth-first first-seen、按
-definition identity 去重的 graph 全集；每个 `PluginPartDefinitionNode.requires` 保存该 Part constructor 的 direct ordered 参数。
-Part facts 服务 occurrence construction 与来源诊断，不建立第二张 graph，也不产生 per-Part override。
+| 诊断                                          | 拒绝条件                                                                   |
+| --------------------------------------------- | -------------------------------------------------------------------------- |
+| plugin_lowering_abi_unsupported               | ABI 不支持                                                                 |
+| plugin_declaration_missing / invalid          | 声明缺失，或 payload/identity/Part 不一致                                  |
+| plugin_caller_view_private_brand_unsupported  | Plugin 继承链含 ECMAScript instance #private 成员                          |
+| plugin_caller_view_callable_field_unsupported | 跨节点 callable 是 arrow/function/bind 实例 field；应使用 prototype method |
+| plugin_caller_view_declared_field_unsupported | type-only declare field 无 construction-time descriptor                    |
+
+accessor 可返回普通数据或有独立 receiver/撤回规则的 handle；无法静态判断的 callable field/accessor-returned function 仍由 Core 运行时拒绝。
 
 ## Plugin package build
 
-`pluxel build` 只负责编排，实际构建由 `@pluxel/rolldown/build` 的 `pluginPackage()` preset 通过本地 `vite-plus/pack` 提供的 tsdown API 驱动
-Rolldown。独立 `tsdown.config.ts` 保留原有字段和 hooks，`defineConfig` 从 `vite-plus/pack` 导入；`pluxel build` 继续由 runner 直接读取它。
-普通包的 `vp pack` 从 `vite.config.ts.pack` 导入同一配置，不复制第二份构建选项；不能把 `--config tsdown.config.ts` 当成 `vp pack` 的配置选择器。
-Lint guard 使用本包安装的 `vite-plus/bin` 执行 `lint -c`，读取 `oxlint.build.config.ts` 的 `lint` 块；没有专用构建配置时交由 Vite+ 原生发现 `vite.config.ts` 的 lint 设置，不搜索全局工具或要求 mise 存在。`pluginPackage()` 与 `pluxel()` 都组合唯一的 `createPluginBuildPipeline()`：preprocessor、macro、
-legacy decorator、Plugin/PluginPart semantic facts、lint、owner-scoped object config metadata、Workbench semantic lowering 和 decorator
-output guard。`pluginPackage()` 自己组合单次 semantic pass 与 metadata transaction；CLI 不追加 compiler plugins。
-官方 CLI 从 `@pluxel/rolldown/internal/cli` 按 allowlist 加载 `resolveBuildContext`、`pluginPackage` 与 `runWithTsdown`。
-Runner 按基础 hook、preset metadata hook、用户 hook 的顺序组合 `onSuccess`，overlay 不覆盖用户行为。
-非 watch 从 tsdown handle 取得 bundles，等待 success hooks 后逐个清理，失败保留原错与全部清理失败；
-不调用仅适用于 watch 的 `handle.watch.close()`。Watch 的 watcher、配置重启及 stdin 由原生 tsdown 管理，
-官方 runner 仍属于命令进程，不暴露程序式 session，也不属于公开 `/build`。自定义工具使用公开 `pluginPackage` preset 与自己选择的构建宿主。
+`pluxel build` 编排本地 `vite-plus/pack` tsdown API，公开 preset 是 `@pluxel/rolldown/build` 的 `pluginPackage`。`tsdown.config.ts` 保留字段/hooks，普通包由 `vite.config.ts.pack` 引入同一配置供 vp pack 使用；独立配置的选择由 runner 拥有。lint guard 使用本包 `vite-plus/bin` 的 lint -c，读取 `oxlint.build.config.ts` 的 lint 块，缺专用配置则使用 Vite+ 原生发现。
 
-Plugin semantic pass 在 TypeScript 擦除前建立 package/source root named export table，并 lower：
+pluginPackage/pluxel 共用 `createPluginBuildPipeline`：preprocessor、macro、legacy decorator、Plugin/Part semantics、lint、owner-scoped config metadata、Workbench lowering 和 output guard。CLI 从 internal/cli allowlist 取 resolveBuildContext/pluginPackage/runWithTsdown，不另加 compiler plugins。runner 的 onSuccess 顺序为基础→preset metadata→用户；非 watch 等待 hooks 后逐 bundles 清理，聚合原错/清理错，watch 的 watcher/config restart/stdin 由 tsdown 管理。程序工具使用公开 preset 和自己的构建宿主。
 
-- concrete `@Plugin` definition address 与 `displayName`/`startTimeoutMs` marker facts；
-- literal `forkable: true` concrete definition fact，并与 decorator runtime marker 交叉校验；
-- Plugin 与 concrete direct PluginPart constructor parameter 的 direct root value-import provenance 与 ordered required facts；
-- non-exported module-level `definePluginRef<T>()` 的 direct root type-import provenance；
-- `init()` 中 direct `plugins.use(Ref, callback)` 的 optional restart edges；
-- concrete Plugin/PluginPart 普通 field 中 direct `parts.use(PartClass)` 的 ordered containment facts；
-- Part direct required 与 `init()` optional facts，并将完整 reachable Part tree 的 edges 合并到 owning Plugin definition；
-- Plugin 与 Part 各自唯一的 object config declaration/source，以及 Part config path；
-- abstract token/provider relation。
+semantic pass 在 TS 擦除前建立 root named export table并提取：
 
-同一 pass 由 plugin package、static application 和 Vite source route 复用。Part constructor 使用与 Plugin constructor 相同的
-simple Plugin type reference、package-root value import、参数顺序和 duplicate definition 规则；root 与不同 Part constructor 或多个
-Part occurrence 请求同一 definition 则是合法共享。未能证明 root provenance、同一 constructor 经多个根名称导出、plugin-bearing
-subpath、跨包 Plugin re-export、async/间接 optional setup、动态 Part occurrence、abstract/inherited Part、`@Plugin` Part 与 local
-containment cycle 都在 build 时失败。普通 dynamic import 不获得 Plugin 语义。
-Part source/HMR 仍通过普通静态 import graph 使所有 owner module generation 失效；Part 不是独立 replacement unit。
+- concrete Plugin 地址、displayName/startTimeoutMs marker、literal forkable（与 runtime marker 交叉验证）；
+- root/Part constructor direct value-import 的 ordered required，以及 module-level non-exported definePluginRef 的 direct type-import；
+- init 内 direct plugins.use 的 optional edges；field 内 direct parts.use 的 ordered containment；
+- 唯一 object config/source、Part config path、abstract token/provider 关系。
 
-package plan 先把可信 package root 映射为 package entry；其余 source entry 对 source-space root 和 existing file 使用 native
-`realpath()`，选择最具体的 containing root，再生成 canonical POSIX relative path。symlink escape、root 外路径、重复 physical root
-和无 source-space mapping 均失败。Core parser 不执行 filesystem I/O；纯 AST diagnostics 的 lexical address 不是 build/runtime
-identity producer。完整规则见 [`PLUGIN_IDENTITY.md`](PLUGIN_IDENTITY.md#entry-canonicalization)。
+同一 pass 服务插件包、静态应用和 Vite。Part 参数采用与 Plugin 相同的 simple type/direct import/order/duplicate 规则，多个 occurrence 请求同 definition 合法。无法证明 provenance、多根名称、非法 subpath/re-export、间接或异步 optional setup、动态/abstract/inherited Part、@Plugin Part 和 containment cycle 在构建时拒绝。普通 dynamic import 不建立 Plugin 语义；Part 变化沿静态图失效全部 owner，不独立 replacement。
 
-`pluginPackage()` 从 semantic facts 直接把 detected required provider 和 optional provider 保持为 external peer，
-不依赖 metadata transaction 完成后的下一次构建。required edge 锚定 value import；optional ref 的实现 import 在发布 JS
-中不存在，因此 host closure 未包含 provider 时 consumer 仍可加载。static application 和 Vite source route 只从各自
-显式 catalog/module graph 提供 candidate，不生成 absent virtual module 或 runtime loader annotation。
+package plan 将可信根映为 package entry，其余源码用 native realpath、最具体 containing source root 和 POSIX 相对路径。越界、symlink escape、重复 physical root、缺 mapping 失败；Core codec 仅解析身份，见 [Entry canonicalization](PLUGIN_IDENTITY.md#entry-canonicalization)。
 
-独立插件包从同一 semantic facts 生成：
+provider 按同次 facts 保持 external peer。optional type import 不生成实现 import，缺 provider 的 catalog 仍可加载 consumer。生成 `pluxel.pluginPackages` mapping 只遍历具体 Plugin 可达的本地 Part：多个来源去重、required 优先；外部/预编译 Part 的 peers 由它自己的包拥有。runtime optional facts 仍保留 callback/context/cleanup 所需信息。
 
-```json
-{
-	"pluxel": {
-		"pluginPackages": {
-			"pluxel-plugin-database": "required",
-			"pluxel-plugin-audit": "optional"
-		}
-	}
-}
-```
+作者维护 peer 范围和 optional 标记；build 验证 required/optional facts 与 peerDependencies 角色一致，不搬移依赖或猜版本。源码移除关系只清理旧生成 mapping，作者 peer 留待审查。多格式输出共用一次 facts snapshot，buildStart 才重置；连续构建与 ESM/CJS 保持幂等，metadata transaction 失败则整次失败。
 
-root 或 reachable Part constructor 的 concrete package usage 是 `required`，`definePluginRef<T>()` 的 direct type import 是
-`optional`；同一 provider package 被多个 occurrence 请求时只输出一次，任一 required 来源都会让 required 胜出。runtime lowering
-facts 仍保留 optional request，以便对应 callback、caller Context 与 cleanup 正常运行。package inventory 从 concrete Plugin root
-沿本地 containment edge 遍历；被构建模块加载但不被任何 owner containment 使用的 Part 不进入 metadata。外部/预构建 Part 的
-provider peers 由定义该 Part 的 package 持有，consumer package 不反射其 runtime facts，也不重复传递 inventory。
-版本范围与依赖角色由作者维护的 `package.json` 声明；build 根据编译 facts 验证共享 provider 已声明在 `peerDependencies`、未留在普通依赖，且 optional 标记与 facts 相符，不自动从 dev/dependency 选择版本或搬移字段。同一 build 的多格式 output 读取同一 facts snapshot，下一次 `buildStart` 才重置；
-连续构建与 ESM/CJS 双输出都保持幂等。源码删除依赖时只清理上一版生成的 manifest mapping；作者维护的 peer 与 optional metadata 保留，供作者按实际用途审查。metadata transaction 任何失败都会使 build 失败。
+交付 owner 决定拓扑：插件包保留 runtime peer/dts/exports，modules 保留包 imports 并导出应用工厂，standalone 添加 runtime closure、residual tracing 和部署装配。共享 source pipeline 只处理声明与编译，装配见 [Application Build](APPLICATION_BUILD.md)。
 
-同一 source pipeline 的交付拓扑由产物 owner 选择：plugin package 保留 runtime peer boundary、dts 和 package exports；
-modules application 保留外部包 imports，导出工厂与唯一编译 constructor；standalone application 追加完整 runtime closure、
-nf3 residual tracing、platform bootstrap 与 deployment assembly。具体边界见[应用构建](APPLICATION_BUILD.md)。不要把 static
-assembly 塞进 source pipeline，也不要在 CLI 复制 pipeline plugin 列表。
+### Vite 与 TypeScript 配置
 
-Vite route 使用 `@pluxel/rolldown/vite` 的 source adapter，复用 preprocessor、plugin semantics、lint 和 config metadata，
-并由 Vite/OXC 提供 legacy decorator transform。Host-vite 自动组合该 pipeline；preprocessor 参与所有 environment，
-Plugin semantics、lint 和 config metadata 仅作用于 server environment。Workbench 单独拥有 browser compiler 与 UI singleton 策略。
-预处理插件在顶层注册 `configResolved`，使用原生 `applyToEnvironment` 布尔过滤 transform；配置钩子必须读取 Vite 解析后的 mode/env，不能放到 environment 工厂返回值中。
-源码解析添加 `@pluxel/hmr`、`@pluxel/source`，其余条件遵循 Vite 的 client/server 默认值：浏览器不启用 `node`，
-`development` / `production` 按 Vite 的实际环境选择，不能同时启用。默认启用 Vite 自身的 `resolve.tsconfigPaths`，
-显式 `false` 保持关闭。项目无需再注册路径解析插件。浏览器直接引入 Node builtin 时，adapter 复用 Vite 解析结果：
-没有用户提供的浏览器实现而被 Vite externalize 的 builtin 立即报错，包含 import 与 importer；SSR 不受此 guard 影响。
+Host-vite 自动组合 `@pluxel/rolldown/vite` adapter。preprocessor 参与 client 与选定 Host environment，semantic/lint/config 仅参与 Host server，legacy decorators 由 Vite/OXC 转换。`configResolved` 在顶层注册，transform 用 `applyToEnvironment` 布尔过滤，读取 Vite 已解析 mode/env。
 
-Host-vite 拥有专用 `pluxel` Vite environment、source watcher 和更新队列，应用声明、fixed imports、动态来源和
-开发控制台都在该 environment 的单一 runner / evaluated namespace 求值。其 runner 禁用自动 HMR 求值，所有
-Host 更新由候选提交队列管理，并使用 source-aware stack mapping。Vite 自身负责 runner 与 environment 的关闭。
-Services 提供 HTTP carrier，Workbench 通过开发附件接入 artifact compiler。Native 启动一次扫描预编译来源；
-`@pluxel/host-vite/run` 则拥有 production Vite 会话，复用同一个 runner/更新队列并读取编译 inventory，等待实际启动与排空关闭。
-仅改变普通 Vite CLI 的 mode 不建立该启动契约。用法见[Host 配置](../docs/host/configuration.md#vite-生产)。
-Vite 默认忽略生成态 `.pluxel`、日志与数据库目录。
+source conditions 添加 @pluxel/hmr/@pluxel/source，其余遵循 Vite client/server 默认与实际 development/production。`resolve.tsconfigPaths` 默认开、保留显式 false；浏览器 builtin guard 使用 Vite 的解析结果，允许用户提供浏览器实现，其他被 Vite externalize 的 builtin 附 import/importer 报错。Host 专用 pluxel environment、singleton/classifier、观察和关闭由 [HMR](HMR.md#canonical-vite-module-graph)拥有；默认 SSR 与第三方环境保持自己的配置/缓存。
 
-Host 的开发 source conditions、noExternal、singleton 与语义 collector 只作用于 `pluxel` environment。
-默认 `ssr` 和第三方 `ssrLoadModule` 保留 Vite 自己的环境工厂、解析策略和执行缓存；它们不加载 Host 的 Plugin 实例。
-第三方应提交普通数据，或使用已运行 Host 的服务 API；不能把另一 environment 求值出的 Plugin constructor 当作
-Host 同一 evaluated namespace。用户自定义 SSR factory 与 Host 专用 environment 可以共存。
+production macro evaluator 只用于 Rolldown。当前 unplugin-macros serve adapter 安装进程级 sourcemap handler，会覆盖 `ModuleRunner` 映射；evaluator 隔离或上游有 cleanup 前，不装入开发服务。
 
-专用 environment 在其工厂返回前装配唯一的 fetchModule 策略：Vite 先解析，再对物理文件分类；
-CommonJS/native 与显式 singleton 交给 Node，其余交给 Vite。Singleton 只登记 canonical 物理身份，
-不维护请求 URL 拼写白名单，不修改 server.close 或私有 runner transport。Vite 只公开 runnable 工厂而不公开构造器，
-因此在工厂中装配公开方法；不借助私有构造器反射。只有 `pluxel` 名称的环境工厂属于 Host，调用方不能替换它。
-文件分类器不另建 bare specifier resolver；production freezer 的 residual tracing 和部署闭包契约不受影响。
+根 tsconfig 维护共用 noEmit 选项；包配置包含 src/tests/benchmark/config，工作区 vite 配置/helper 由 scripts/tsconfig 检查。框架实现以 `@pluxel/source` 检查源码，具体插件默认 `@pluxel/hmr`，仅将其他插件切到源码，Core/Host/toolchain 用公开 dist 声明。不同环境、严格度或声明输入才拆包内配置；CLI 内联 pncat、Rolldown 内联 Workbench transport 与 Host shared-runtime 时，native 声明编译器以配置目录为 rootDir，各用仓库根的 tsconfig.cli-build.json 和 tsconfig.rolldown-build.json。构建顺序归 Vite Task。
 
-浏览器 Node builtin guard 与 preprocessor 仍按原语法职责参与 client 编译；Host pipeline 的 preprocessor
-只参与 client 与所选 Host environment，不处理默认 SSR 或其他 server environment。Vite 的 tsconfigPaths 与 OXC
-选项均为项目级，因此保留显式 tsconfigPaths 选择和 legacy decorator 语法配置；不为声称完全隔离而引入额外解析器
-或一次额外 TypeScript/OXC parse。
-
-Host-vite 直接依赖 `@pluxel/rolldown/vite` 公共入口；workspace source conditions 选择当前源码，发布产物保留工具链外部依赖。
-Services 拥有 Node HTTP carrier，Host-vite 不复制 carrier 实现或维护另一套 source transform。
-
-根 `tsconfig.json` 只维护共用编译选项，默认 `noEmit`，不维护另一份 project-reference 构建图。
-框架和官方插件的 `tsconfig.json` 直接继承它，并包含源码、测试、benchmark 和配置；编译条件在消费包显式声明。
-工作区 `vite*.config.ts` 与共享任务 helper 统一由 `scripts/tsconfig.json` 检查，避免包声明构建沿配置引用把类型输出到根 scripts。
-框架实现 package 用 `@pluxel/source` 检查当前源码；具体插件默认用 `@pluxel/hmr` 只把其他插件解析到源码，
-Pluxel Core/Host/toolchain 本身消费已构建的公开声明。
-因此单个插件 typecheck 不会把整个框架源码并入同一个 TypeScript program，也不会用插件编译选项重新检查内部实现。
-
-只有不同运行环境、严格度或声明生成输入需要隔离时才增加包内配置。`tsconfig.build.json` 归构建包拥有；
-CLI 捆绑仓库内的 pncat 源码；当前原生声明生成器强制以配置目录作为 `rootDir`，因此只有它保留根目录的
-`tsconfig.cli-build.json`，避免兄弟目录源码的声明丢失。依赖构建顺序由 Vite Task 维护。
-
-tsdown `entry` 是 build package subpath 的唯一作者事实源。framework package 配置
-`exports.devExports: "@pluxel/source"`；`pluginPackage()` preset 统一配置
-`exports.devExports: "@pluxel/hmr"`；框架无关的开发源码包使用社区 `development` condition。tsdown 在成功构建后
-生成 `main/module/types/exports` 和无源码 condition 的 `publishConfig.exports`，这些 manifest 字段是应提交、可审查的
-生成物，不在 package.json 手工维护。开发解析按 `@pluxel/hmr`、`development`、`@pluxel/source` 顺序选择，
-production external resolution 不启用这些源码入口。
-
-production macro evaluator 仍只属于 Rolldown build pipeline。当前 `unplugin-macros` 的 Vite serve adapter 会安装进程级
-sourcemap handler，覆盖 ModuleRunner 的 source-aware stack mapping；在 evaluator 隔离或上游提供 cleanup 前，不得把它
-装入 HMR dev server。该限制不影响 plugin package 与 static application production build 的 macro 等价性。
-
-## Static application freezer
-
-静态入口、环境绑定、bundle closure、residual packages 与 finalization 见 [应用构建](APPLICATION_BUILD.md)。
-
-## Workbench source declaration
-
-Content/renderer lowering、Node declarations 与浏览器边界见 [制品编译](ARTIFACT_BUILD.md#workbench-source-declaration)。
-
-## Development compiler
-
-候选构建、缓存、迟到结果与 publication 见 [开发制品编译](ARTIFACT_BUILD.md#development-compiler)。
-
-## Production build
-
-Manifest/types、fixed shared、Node residual 和生产 inventory 见 [生产制品编译](ARTIFACT_BUILD.md#production-build)。
+tsdown entry 是 subpath 的作者输入。framework 的 exports.devExports 为 `@pluxel/source`，`pluginPackage` 为 `@pluxel/hmr`，框架无关源码库用 development。成功构建生成 main/module/types/exports 与无源码条件的 publishConfig.exports，提交可审查生成物。开发解析顺序为 `@pluxel/hmr`、development、`@pluxel/source`；production external resolution 保留发布入口。
 
 ## 实现与验证
 
-共享 pass 位于 `packages/rolldown/src/rolldown/plugins/`，inspection 位于 `packages/rolldown/src/inspect/`。先验证声明合法/非法输入、同源码构建与查询一致、ABI version/缺失/冲突诊断，再验证真实 Vite namespace 与构建后的公开入口。Package metadata 变更还需检查连续构建幂等、移除 peer 清理与 ESM/CJS 输出一致。
+[`packages/rolldown/src/rolldown/plugins/`](../packages/rolldown/src/rolldown/plugins/) 拥有共享 pass，[`inspect/`](../packages/rolldown/src/inspect/) 拥有查询。控制声明和材料见 [Plugin Control](PLUGIN_CONTROL.md)。验证合法/非法声明、构建与查询一致、ABI 缺失/冲突、真实 Vite namespace 及构建后的公开入口；metadata 还验证移除关系、连续构建和多格式幂等。

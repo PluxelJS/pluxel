@@ -1,7 +1,7 @@
 {
 	"extends": "../../../tsconfig.json",
 	"compilerOptions": {
-		"lib": ["DOM", "DOM.Iterable", "ES2023"],
+		"lib": ["DOM", "DOM.Iterable", "ES2024"],
 		"jsx": "react-jsx",
 		"noUnusedLocals": true,
 		"noUnusedParameters": true,

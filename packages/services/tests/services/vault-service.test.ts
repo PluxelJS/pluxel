@@ -1,21 +1,17 @@
 import { InMemory, Passthrough, type FsConfig } from '@pluxel/core/fs'
-import { requireFs } from '@pluxel/core/internal'
+import { requireFs, requireVaultHost } from '@pluxel/core/internal'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import * as nativeFs from 'node:fs'
 import { mkdtemp, readFile, rm, unlink, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { createHost } from '@pluxel/host'
-import { HostVaultBindings } from '@pluxel/host/bindings'
 import { BasePlugin, Plugin } from '@pluxel/core'
 import {
-	vault,
-	Vault,
-	VaultAdmin,
 	type VaultServiceConfig,
 	type VaultStorageApi,
 	type VaultKvTransaction,
-} from '../../src/vault'
+} from '@pluxel/core/vault'
 import { Decrypter } from 'age-encryption'
 
 const directories: string[] = []
@@ -38,19 +34,23 @@ function setup(
 	config: FsConfig = { mounts: { '/': { backend: InMemory } } },
 	vaultConfig?: VaultServiceConfig,
 ) {
-	return createHost({ plugins: [], services: [vault(vaultConfig)], runtime: { zenfs: config } })
+	return createHost({
+		plugins: [],
+		services: [],
+		coreConfig: { zenfs: config, vault: vaultConfig },
+	})
 }
 const owners = new Map<string, VaultStorageApi>()
 @Plugin()
 class Owner extends BasePlugin {
 	init() {
-		owners.set('one', this.ctx.require(Vault))
+		owners.set('one', this.ctx.vault)
 	}
 }
 @Plugin()
 class OtherOwner extends BasePlugin {
 	init() {
-		owners.set('two', this.ctx.require(Vault))
+		owners.set('two', this.ctx.vault)
 	}
 }
 
@@ -91,17 +91,45 @@ async function replaceSnapshot(backend: DiskConfig, snapshot: unknown) {
 }
 
 describe('Vault structured records', () => {
+	it('creates and exposes owner credentials lazily without generating keys during management reads', async () => {
+		const backend = await diskConfig()
+		const host = await createHost({ plugins: [{ plugin: Owner }], coreConfig: { zenfs: backend } })
+		try {
+			await host.startNode(Owner.nodeAddress())
+			const vault = owners.get('one')!
+			expect(vault.kv()).toBeDefined()
+			expect(vault.blobs().open('unused')).toBeDefined()
+			await vault.flush()
+			expect(await requireVaultHost(host.ctx).admin.describe()).toMatchObject({
+				present: false,
+				unlocked: false,
+				hostIdentityPresent: false,
+			})
+			expect(nativeFs.existsSync(vaultPath(backend, 'security/identity.json'))).toBe(false)
+			expect(nativeFs.existsSync(vaultPath(backend, 'global/keys.age'))).toBe(false)
+			expect(nativeFs.existsSync(vaultPath(backend, 'global/state.enc'))).toBe(false)
+			await expect(vault.kv().get('missing')).resolves.toMatchObject({
+				exists: false,
+				writable: true,
+			})
+			expect(nativeFs.existsSync(vaultPath(backend, 'security/identity.json'))).toBe(true)
+		} finally {
+			await host.close()
+		}
+	})
+
 	it('reloads shared encrypted files, including replaced revisions, without writing them back', async () => {
 		const backend = await diskConfig()
 		const writer = await setup(backend)
+		await requireVaultHost(writer.ctx).admin.unlock()
 		const reader = await setup(backend)
 		const directory = await requireFs(reader.ctx).directory('services/vault')
 		const writes = vi.spyOn(directory, 'rename')
 		const reads = vi.spyOn(directory, 'readFile')
 		const observed: unknown[] = []
 		try {
-			const source = writer.ctx.require(Vault).kv()
-			const target = reader.ctx.require(Vault).kv()
+			const source = requireVaultHost(writer.ctx).forOwner(writer.ctx).kv()
+			const target = requireVaultHost(reader.ctx).forOwner(reader.ctx).kv()
 			const subscription = await target.watch('token', (snapshot) => {
 				observed.push({ value: snapshot.value, revision: snapshot.revision })
 			})
@@ -138,7 +166,7 @@ describe('Vault structured records', () => {
 					{ value: 'same revision', revision: 1 },
 					{ value: undefined, revision: 0 },
 				])
-			await reader.ctx.require(Vault).flush()
+			await requireVaultHost(reader.ctx).forOwner(reader.ctx).flush()
 			expect(writes).not.toHaveBeenCalled()
 			await reader.close()
 			const readsAfterClose = reads.mock.calls.length
@@ -157,7 +185,7 @@ describe('Vault structured records', () => {
 		const backend = await diskConfig()
 		const host = await setup(backend)
 		try {
-			const kv = host.ctx.require(Vault).kv()
+			const kv = requireVaultHost(host.ctx).forOwner(host.ctx).kv()
 			await kv.set('token', 'valid')
 			const path = vaultPath(backend, 'global/state.enc')
 			const valid = await readFile(path)
@@ -165,7 +193,7 @@ describe('Vault structured records', () => {
 			damaged[damaged.length - 1] ^= 1
 			await writeFile(path, damaged)
 			await expect
-				.poll(() => host.ctx.require(VaultAdmin).describe())
+				.poll(() => requireVaultHost(host.ctx).admin.describe())
 				.toMatchObject({
 					lastError: { code: 'DECRYPT_FAILED' },
 				})
@@ -174,7 +202,7 @@ describe('Vault structured records', () => {
 			await writeFile(path, valid)
 			await expect
 				.poll(async () => {
-					const state = await host.ctx.require(VaultAdmin).describe()
+					const state = await requireVaultHost(host.ctx).admin.describe()
 					return state.lastError
 				})
 				.toBeUndefined()
@@ -184,11 +212,36 @@ describe('Vault structured records', () => {
 		}
 	})
 
+	it('checks Vault mount persistence before creating keys or saving a secret', async () => {
+		const backend = await diskConfig()
+		await using host = await setup(
+			{
+				...backend,
+				mounts: { ...backend.mounts, '/services/vault/global/blobs': InMemory },
+			},
+			{ durable: true },
+		)
+		const vault = requireVaultHost(host.ctx)
+		await expect(vault.forOwner(host.ctx).kv().set('token', 'secret')).rejects.toMatchObject({
+			code: 'ENOTSUP',
+		})
+		expect(nativeFs.existsSync(vaultPath(backend, 'security/identity.json'))).toBe(false)
+		expect(nativeFs.existsSync(vaultPath(backend, 'global/keys.age'))).toBe(false)
+		expect(nativeFs.existsSync(vaultPath(backend, 'global/state.enc'))).toBe(false)
+	})
+
+	it('rejects a durability requirement for read-only deployment bindings at Host creation', async () => {
+		// @ts-expect-error Untyped applications must receive the same rejection as typed declarations.
+		await expect(setup(undefined, { backend: 'bindings', durable: true })).rejects.toThrow(
+			'durable storage requires the encrypted backend',
+		)
+	})
+
 	it('commits immutable snapshots before returning and preserves revision tombstones across restart', async () => {
 		const backend = await diskConfig()
-		const host = await setup(backend)
+		const host = await setup(backend, { durable: true })
 		try {
-			const kv = host.ctx.require(Vault).kv()
+			const kv = requireVaultHost(host.ctx).forOwner(host.ctx).kv()
 			const input = { token: 'secret', nested: { enabled: true } }
 			expect(await kv.get('account')).toMatchObject({
 				exists: false,
@@ -212,9 +265,11 @@ describe('Vault structured records', () => {
 		} finally {
 			await host.close()
 		}
-		const reopened = await setup(backend)
+		const reopened = await setup(backend, { durable: true })
 		try {
-			expect(await reopened.ctx.require(Vault).kv().get('account')).toMatchObject({
+			expect(
+				await requireVaultHost(reopened.ctx).forOwner(reopened.ctx).kv().get('account'),
+			).toMatchObject({
 				revision: 3,
 				value: 'new',
 			})
@@ -233,7 +288,7 @@ describe('Vault structured records', () => {
 			await Reflect.apply(rename, directory, [from, to])
 		})
 		try {
-			const kv = host.ctx.require(Vault).kv()
+			const kv = requireVaultHost(host.ctx).forOwner(host.ctx).kv()
 			await kv.set('token', 'old')
 			const observed: unknown[] = []
 			const subscription = await kv.watch('token', (value) => {
@@ -254,7 +309,7 @@ describe('Vault structured records', () => {
 	it('commits a batch atomically, rolls back conflicts and prevents retained transaction access', async () => {
 		const host = await setup()
 		try {
-			const kv = host.ctx.require(Vault).kv()
+			const kv = requireVaultHost(host.ctx).forOwner(host.ctx).kv()
 			let retained!: VaultKvTransaction
 			await kv.batch((tx) => {
 				retained = tx
@@ -280,7 +335,7 @@ describe('Vault structured records', () => {
 	it('atomically watches the initial snapshot, observes committed data outside the lock and isolates listener failures', async () => {
 		const host = await setup()
 		try {
-			const kv = host.ctx.require(Vault).kv()
+			const kv = requireVaultHost(host.ctx).forOwner(host.ctx).kv()
 			const observed: number[] = []
 			const sub = await kv.watch('token', async (snapshot) => {
 				observed.push(snapshot.revision)
@@ -305,7 +360,7 @@ describe('Vault structured records', () => {
 	it('rejects values that cannot form an immutable JSON snapshot without invoking accessors', async () => {
 		const host = await setup()
 		try {
-			const kv = host.ctx.require(Vault).kv()
+			const kv = requireVaultHost(host.ctx).forOwner(host.ctx).kv()
 			const cycle: Record<string, unknown> = {}
 			cycle.self = cycle
 			for (const value of [
@@ -329,11 +384,11 @@ describe('Vault structured records', () => {
 
 	it('serves bindings without Fs, disk, encryption keys or writable fallback', async () => {
 		const host = await createHost({
-			plugins: [Owner, OtherOwner],
-			services: [vault({ backend: 'bindings' })],
+			plugins: [{ plugin: Owner }, { plugin: OtherOwner }],
+			coreConfig: { vault: { backend: 'bindings' } },
 		})
 		try {
-			host.ctx.require(HostVaultBindings).install([
+			requireVaultHost(host.ctx).installBindings([
 				{
 					owner: Owner.nodeAddress(),
 					key: 'primary',
@@ -344,9 +399,11 @@ describe('Vault structured records', () => {
 			])
 			await host.startNode(Owner.nodeAddress())
 			await host.startNode(OtherOwner.nodeAddress())
-			const first = host.ctx.require(Vault).kv({
-				namespace: `plugin-${(await import('@pluxel/core/internal').then((result) => result.pluginNodePhysicalKey))(Owner.nodeAddress())}`,
-			})
+			const first = requireVaultHost(host.ctx)
+				.forOwner(host.ctx)
+				.kv({
+					namespace: `plugin-${(await import('@pluxel/core/internal').then((result) => result.pluginNodePhysicalKey))(Owner.nodeAddress())}`,
+				})
 			expect(await first.get('primary')).toMatchObject({
 				source: 'env',
 				writable: false,
@@ -358,7 +415,7 @@ describe('Vault structured records', () => {
 				writable: false,
 			})
 			await expect(first.set('primary', 'new')).rejects.toMatchObject({ code: 'READ_ONLY' })
-			expect(await host.ctx.require(VaultAdmin).describe()).toMatchObject({
+			expect(await requireVaultHost(host.ctx).admin.describe()).toMatchObject({
 				present: false,
 				hostIdentityPresent: false,
 			})
@@ -370,19 +427,27 @@ describe('Vault structured records', () => {
 
 	it('overlays whole records without mixing or persisting deployment values', async () => {
 		const backend = await diskConfig()
-		const host = await setup(backend)
 		const namespace = `plugin-${(await import('@pluxel/core/internal').then((result) => result.pluginNodePhysicalKey))(Owner.nodeAddress())}`
-		try {
-			const kv = host.ctx.require(Vault).kv({ namespace })
-			await kv.set('primary', { refreshToken: 'persisted' })
-			host.ctx.require(HostVaultBindings).install([
+		{
+			await using saved = await setup(backend)
+			await requireVaultHost(saved.ctx).forOwner(saved.ctx).kv({ namespace }).set('primary', {
+				refreshToken: 'persisted',
+			})
+		}
+		const host = await createHost({
+			plugins: [],
+			coreConfig: { zenfs: backend },
+			vaultBindings: [
 				{
 					owner: Owner.nodeAddress(),
 					key: 'primary',
 					value: { token: 'deployment' },
 					source: 'file',
 				},
-			])
+			],
+		})
+		try {
+			const kv = requireVaultHost(host.ctx).forOwner(host.ctx).kv({ namespace })
 			expect(await kv.get('primary').then((result) => result.value)).toEqual({
 				token: 'deployment',
 			})
@@ -399,8 +464,8 @@ describe('Vault structured records', () => {
 		const next = await setup(backend)
 		try {
 			expect(
-				await next.ctx
-					.require(Vault)
+				await requireVaultHost(next.ctx)
+					.forOwner(next.ctx)
 					.kv({ namespace })
 					.get('primary')
 					.then((result) => result.value),
@@ -412,8 +477,8 @@ describe('Vault structured records', () => {
 
 	it('watches new keys and deletions in a prefix and never leaks another owner namespace', async () => {
 		const host = await createHost({
-			plugins: [Owner, OtherOwner],
-			services: [vault()],
+			plugins: [{ plugin: Owner }, { plugin: OtherOwner }],
+			services: [],
 		})
 		try {
 			await host.startNode(Owner.nodeAddress())
@@ -449,6 +514,7 @@ describe('Vault structured records', () => {
 		async (version) => {
 			const backend = await diskConfig()
 			const host = await setup(backend)
+			await requireVaultHost(host.ctx).admin.unlock()
 			await host.close()
 			await replaceSnapshot(backend, {
 				kind: 'pluxel.vault.snapshot',
@@ -456,7 +522,10 @@ describe('Vault structured records', () => {
 				namespaces: { default: { kv: { token: 'saved' }, revisions: { token: 1 } } },
 			})
 			const before = await readFile(vaultPath(backend, 'global/state.enc'))
-			await expect(setup(backend)).rejects.toMatchObject({ code: 'INVALID_FORMAT' })
+			await using invalid = await setup(backend)
+			await expect(
+				requireVaultHost(invalid.ctx).forOwner(invalid.ctx).kv().get('token'),
+			).rejects.toMatchObject({ code: 'INVALID_FORMAT' })
 			expect(await readFile(vaultPath(backend, 'global/state.enc'))).toEqual(before)
 		},
 	)
@@ -466,6 +535,7 @@ describe('Vault structured records', () => {
 		async (revisions) => {
 			const backend = await diskConfig()
 			const host = await setup(backend)
+			await requireVaultHost(host.ctx).admin.unlock()
 			await host.close()
 			await replaceSnapshot(backend, {
 				kind: 'pluxel.vault.snapshot',
@@ -473,7 +543,10 @@ describe('Vault structured records', () => {
 				namespaces: { default: { kv: { token: 'saved' }, revisions } },
 			})
 			const before = await readFile(vaultPath(backend, 'global/state.enc'))
-			await expect(setup(backend)).rejects.toMatchObject({ code: 'INVALID_FORMAT' })
+			await using invalid = await setup(backend)
+			await expect(
+				requireVaultHost(invalid.ctx).forOwner(invalid.ctx).kv().get('token'),
+			).rejects.toMatchObject({ code: 'INVALID_FORMAT' })
 			expect(await readFile(vaultPath(backend, 'global/state.enc'))).toEqual(before)
 		},
 	)
@@ -481,28 +554,38 @@ describe('Vault structured records', () => {
 	it('rekeys only the envelope, reopens with explicit deployment identity and rejects missing or damaged state', async () => {
 		const backend = await diskConfig()
 		const host = await setup(backend)
-		await host.ctx.require(Vault).kv().set('token', 'secret')
+		await requireVaultHost(host.ctx).forOwner(host.ctx).kv().set('token', 'secret')
 		const before = await readFile(vaultPath(backend, 'global/state.enc'))
-		const pair = await host.ctx.require(VaultAdmin).generateDeployKey()
-		await host.ctx.require(VaultAdmin).setDeployRecipients([pair.publicKey])
-		await host.ctx.require(VaultAdmin).rekey()
+		const pair = await requireVaultHost(host.ctx).admin.generateDeployKey()
+		await requireVaultHost(host.ctx).admin.setDeployRecipients([pair.publicKey])
+		await requireVaultHost(host.ctx).admin.rekey()
 		expect(await readFile(vaultPath(backend, 'global/state.enc'))).toEqual(before)
 		await host.close()
 		await unlink(vaultPath(backend, 'security/identity.json'))
-		await expect(setup(backend)).rejects.toMatchObject({ code: 'ACCESS_DENIED' })
+		{
+			await using locked = await setup(backend)
+			expect(await requireVaultHost(locked.ctx).admin.describe()).toMatchObject({
+				present: true,
+				unlocked: false,
+				hostIdentityPresent: false,
+			})
+			await expect(
+				requireVaultHost(locked.ctx).forOwner(locked.ctx).kv().get('token'),
+			).rejects.toMatchObject({ code: 'ACCESS_DENIED' })
+			expect(nativeFs.existsSync(vaultPath(backend, 'security/identity.json'))).toBe(false)
+		}
 		const unlocked = await setup(backend, { deployIdentity: pair.privateKey })
 		try {
 			expect(
-				await unlocked.ctx
-					.require(Vault)
+				await requireVaultHost(unlocked.ctx)
+					.forOwner(unlocked.ctx)
 					.kv()
 					.get('token')
 					.then((result) => result.value),
 			).toBe('secret')
 			expect(
-				await unlocked.ctx
-					.require(VaultAdmin)
-					.describe()
+				await requireVaultHost(unlocked.ctx)
+					.admin.describe()
 					.then((result) => result.unlockedBy),
 			).toBe('deploy')
 		} finally {
@@ -512,13 +595,17 @@ describe('Vault structured records', () => {
 		const damaged = new Uint8Array(original)
 		damaged[damaged.length - 1] ^= 1
 		await writeFile(vaultPath(backend, 'global/state.enc'), damaged)
-		await expect(setup(backend, { deployIdentity: pair.privateKey })).rejects.toMatchObject({
-			code: 'DECRYPT_FAILED',
-		})
+		{
+			await using damagedHost = await setup(backend, { deployIdentity: pair.privateKey })
+			await expect(
+				requireVaultHost(damagedHost.ctx).forOwner(damagedHost.ctx).kv().get('token'),
+			).rejects.toMatchObject({ code: 'DECRYPT_FAILED' })
+		}
 		expect(new Uint8Array(await readFile(vaultPath(backend, 'global/state.enc')))).toEqual(damaged)
 		await unlink(vaultPath(backend, 'global/state.enc'))
-		await expect(setup(backend, { deployIdentity: pair.privateKey })).rejects.toMatchObject({
-			code: 'INVALID_FORMAT',
-		})
+		await using missingState = await setup(backend, { deployIdentity: pair.privateKey })
+		await expect(
+			requireVaultHost(missingState.ctx).forOwner(missingState.ctx).kv().get('token'),
+		).rejects.toMatchObject({ code: 'INVALID_FORMAT' })
 	})
 })

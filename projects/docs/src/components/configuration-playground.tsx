@@ -9,7 +9,6 @@ import { useTheme } from 'next-themes'
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import * as v from 'valibot'
 import * as f from 'valibot-form'
-import type { ObjectLikeSchema } from 'valibot-form'
 import { AutoForm, useAutoFormCtx } from 'valibot-form/web'
 import { configurationSchema } from './configuration-schema'
 import { MantineThemeProvider } from './mantine-theme-provider'
@@ -238,10 +237,6 @@ function isRecord(value: unknown): value is Record<string, unknown> {
 	return typeof value === 'object' && value !== null
 }
 
-function isPlaygroundSchema(value: unknown): value is ObjectLikeSchema {
-	return isRecord(value) && (value.type === 'object' || value.type === 'intersect')
-}
-
 function getTypeScriptLspOptions() {
 	const baseUrl = new URL('/playground-types/', window.location.origin)
 	const valibotUrl = new URL('valibot.d.ts', baseUrl).href
@@ -262,16 +257,19 @@ function getTypeScriptLspOptions() {
 	}
 }
 
-function compileSchema(code: string): ObjectLikeSchema {
+function compileSchema(code: string): f.ObjectLikeSchema {
 	const executableCode = code
 		.replace(/^\s*import \* as v from ['"]valibot['"];?\s*$/m, '')
 		.replace(/^\s*import \* as f from ['"]valibot-form['"];?\s*$/m, '')
 		.replaceAll(' as const', '')
 		.replace(/\bexport default Config\s*$/, 'return Config')
 	// 编辑器有意在页面沙箱中执行用户编写的 schema。
-	const result: unknown = new Function('v', 'f', `"use strict";\n${executableCode}`)(v, f)
-	if (!isPlaygroundSchema(result)) {
-		throw new Error('Playground 只接受 object 或 intersect schema')
+	const result = new Function('v', 'f', `"use strict";\n${executableCode}`)(
+		v,
+		f,
+	) as f.ObjectLikeSchema
+	if (f.collectObjectEntries(result) === undefined) {
+		throw new Error('Playground 需要 object、strictObject 或这些对象的交集')
 	}
 	return result
 }
@@ -284,8 +282,8 @@ function JsonValue({ value }: { value: unknown }) {
 	)
 }
 
-function ValueInspector({ schema }: { schema: ObjectLikeSchema }) {
-	const { form } = useAutoFormCtx<any>()
+function ValueInspector({ schema }: { schema: f.ObjectLikeSchema }) {
+	const { form } = useAutoFormCtx()
 
 	return (
 		<form.Subscribe selector={(state) => state.values}>
@@ -319,7 +317,7 @@ export function ConfigurationPlayground() {
 	const codeRef = useRef(serviceTemplate)
 	const lastRunCodeRef = useRef(serviceTemplate)
 	const selectionRef = useRef<PlaygroundSelection>('service')
-	const [schema, setSchema] = useState<ObjectLikeSchema>(() => configurationSchema)
+	const [schema, setSchema] = useState<f.ObjectLikeSchema>(() => configurationSchema)
 	const [error, setError] = useState<string>()
 	const [status, setStatus] = useState('使用当前 schema 生成表单。')
 	const [revision, setRevision] = useState(0)

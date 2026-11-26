@@ -45,6 +45,8 @@ export function projectPluginDependencyGraph(
 	const runningNodeKeys = new Set(view.runningNodes.map(pluginNodeIndexKey))
 	const catalog = projectPluginCatalogFromView(ctx.root, {
 		catalog: view.catalog,
+		declaredNodes: view.declaredNodes,
+		applied: view.applied,
 		state: view.runtimeState.state,
 		reconciliation: view.reconciliation,
 		sessionIntents: view.sessionIntents,
@@ -117,13 +119,16 @@ export function projectPluginDependencyGraph(
 		for (const consumer of consumers) {
 			const required = new Set(declaration.requires.map(pluginDefinitionIndexKey))
 			for (const requirement of declaration.requires) {
+				const requirementKey = pluginDefinitionIndexKey(requirement)
 				edges.push(
 					projectRequiredEdge({
 						consumer,
 						requirement,
 						override: overrides.get(edgeIdentityKey(consumer, requirement)),
-						direct: view.catalog.byDefinition.has(pluginDefinitionIndexKey(requirement)),
-						providerDefault: providerDefaults.get(pluginDefinitionIndexKey(requirement)),
+						direct: view.catalog.byDefinition.has(requirementKey),
+						providerDefault:
+							providerDefaults.get(requirementKey) ??
+							view.applied.providerDefaults.get(requirementKey)?.provider,
 						effectiveAdjacency: requiredAdjacency,
 					}),
 				)

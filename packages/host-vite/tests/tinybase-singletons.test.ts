@@ -4,6 +4,9 @@ import { build, createServer, type RunnableDevEnvironment } from 'vite'
 import { expect, it } from 'vitest'
 import { host } from '../src/index'
 import { hostSingletons } from '../src/singletons'
+import coreManifest from '../../core/package.json' with { type: 'json' }
+
+const supported = coreManifest.pluxel.tinybase
 
 async function runTinybaseFixture(
 	options: { version?: string; peer?: string; browser?: boolean } = {},
@@ -14,20 +17,20 @@ async function runTinybaseFixture(
 		'package.json': JSON.stringify({
 			name: 'application',
 			type: 'module',
-			dependencies: { tinybase: '10.0.1' },
+			dependencies: { tinybase: supported },
 		}),
 		'consumer/package.json': JSON.stringify({
 			name: 'consumer',
-			pluxel: { tinybase: '10.0.1' },
-			peerDependencies: options.peer === '' ? {} : { tinybase: options.peer ?? '10.0.1' },
-			devDependencies: { tinybase: '10.0.1' },
+			pluxel: { tinybase: supported },
+			peerDependencies: options.peer === '' ? {} : { tinybase: options.peer ?? supported },
+			devDependencies: { tinybase: supported },
 		}),
 		'consumer/store.ts':
 			"export { createStore } from 'tinybase'; export { createQueries } from 'tinybase/queries'; export { Provider } from 'tinybase/ui-react'",
 		'library/package.json': JSON.stringify({
 			name: 'library',
-			peerDependencies: { tinybase: '10.0.1' },
-			devDependencies: { tinybase: '10.0.1' },
+			peerDependencies: { tinybase: supported },
+			devDependencies: { tinybase: supported },
 		}),
 		'library/store.ts':
 			"export { createStore } from 'tinybase'; export { createQueries } from 'tinybase/queries'",
@@ -54,9 +57,9 @@ export const platform = Private.Provider()
 `,
 	}
 	for (const [path, version] of [
-		['node_modules/tinybase', '10.0.1'],
-		['consumer/node_modules/tinybase', options.version ?? '10.0.1'],
-		['library/node_modules/tinybase', '10.0.1'],
+		['node_modules/tinybase', supported],
+		['consumer/node_modules/tinybase', options.version ?? supported],
+		['library/node_modules/tinybase', supported],
 		['private-store/node_modules/tinybase', '9.9.0'],
 	]) {
 		files[`${path}/package.json`] = JSON.stringify({
@@ -129,12 +132,14 @@ it('keeps shared browser Provider imports on one TinyBase module and preserves b
 })
 
 it.each([
-	[{ version: '10.1.0' }, /consumer.*resolved 10\.1\.0.*Host Core supports 10\.0\.1/],
+	[{ version: '0.0.1' }, /consumer.*resolved 0\.0\.1/],
 	[{ peer: '' }, /consumer.*peerDependencies.tinybase <missing>/],
-	[{ peer: '^10.0.1' }, /consumer.*peerDependencies.tinybase \^10\.0\.1/],
+	[{ peer: `^${supported}` }, `peerDependencies.tinybase ^${supported}`],
 ] as const)(
 	'rejects incompatible TinyBase source boundaries before replacing their modules: %j',
 	async (options, diagnostic) => {
-		await expect(runTinybaseFixture(options)).rejects.toThrow(diagnostic)
+		const result = runTinybaseFixture(options)
+		await expect(result).rejects.toThrow(diagnostic)
+		await expect(result).rejects.toThrow(`Host Core supports ${supported}`)
 	},
 )

@@ -1,6 +1,6 @@
+import { type Context as CoreContext } from '@pluxel/core'
 import { availableParallelism, cpus } from 'node:os'
 import { fileURLToPath } from 'node:url'
-import type { Context as CoreContext } from '@pluxel/core'
 import { pinOwnerContext } from '../internal/owner-view'
 import type { NodeModuleDeclaration } from '../node/declaration'
 import { NodeModules } from '../node/token'
@@ -292,7 +292,7 @@ export class WorkerTaskService {
 		if (existing) return existing
 		const route = {} as TaskRoute
 		route.ready = this.ctx
-			.require(NodeModules)
+			.service(NodeModules)
 			.use(declaration as unknown as NodeModuleDeclaration, (url) => void (route.url = url))
 			.catch((cause: unknown) => {
 				route.failure = Object.freeze({ cause })

@@ -1,12 +1,12 @@
-import { Button, Center, Group, Loader, Stack, Text } from '@mantine/core'
-import { IconSettingsOff } from '@tabler/icons-react'
+import { Button, Center, Group, Loader, Menu, Text } from '@mantine/core'
+import { IconChevronDown, IconSettingsOff } from '@tabler/icons-react'
 import { EmptyState, ErrorState } from '../../../components'
 import {
 	useResolvedWorkbenchRoute,
 	useWorkbenchTabs,
 	WorkbenchEntryView,
 } from '../../../workbench/runtime'
-import { useWorkbenchNavigation } from '../../workbench/context'
+import { DocumentTabs } from '../../workbench/DocumentTabs'
 import { useOptionalWorkbenchDocument, useDocumentPlugin } from '../../workbench/document'
 import { useCurrentPathname } from '../../router/useCurrentRoute'
 import { parsePluginDetailHref, buildPluginDetailHref } from '../../../workbench/paths'
@@ -18,6 +18,9 @@ import { usePluginMeta } from './context'
 import { usePluginDetailSearch } from './pluginDetailSearchState'
 import { useWorkspaceSession } from '../../workbench/workspaceContext'
 import { useWorkbenchState } from '@worksplit/react'
+import { RouterLinkAdapter } from '../../router/RouterLinkAdapter'
+import { buildOutboundHttpNodeHref, PLUGIN_OUTBOUND_HTTP_PATH } from '../../outbound-http/paths'
+import { OutboundHttpSettings } from '../../outbound-http/OutboundHttpSettings'
 
 const EMPTY_PARAMS = Object.freeze({})
 
@@ -26,18 +29,16 @@ export function RightPane({ config }: { config: PluginConfigState }) {
 	const { entries, snapshot } = useWorkbenchTabs(owner)
 	const pathname = useCurrentPathname()
 	const restPath = parsePluginDetailHref(pathname)?.path ?? ''
+	const outboundHttp = restPath === PLUGIN_OUTBOUND_HTTP_PATH
+	const isConfig = !restPath || restPath === '/config' || outboundHttp
 	const search = usePluginDetailSearch()
-	const navigation = useWorkbenchNavigation()
 	const session = useWorkspaceSession()
 	const id = useOptionalWorkbenchDocument()?.id ?? null
 	const active = useWorkbenchState(session.workbench, (state) => state.activeDocumentId === id)
 	const selectedEntry = search.entry
 		? entries.find((candidate) => candidate.descriptor.key === search.entry)
 		: undefined
-	useDocumentPlugin(
-		restPath && restPath !== '/config' ? undefined : owner,
-		selectedEntry?.descriptor.key,
-	)
+	useDocumentPlugin(isConfig ? owner : undefined, selectedEntry?.descriptor.key)
 	if (search.entry)
 		return selectedEntry ? (
 			<WorkbenchEntryView
@@ -52,7 +53,7 @@ export function RightPane({ config }: { config: PluginConfigState }) {
 				description={`未找到入口：${search.entry}。请检查插件权限和发布状态。`}
 			/>
 		)
-	if (restPath && restPath !== '/config')
+	if (!isConfig)
 		return (
 			<RouteContent
 				target={owner}
@@ -62,37 +63,52 @@ export function RightPane({ config }: { config: PluginConfigState }) {
 			/>
 		)
 	return (
-		<Stack gap="md" h="100%" p="var(--plx-page-padding)" style={{ minHeight: 0 }}>
-			<Group justify="space-between">
-				<Text fw={600} size="lg">
-					{pluginLabel}
-				</Text>
-				<ActionBar active={active} />
-			</Group>
-			{entries.length > 0 && (
-				<Group gap="xs" aria-label="插件页面入口">
-					{entries.map((entry) => (
-						<Button
-							key={entry.descriptor.key}
-							size="compact-sm"
-							variant="light"
-							onClick={() =>
-								navigation.navigate(
-									`${buildPluginDetailHref(owner)}?entry=${encodeURIComponent(entry.descriptor.key)}`,
-								)
-							}
-						>
-							{entry.placement.kind === 'tab'
-								? (entry.placement.label ?? entry.descriptor.key)
-								: entry.descriptor.key}
-						</Button>
-					))}
+		<DocumentTabs
+			title={pluginLabel}
+			label="插件设置"
+			value={outboundHttp ? 'outbound-http' : 'config'}
+			sections={[
+				{ value: 'config', label: '插件配置', to: buildPluginDetailHref(owner) },
+				{ value: 'outbound-http', label: '出站 HTTP', to: buildOutboundHttpNodeHref(owner) },
+			]}
+			actions={
+				<Group gap="sm">
+					{entries.length > 0 && (
+						<Menu position="bottom-end">
+							<Menu.Target>
+								<Button
+									size="compact-sm"
+									variant="default"
+									rightSection={<IconChevronDown size={14} aria-hidden />}
+								>
+									插件页面
+								</Button>
+							</Menu.Target>
+							<Menu.Dropdown>
+								{entries.map((entry) => (
+									<Menu.Item
+										key={entry.descriptor.key}
+										component={RouterLinkAdapter}
+										to={`${buildPluginDetailHref(owner)}?entry=${encodeURIComponent(entry.descriptor.key)}`}
+									>
+										{entry.placement.kind === 'tab'
+											? (entry.placement.label ?? entry.descriptor.key)
+											: entry.descriptor.key}
+									</Menu.Item>
+								))}
+							</Menu.Dropdown>
+						</Menu>
+					)}
+					<ActionBar active={active} />
 				</Group>
-			)}
-			<div className="plx-pluginDocument__panel">
+			}
+		>
+			{outboundHttp ? (
+				<OutboundHttpSettings owner={owner} />
+			) : (
 				<ConfigContent config={config} owner={owner} displayName={pluginLabel} active={active} />
-			</div>
-		</Stack>
+			)}
+		</DocumentTabs>
 	)
 }
 
@@ -123,7 +139,7 @@ function ConfigContent({
 				<Text c="dimmed">加载配置中…</Text>
 			</Center>
 		)
-	if (!config.data || !config.data.snapshot || config.data.fields.length === 0)
+	if (!config.data?.snapshot || config.data.sections.every(({ fields }) => fields.length === 0))
 		return (
 			<EmptyState
 				icon={<IconSettingsOff size={28} />}
@@ -136,7 +152,6 @@ function ConfigContent({
 		<ConfigForm
 			owner={owner}
 			displayName={displayName}
-			fields={config.data.fields}
 			snapshot={config.data.snapshot}
 			sections={config.data.sections}
 			active={active}

@@ -17,9 +17,7 @@ import {
 } from './scenario.ts'
 
 const isBenchHost = (value: unknown): value is BenchHost =>
-	typeof value === 'object' &&
-	value != null &&
-	typeof (value as any).ctx?.effects?.dispose === 'function'
+	typeof value === 'object' && value != null && typeof (value as any).ctx?.service === 'function'
 
 async function assertRunning(host: BenchHost, plugin: PluginFixture) {
 	if (!host.plugins.isRunning(plugin.nodeAddress)) {

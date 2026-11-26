@@ -41,7 +41,6 @@ type PreparedAccount = Readonly<{
 }>
 
 export type CredentialProvisioningStore = Readonly<{
-	available: boolean
 	saveAccount(account: LocalAccountRecord): Promise<void>
 	saveOidcSecret(secret: string): Promise<void>
 }>
@@ -158,7 +157,6 @@ export class CredentialProvisioning {
 		if (secret.length === 0 || secret.length > 4_096) {
 			return failure('invalid_input', 'The client secret is invalid.')
 		}
-		if (!this.store.available) return failure('unavailable', 'Vault is unavailable.')
 		try {
 			await this.store.saveOidcSecret(secret)
 		} catch {
@@ -177,7 +175,6 @@ export class CredentialProvisioning {
 	private async prepareAccount(
 		input: AuthPasswordSetupInput,
 	): Promise<Result<PreparedAccount, AuthSetupFailure>> {
-		if (!this.store.available) return Result.err(failure('unavailable', 'Vault is unavailable.'))
 		const parsed = parsePasswordSetup(input)
 		if (!parsed) return Result.err(failure('invalid_input', 'The account input is invalid.'))
 		const username = parsed.username.trim()

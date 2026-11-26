@@ -12,7 +12,7 @@ function createTarget(snapshot: () => AuthSetupSnapshot) {
 		mutate: (operation) => operation(),
 		provisioning: new CredentialProvisioning(
 			{ type: 'password' },
-			{ available: false, saveAccount: async () => {}, saveOidcSecret: async () => {} },
+			{ saveAccount: async () => {}, saveOidcSecret: async () => {} },
 			() => {},
 			() => {},
 		),

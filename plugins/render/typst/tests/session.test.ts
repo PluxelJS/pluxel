@@ -10,7 +10,7 @@ import type { TypstWorkerInput, TypstWorkerOutput } from '../src/worker.ts'
 
 const config: TypstPluginConfig = {
 	maxSessions: 2,
-	maxQueuedUpdates: 2,
+	maxQueuedOperations: 2,
 	maxFiles: 100,
 	maxTemplateBytes: 1_000_000,
 	maxInputBytes: 1_000_000,
@@ -41,9 +41,40 @@ async function template() {
 	await writeFile(join(root, 'main.typ'), root)
 	return { root, entry: 'main.typ' }
 }
-type Runner = ConstructorParameters<typeof DocumentSession>[1]
-function session(run: Runner, released: () => void = () => {}) {
-	const instance = new DocumentSession(config, run, released)
+type Compiler = ConstructorParameters<typeof DocumentSession>[1]
+function session(
+	compile: Compiler['compile'],
+	released: () => void = () => {},
+	render?: Compiler['render'],
+) {
+	let closed = false
+	const instance = new DocumentSession(
+		config,
+		{
+			get closed() {
+				return closed
+			},
+			async compile(input, signal) {
+				try {
+					return await compile(input, signal)
+				} finally {
+					if (signal.aborted) closed = true
+				}
+			},
+			async render(input, signal) {
+				try {
+					if (!render) throw new Error('Unexpected render')
+					return await render(input, signal)
+				} finally {
+					if (signal.aborted) closed = true
+				}
+			},
+			async close() {
+				closed = true
+			},
+		},
+		released,
+	)
 	sessions.push(instance)
 	return instance
 }
@@ -56,11 +87,10 @@ describe('document session ownership', () => {
 	it('replaces the complete input set, fixes template contents, and returns independent PDF copies', async () => {
 		const source = await template()
 		const observed: { files: string[]; template: string }[] = []
-		const instance = session(async (prepare, signal) => {
-			const input = await prepare(signal)
+		const instance = session(async (input) => {
 			observed.push({
-				files: await readdir(join(input.root, 'inputs')),
-				template: await readFile(join(input.root, input.entry), 'utf8'),
+				files: await readdir(input.inputsRoot),
+				template: await readFile(join(input.templateRoot, input.entry), 'utf8'),
 			})
 			return output()
 		})
@@ -87,8 +117,7 @@ describe('document session ownership', () => {
 
 	it('keeps the successful revision after compilation or preparation failure', async () => {
 		let fail = false
-		const instance = session(async (prepare, signal) => {
-			await prepare(signal)
+		const instance = session(async () => {
 			return fail
 				? {
 						ok: false,
@@ -111,8 +140,7 @@ describe('document session ownership', () => {
 	})
 
 	it('holds accepted PDF bytes while a later update replaces the revision', async () => {
-		const instance = session(async (prepare, signal) => {
-			await prepare(signal)
+		const instance = session(async () => {
 			return output()
 		})
 		await instance.initialize(await template(), async () => [], {})
@@ -126,8 +154,7 @@ describe('document session ownership', () => {
 		const entered = deferred<void>()
 		const release = deferred<void>()
 		let calls = 0
-		const instance = session(async (prepare, signal) => {
-			await prepare(signal)
+		const instance = session(async () => {
 			if (++calls === 1) {
 				entered.resolve()
 				await release.promise
@@ -152,14 +179,42 @@ describe('document session ownership', () => {
 		expect(calls).toBe(2)
 	})
 
+	it('cancels active input preparation without losing the native session or its revision', async () => {
+		let calls = 0
+		const instance = session(async () => {
+			calls++
+			return output()
+		})
+		await instance.initialize(await template(), async () => [], {})
+		const first = await instance.update({ files: {} })
+		const controller = new AbortController()
+		const reason = new Error('stop preparing this update')
+		await expect(
+			instance.update({
+				signal: controller.signal,
+				files: {
+					'/inputs/draft.txt': {
+						kind: 'text',
+						get text() {
+							controller.abort(reason)
+							return 'draft'
+						},
+					},
+				},
+			}),
+		).rejects.toBe(reason)
+		expect(calls).toBe(1)
+		expect([...(await instance.exportPdf(first.revision))]).toEqual([2, 3])
+		expect(await instance.update({ files: {} })).toHaveProperty('revision', first.revision + 1)
+	})
+
 	it('waits for aborted execution to finish before cleanup and releases once', async () => {
 		const entered = deferred<TypstWorkerInput>()
 		const executionStopped = deferred<void>()
 		const abortObserved = deferred<void>()
 		let released = 0
 		const instance = session(
-			async (prepare, signal) => {
-				const input = await prepare(signal)
+			async (input, signal) => {
 				signal.addEventListener('abort', () => abortObserved.resolve(), { once: true })
 				entered.resolve(input)
 				await executionStopped.promise
@@ -212,7 +267,7 @@ describe('document session ownership', () => {
 						if (!name.startsWith('pluxel-typst-')) continue
 						const candidate = join(tmpdir(), name)
 						try {
-							if ((await readFile(join(candidate, 'workspace/main.typ'), 'utf8')) === source.root)
+							if ((await readFile(join(candidate, 'template/main.typ'), 'utf8')) === source.root)
 								snapshot = candidate
 						} catch {
 							/* Other concurrently created sessions need not have an entry yet. */
@@ -235,8 +290,7 @@ describe('document session ownership', () => {
 		let released = 0
 		const failure = new WorkerTaskError('EXECUTION_UNSETTLED', 'worker exit unconfirmed')
 		const instance = session(
-			async (prepare, signal) => {
-				const input = await prepare(signal)
+			async (input) => {
 				root = input.root
 				throw failure
 			},
@@ -250,7 +304,7 @@ describe('document session ownership', () => {
 			await expect(instance.update({ files: {} })).rejects.toMatchObject({ code: 'CLOSED' })
 			await expect(instance.dispose()).rejects.toMatchObject({ cause: failure })
 			await expect(instance.dispose()).rejects.toThrow(dirname(root))
-			expect(released).toBe(1)
+			expect(released).toBe(0)
 			await access(root)
 		} finally {
 			// This runner never starts a real worker; the test owns final deletion.
@@ -265,15 +319,12 @@ it('serializes page reads with updates and checks revision when each queued read
 		resume = deferred<void>()
 	let renders = 0,
 		updates = 0
-	const instance = new DocumentSession(
-		config,
-		async (prepare, signal) => {
-			await prepare(signal)
+	const instance = session(
+		async () => {
 			updates++
 			return output()
 		},
-		() => {},
-		async () => {},
+		undefined,
 		async (input) => {
 			renders++
 			entered.resolve()
@@ -289,7 +340,6 @@ it('serializes page reads with updates and checks revision when each queued read
 			}
 		},
 	)
-	sessions.push(instance)
 	await instance.initialize(await template(), async () => [], {})
 	const first = await instance.update({ files: {} })
 	const image = instance.renderPage({ revision: first.revision, page: 1 })
@@ -311,14 +361,11 @@ it('serializes page reads with updates and checks revision when each queued read
 
 it('cancels an active page render with the same terminal session semantics as update', async () => {
 	const entered = deferred<void>()
-	const instance = new DocumentSession(
-		config,
-		async (prepare, signal) => {
-			await prepare(signal)
+	const instance = session(
+		async () => {
 			return output()
 		},
-		() => {},
-		async () => {},
+		undefined,
 		async (_input, signal) => {
 			entered.resolve()
 			await new Promise<void>((_resolve, reject) =>
@@ -327,7 +374,6 @@ it('cancels an active page render with the same terminal session semantics as up
 			throw new Error('Unreachable')
 		},
 	)
-	sessions.push(instance)
 	await instance.initialize(await template(), async () => [], {})
 	const first = await instance.update({ files: {} })
 	const controller = new AbortController()

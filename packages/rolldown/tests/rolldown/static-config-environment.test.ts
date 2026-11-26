@@ -2,25 +2,34 @@ import { dirname, resolve } from 'node:path'
 import { readFile } from 'node:fs/promises'
 import { fileURLToPath } from 'node:url'
 import { createFixture } from 'fs-fixture'
+import * as v from 'valibot'
+import { formMeta, projectRawInput } from 'valibot-form'
 import { describe, expect, it } from 'vitest'
 import { createConfigSchemaSourceResolver } from '../../src/rolldown/plugins/configSourcePlugin'
 import { parseStaticRuntimeDeclaration } from '../../src/rolldown/plugins/staticConfigEnvironment'
 import { parseStandaloneWithLang } from '../../src/rolldown/plugins/pluginUtils'
 
-function staticEntry(options: { bindings: string; plugins?: string; extra?: string }): string {
+function staticEntry(options: {
+	bindings?: string
+	declarations?: string
+	extra?: string
+}): string {
 	return `
 import { defineHostApplication, envBinding, fileBinding } from '@pluxel/host'
 		import { AlphaConfig, AlphaVault, AlphaPlugin, BetaConfig, BetaPlugin, examplePlugins } from './plugins'
 		${options.extra ?? ''}
 		export default defineHostApplication(() => ({
 			name: 'fixture',
-			plugins: ${options.plugins ?? '[AlphaPlugin, BetaPlugin]'},
-			envBindings: ${options.bindings},
+			plugins: ${options.declarations ?? `[{plugin: AlphaPlugin, envBindings: ${options.bindings}}]`},
 		}))
 	`
 }
 
-async function parseFixture(code: string, requireStaticPlugins = false) {
+async function parseFixture(
+	code: string,
+	requireStaticPlugins = false,
+	files: Record<string, string> = {},
+) {
 	await using fixture = await createFixture({
 		'schemas.ts': `
 			import * as v from 'valibot'
@@ -36,6 +45,7 @@ async function parseFixture(code: string, requireStaticPlugins = false) {
 		`,
 		'plugins.ts': `
 			import * as v from 'valibot'
+			import { envBinding } from '@pluxel/host'
 			import { AlphaConfig, BetaConfig } from './schemas'
 			export * from './schemas'
 			export const AlphaVault = v.object({ token: v.string(), account: v.object({ password: v.string() }) })
@@ -47,13 +57,14 @@ async function parseFixture(code: string, requireStaticPlugins = false) {
 
 				readonly settings = this.configs.use(BetaConfig)
 			}
-			export const examplePlugins = [AlphaPlugin, BetaPlugin] as const
-		`,
-		'other-plugins.ts': `
-			export class AlphaPlugin {}
-			export const otherPlugins = [AlphaPlugin] as const
+			export const examplePlugins = [
+				{ plugin: AlphaPlugin, envBindings: [envBinding({config:{schema:AlphaConfig,mapping:{endpoint:'IMPORTED_ENDPOINT'}}})] },
+				{ plugin: BetaPlugin },
+			] as const
+			export const BillingReference = { address() { throw new Error('Address references must not execute') } }
 		`,
 		'entry.ts': code,
+		...files,
 	})
 	const id = fixture.getPath('entry.ts')
 	const ast = parseStandaloneWithLang(code, id)
@@ -79,8 +90,8 @@ async function parseFixture(code: string, requireStaticPlugins = false) {
 describe('static config environment declaration lowering', () => {
 	it('combines disjoint config bindings while rejecting whole-input overlaps', async () => {
 		const bindings = `[
-			envBinding(AlphaPlugin, {config: {schema: AlphaConfig, mapping: {endpoint: 'APP_ENDPOINT'}}}),
-			envBinding(AlphaPlugin, {config: {schema: AlphaConfig, mapping: {count: 'APP_COUNT'}}}),
+			envBinding({config: {schema: AlphaConfig, mapping: {endpoint: 'APP_ENDPOINT'}}}),
+			envBinding({config: {schema: AlphaConfig, mapping: {count: 'APP_COUNT'}}}),
 		]`
 		const facts = await parseFixture(staticEntry({ bindings }))
 		expect(facts.targets.map((target) => target.path)).toEqual([['endpoint'], ['count']])
@@ -94,24 +105,34 @@ describe('static config environment declaration lowering', () => {
 	it('resolves default and fork transport targets and scopes namespaces to Vault', async () => {
 		const facts = await parseFixture(
 			`
-			import { defineHostApplication, envBinding } from '@pluxel/host'
+			import { defineHostApplication } from '@pluxel/host/application'
+			import { envBinding as bind } from '@pluxel/host/bindings'
 			import { AlphaPlugin, AlphaConfig, AlphaVault } from './plugins'
-			export default defineHostApplication(() => ({plugins: [AlphaPlugin], envBindings: [
-				envBinding(AlphaPlugin, {config: {schema: AlphaConfig, mapping: {endpoint: 'DEFAULT_ENDPOINT'}}}),
-				envBinding(AlphaPlugin.nodeAddress('east'), {
-					config: {schema: AlphaConfig, mapping: {endpoint: 'EAST_ENDPOINT'}},
-					vault: {namespace: 'account', schema: AlphaVault, mapping: {token: 'EAST_TOKEN'}},
-				}),
-			]}))
+			export default defineHostApplication(() => ({
+				plugins: [{
+					plugin: AlphaPlugin,
+					envBindings: [
+						bind({config: {schema: AlphaConfig, mapping: {endpoint: 'DEFAULT_ENDPOINT'}}}),
+						bind({vault: {namespace: 'account', schema: AlphaVault, mapping: {token: 'DEFAULT_TOKEN'}}}),
+					],
+					forks: {
+						east: {envBindings: [bind({
+							config: {schema: AlphaConfig, mapping: {endpoint: 'EAST_ENDPOINT'}},
+							vault: {namespace: 'account', schema: AlphaVault, mapping: {token: 'EAST_TOKEN'}},
+						})]},
+					},
+				}],
+			}))
 		`,
 			true,
 		)
 		expect(facts.targets).toMatchObject([
 			{ kind: 'config', environmentName: 'DEFAULT_ENDPOINT' },
+			{ kind: 'vault', namespace: 'account', environmentName: 'DEFAULT_TOKEN' },
 			{ kind: 'config', forkId: 'east', environmentName: 'EAST_ENDPOINT' },
 			{ kind: 'vault', forkId: 'east', namespace: 'account', environmentName: 'EAST_TOKEN' },
 		])
-		expect(facts.targets[1]).not.toHaveProperty('namespace')
+		expect(facts.targets[2]).not.toHaveProperty('namespace')
 	})
 
 	it('accepts the public Host consumer fixture as a static application entry', async () => {
@@ -130,7 +151,7 @@ describe('static config environment declaration lowering', () => {
 
 	it('requires a direct factory and rejects hidden fields', async () => {
 		await expect(parseFixture(`export default { plugins: [] }`)).rejects.toThrow(
-			'must default-export defineHostApplication(factory)',
+			'must default-export defineHostApplication',
 		)
 		await expect(
 			parseFixture(`
@@ -139,6 +160,20 @@ describe('static config environment declaration lowering', () => {
 			export default defineHostApplication(() => ({ ...base, name: 'spread' }))
 		`),
 		).rejects.toThrow('does not allow spread properties')
+		await expect(
+			parseFixture(`
+			import { defineHostApplication } from '@pluxel/host/application'
+			export default defineHostApplication(() => ({}), {})
+		`),
+		).rejects.toThrow('requires one inline factory')
+	})
+
+	it('reads the platform-neutral application entry', async () => {
+		const result = await parseFixture(`
+			import { defineHostApplication } from '@pluxel/host/application'
+			export default defineHostApplication(() => ({ name: 'shared', plugins: [] }))
+		`)
+		expect(result).toEqual({ name: 'shared', targets: [], hasSources: false })
 	})
 
 	it('reads an asynchronous factory without running preparation or nested callbacks', async () => {
@@ -170,7 +205,7 @@ describe('static config environment declaration lowering', () => {
 				`
 			import { defineHostApplication, envBinding, fileBinding } from '@pluxel/host'
 			import { AlphaPlugin, BetaPlugin } from './plugins'
-			export default defineHostApplication((startup) => ({ plugins: startup.env.BETA ? [BetaPlugin] : [AlphaPlugin] }))
+			export default defineHostApplication((startup) => ({ plugins: startup.env.BETA ? [{plugin:BetaPlugin}] : [{plugin:AlphaPlugin}] }))
 		`,
 				true,
 			),
@@ -216,7 +251,7 @@ describe('static config environment declaration lowering', () => {
 		`{ const plugins = []; plugins.push('local') }`,
 		`{ class plugins {}; configure(plugins) }`,
 		`for (const plugins of []) { configure(plugins) }`,
-		`const addresses = plugins.map(plugin => plugin.nodeAddress())`,
+		`const addresses = plugins.map(({plugin}) => plugin.nodeAddress())`,
 	])(
 		'preserves module catalog identity across independent scopes and reads: %s',
 		async (preparation) => {
@@ -257,9 +292,11 @@ describe('static config environment declaration lowering', () => {
 			import { defineHostApplication, envBinding, fileBinding } from '@pluxel/host'
 			import { AlphaPlugin, AlphaConfig, AlphaVault } from './plugins'
 			export default defineHostApplication(() => ({
-				plugins: [AlphaPlugin],
-				fileBindings: [fileBinding(AlphaPlugin, {config:{schema:AlphaConfig,path:'/must/not/read.json'}, vault:{schema:AlphaVault,paths:{token:'/must/not/read.secret'}}})],
-				envBindings: [envBinding(AlphaPlugin, {config:{schema:AlphaConfig,mapping:{endpoint:'APP_ENDPOINT'}}, vault:{namespace:'account-a',schema:AlphaVault,mapping:{token:'APP_TOKEN', account:{password:'APP_PASSWORD'}}}})],
+				plugins: [{
+					plugin: AlphaPlugin,
+					fileBindings: [fileBinding({config:{schema:AlphaConfig,path:'/must/not/read.json'}, vault:{schema:AlphaVault,paths:{token:'/must/not/read.secret'}}})],
+					envBindings: [envBinding({config:{schema:AlphaConfig,mapping:{endpoint:'APP_ENDPOINT'}}, vault:{namespace:'account-a',schema:AlphaVault,mapping:{token:'APP_TOKEN', account:{password:'APP_PASSWORD'}}}})],
+				}],
 			}))
 		`,
 			true,
@@ -280,33 +317,222 @@ describe('static config environment declaration lowering', () => {
 			import { defineHostApplication, envBinding as bind } from '@pluxel/host'
 			import { AlphaPlugin } from './plugins'
 			import * as v from 'valibot'
-			export default defineHostApplication(() => ({ plugins: [AlphaPlugin], envBindings: [
-				bind(AlphaPlugin, {config: {schema: v.object({name: v.string()}), mapping: {name: 'APP_NAME'}}})
-			]}))
+			export default defineHostApplication(() => ({ plugins: [{plugin: AlphaPlugin, envBindings: [
+				bind({config: {schema: v.object({name: v.string()}), mapping: {name: 'APP_NAME'}}})
+			]}] }))
 		`)
 		expect(facts.targets[0]).toMatchObject({ environmentName: 'APP_NAME', path: ['name'] })
 	})
 
+	it('projects the selected path before transforms without evaluating callbacks or sibling schemas', async () => {
+		const code = staticEntry({
+			extra: `
+				import * as vb from 'valibot'
+				import { formMeta as present } from 'valibot-form'
+				const fail = () => { throw new Error('callback must not run') }
+				const settings = {
+					...readDynamicEntries(),
+					port: vb.optional(vb.pipe(
+						vb.pipe(vb.number(), vb.integer(), vb.minValue(1), vb.check(fail)),
+						vb.transform(fail),
+						vb.minValue(50),
+						present({ description: 'Input port.', hint: readDynamicHint() }),
+					), fail),
+					other: vb.pipe(vb.string(), vb.check(fail)),
+					lazy: vb.lazy(fail),
+					opaque: createSiblingSchema(),
+				}
+				const StaticConfig = vb.strictObject(settings)
+			`,
+			bindings: "[envBinding({config:{schema:StaticConfig,mapping:{port:'APP_PORT'}}})]",
+		})
+		let callbacks = 0
+		const fail = (): never => {
+			callbacks += 1
+			throw new Error('callback must not run')
+		}
+		const runtime = v.strictObject({
+			port: v.optional(
+				v.pipe(
+					v.pipe(v.number(), v.integer(), v.minValue(1), v.check(fail)),
+					v.transform((_port): number => fail()),
+					v.minValue(50),
+					formMeta({ description: 'Input port.' }),
+				),
+				fail,
+			),
+			other: v.pipe(v.string(), v.check(fail)),
+			lazy: v.lazy(fail),
+		})
+		const facts = await parseFixture(code)
+		expect(facts.targets[0].projection).toEqual(projectRawInput(runtime, ['port']))
+		expect(facts.environmentExample).toContain(
+			'# Input port.\n# Input: number (finite integer, >= 1)\n# APP_PORT=',
+		)
+		expect(projectRawInput(runtime, ['lazy'])).toMatchObject({
+			ok: false,
+			kind: 'unsupported_schema',
+			schemaType: 'lazy',
+		})
+		await expect(
+			parseFixture(code.replace("{port:'APP_PORT'}", "{lazy:'APP_LAZY'}")),
+		).rejects.toThrow(/APP_LAZY.*\[unsupported_schema\].*schema type lazy/)
+		expect(callbacks).toBe(0)
+	})
+
+	it('distinguishes a missing literal path from an ambiguous intersection path', async () => {
+		const code = (key: string) =>
+			staticEntry({
+				extra: `
+				import * as v from 'valibot'
+				const Combined = v.intersect([
+					v.object({ duplicated: v.number(), port: v.number() }),
+					v.object({ duplicated: v.string(), name: v.string() }),
+				])
+			`,
+				bindings: `[envBinding({config:{schema:Combined,mapping:{${key}:'APP_VALUE'}}})]`,
+			})
+		await expect(parseFixture(code('duplicated'))).rejects.toThrow(
+			/path \["duplicated"\] \[ambiguous_path\].*multiple intersection options/,
+		)
+		await expect(parseFixture(code('missing'))).rejects.toThrow(
+			/path \["missing"\] \[path_not_found\].*does not exist on the intersection/,
+		)
+		const facts = await parseFixture(code('port'))
+		expect(facts.targets[0].projection.transport).toBe('number')
+	})
+
+	it.each([
+		'entries.port = v.string()',
+		'Object.assign(entries, {port: v.string()})',
+		'const alias = entries; configure(alias)',
+		'const alias = entries; alias.port = v.string()',
+		'({chosen: entries.port} = overrides)',
+		'configure(flag ? entries : defaults)',
+		'function install() { configure(entries) }; install()',
+		'function install(v) { v.object(entries) }; install(customFactories)',
+	])('rejects a write or escape of the selected entry at its use: %s', async (write) => {
+		const code = staticEntry({
+			extra: `import * as v from 'valibot'
+			const entries = {port: v.number(), other: v.number()};
+			${write}
+			const Settings = v.object(entries)`,
+			bindings: "[envBinding({config:{schema:Settings,mapping:{port:'APP_PORT'}}})]",
+		})
+		await expect(parseFixture(code)).rejects.toThrow(
+			/APP_PORT.*entry\.ts.*this use may change schema property "port"/,
+		)
+	})
+
+	it('preserves known factory reads, untouched properties and independent lexical scopes', async () => {
+		const code = staticEntry({
+			extra: `import * as v from 'valibot'
+			const entries = {port: v.number(), other: v.number()}
+			const alias = entries
+			alias.other = v.string()
+			function install(entries) { configure(entries) }
+			declare function useUnrelatedEntries(entries: unknown): void
+			const make = v.strictObject
+			const First = make(entries)
+			const Settings = make(alias)`,
+			bindings: "[envBinding({config:{schema:Settings,mapping:{port:'APP_PORT'}}})]",
+		})
+		const facts = await parseFixture(code)
+		expect(facts.targets[0].projection).toEqual(
+			projectRawInput(v.strictObject({ port: v.number(), other: v.string() }), ['port']),
+		)
+	})
+
+	it('checks the use of imported entries in the consumer scope and locates the write there', async () => {
+		const code = staticEntry({
+			extra: "import { Settings } from './fields'",
+			bindings: "[envBinding({config:{schema:Settings,mapping:{port:'APP_PORT'}}})]",
+		})
+		const declarations = 'export const entries = {port:v.number()};'
+		const wrap = (write: string) => ({
+			'entries.ts': `import * as v from 'valibot'; ${declarations}`,
+			'fields.ts': `import * as v from 'valibot'; import * as source from './entries';\n${write}\nexport const Settings = v.strictObject(source.entries)`,
+		})
+		const baseline = await parseFixture(code, false, wrap(''))
+		expect(baseline.targets[0].projection.transport).toBe('number')
+		await expect(
+			parseFixture(code, false, wrap('const alias = source.entries; override(alias)')),
+		).rejects.toThrow(/fields\.ts:2:31 .*this use may change schema property "port"/)
+	})
+
+	it('uses ESM binding identity across star exports, including the known package namespaces', async () => {
+		const code = staticEntry({
+			extra: "import { Settings } from './barrel'",
+			bindings: "[envBinding({config:{schema:Settings,mapping:{port:'APP_PORT'}}})]",
+		})
+		const files = {
+			'base.ts':
+				"import * as v from 'valibot'; export const Settings = v.object({ port: v.number() })",
+			'first.ts': "export { Settings } from './base'",
+			'second.ts': "import { Settings } from './base'; export { Settings }",
+			'barrel.ts':
+				"export * from 'valibot'; export * from 'valibot-form'; export * from './first'; export * from './second'",
+		}
+		const facts = await parseFixture(code, false, files)
+		expect(facts.targets[0].projection.transport).toBe('number')
+		const alias = "import { Settings as base } from './base'; export const Settings = base"
+		await expect(
+			parseFixture(code, false, { ...files, 'first.ts': alias, 'second.ts': alias }),
+		).rejects.toThrow(/cannot resolve schema expression Settings/)
+	})
+
 	it.each([
 		["[{plugin: AlphaPlugin, config:{endpoint:'APP_ENDPOINT'}}]", 'must call envBinding'],
+		["[envBinding({config:{mapping:{endpoint:'APP_ENDPOINT'}}})]", 'requires schema and mapping'],
 		[
-			"[envBinding(AlphaPlugin, {config:{mapping:{endpoint:'APP_ENDPOINT'}}})]",
-			'requires schema and mapping',
-		],
-		[
-			"[envBinding(AlphaPlugin, {config:{schema:AlphaConfig,mapping:{endpoint:'APP_ENDPOINT'},extra:true}})]",
+			"[envBinding({config:{schema:AlphaConfig,mapping:{endpoint:'APP_ENDPOINT'},extra:true}})]",
 			'unknown config binding field',
 		],
 		[
-			"[envBinding(AlphaPlugin, {vault:{schema:AlphaVault,mapping:'APP_VAULT'}})]",
+			"[envBinding({vault:{schema:AlphaVault,mapping:'APP_VAULT'}})]",
 			'must declare record keys directly',
 		],
 		[
-			"[envBinding(AlphaPlugin, {vault:{schema:AlphaVault,mapping:{missing:'APP_TOKEN'}}})]",
+			"[envBinding({vault:{schema:AlphaVault,mapping:{missing:'APP_TOKEN'}}})]",
 			'is not declared by the Vault binding schema',
+		],
+		[
+			"[envBinding({vault:{namespace:'constructor',schema:AlphaVault,mapping:{token:'APP_TOKEN'}}})]",
+			'vault.namespace must be a valid Vault key',
+		],
+		[
+			"[envBinding({vault:{schema:AlphaVault,mapping:{'to\\nken':'APP_TOKEN'}}})]",
+			'vault.mapping record key must be a valid Vault key',
+		],
+		[
+			`[
+				envBinding({vault:{namespace:'account',schema:AlphaVault,mapping:{token:'FIRST'}}}),
+				envBinding({vault:{namespace:'account',schema:AlphaVault,mapping:{token:'SECOND'}}}),
+			]`,
+			'duplicate environment target for Plugin AlphaPlugin',
 		],
 	])('rejects malformed explicit bindings: %s', async (bindings, message) => {
 		await expect(parseFixture(staticEntry({ bindings }))).rejects.toThrow(message)
+	})
+
+	it('checks statically closed Vault record keys while retaining runtime fallbacks', async () => {
+		const entry = (schema: string) =>
+			staticEntry({
+				extra: `import * as v from 'valibot'; const VaultSchema = v.record(${schema}, v.string())`,
+				bindings: "[envBinding({vault:{schema:VaultSchema,mapping:{other:'APP_TOKEN'}}})]",
+			})
+		await expect(parseFixture(entry("v.picklist(['first', 'second'])"))).rejects.toThrow(
+			/\[path_not_found\].*Vault binding key "other" is not declared/,
+		)
+		for (const runtimeKey of [
+			"v.fallback(v.literal('first'), computeFallback)",
+			"v.pipe(v.literal('first'), v.check(checkKey))",
+		]) {
+			const facts = await parseFixture(entry(runtimeKey))
+			expect(facts.targets).toMatchObject([
+				{ environmentName: 'APP_TOKEN', path: ['other'], projection: { transport: 'string' } },
+			])
+		}
 	})
 
 	it('rejects factory-local helpers that shadow the imported binding authority', async () => {
@@ -314,11 +540,13 @@ describe('static config environment declaration lowering', () => {
 			parseFixture(`
 			import { defineHostApplication, envBinding } from '@pluxel/host'
 			import { AlphaPlugin, AlphaConfig } from './plugins'
-			export default defineHostApplication((envBinding) => ({plugins:[AlphaPlugin],envBindings:[
-				envBinding(AlphaPlugin,{config:{schema:AlphaConfig,mapping:{endpoint:'APP_ENDPOINT'}}})
-			]}))
+			export default defineHostApplication((envBinding) => ({plugins:[{plugin:AlphaPlugin,envBindings:[
+				envBinding({config:{schema:AlphaConfig,mapping:{endpoint:'APP_ENDPOINT'}}})
+			]}]}))
 		`),
-		).rejects.toThrow('must call envBinding imported from @pluxel/host directly')
+		).rejects.toThrow(
+			'must call envBinding imported directly from @pluxel/host/bindings or @pluxel/host',
+		)
 	})
 
 	it('preserves module schema identity when a factory shadows the schema import', async () => {
@@ -326,9 +554,9 @@ describe('static config environment declaration lowering', () => {
 			parseFixture(`
 			import { defineHostApplication, envBinding } from '@pluxel/host'
 			import { AlphaPlugin, AlphaConfig } from './plugins'
-			export default defineHostApplication((AlphaConfig) => ({plugins:[AlphaPlugin],envBindings:[
-				envBinding(AlphaPlugin,{config:{schema:AlphaConfig,mapping:{endpoint:'APP_ENDPOINT'}}})
-			]}))
+			export default defineHostApplication((AlphaConfig) => ({plugins:[{plugin:AlphaPlugin,envBindings:[
+				envBinding({config:{schema:AlphaConfig,mapping:{endpoint:'APP_ENDPOINT'}}})
+			]}]}))
 		`),
 		).rejects.toThrow(/AlphaConfig/)
 	})
@@ -337,7 +565,7 @@ describe('static config environment declaration lowering', () => {
 		const facts = await parseFixture(
 			staticEntry({
 				bindings:
-					"[envBinding(AlphaPlugin, { config: { schema: AlphaConfig, mapping: {endpoint:'PLUXEL_CUSTOM_ENDPOINT'} } })]",
+					"[envBinding({ config: { schema: AlphaConfig, mapping: {endpoint:'PLUXEL_CUSTOM_ENDPOINT'} } })]",
 			}),
 		)
 		expect(facts.environmentExample).toContain('# PLUXEL_CUSTOM_ENDPOINT=')
@@ -345,12 +573,12 @@ describe('static config environment declaration lowering', () => {
 
 	it('uses source resolution and raw-input projection to render deterministic fan-out', async () => {
 		const code = staticEntry({
-			bindings: `[
-				envBinding(AlphaPlugin, { config: { schema: AlphaConfig, mapping: {
+			declarations: `[
+				{plugin: AlphaPlugin, envBindings: [envBinding({ config: { schema: AlphaConfig, mapping: {
 					count: 'APP_COUNT',
 					endpoint: 'APP_ENDPOINT',
-				} } }),
-				envBinding(BetaPlugin, { config: { schema: BetaConfig, mapping: { endpoint: 'APP_ENDPOINT' } } }),
+				} } })]},
+				{plugin: BetaPlugin, envBindings: [envBinding({ config: { schema: BetaConfig, mapping: { endpoint: 'APP_ENDPOINT' } } })]},
 			]`,
 		})
 		const first = await parseFixture(code)
@@ -377,51 +605,68 @@ describe('static config environment declaration lowering', () => {
 		expect(first.targets).toHaveLength(3)
 	})
 
-	it('supports a starter-style imported const Plugin catalog without executing it', async () => {
-		const facts = await parseFixture(
-			staticEntry({
-				plugins: 'examplePlugins',
-				bindings:
-					"[envBinding(AlphaPlugin, { config: { schema: AlphaConfig, mapping: { endpoint: 'APP_ENDPOINT' } } })]",
-			}),
-			true,
-		)
+	it('reads an imported const declaration array and its bindings from their own scope', async () => {
+		const facts = await parseFixture(staticEntry({ declarations: 'examplePlugins' }), true)
+		expect(facts.plugins?.map(({ local }) => local)).toEqual(['AlphaPlugin', 'BetaPlugin'])
 		expect(facts.targets).toHaveLength(1)
-		expect(facts.environmentExample).toContain('# APP_ENDPOINT=')
+		expect(facts.environmentExample).toContain('# IMPORTED_ENDPOINT=')
 	})
 
-	it('accepts an imported Plugin alias by canonical source binding identity', async () => {
+	it('uses the canonical source binding of an imported Plugin alias', async () => {
 		const facts = await parseFixture(
 			staticEntry({
 				extra: `import { AlphaPlugin as ConfiguredAlpha } from './plugins'`,
-				plugins: 'examplePlugins',
-				bindings:
-					"[envBinding(ConfiguredAlpha, { config: { schema: AlphaConfig, mapping: { endpoint: 'APP_ENDPOINT' } } })]",
+				declarations: `[{plugin: ConfiguredAlpha, envBindings: [
+					envBinding({ config: { schema: AlphaConfig, mapping: { endpoint: 'APP_ENDPOINT' } } })
+				]}]`,
 			}),
+			true,
 		)
-
-		expect(facts.targets).toHaveLength(1)
+		expect(facts.plugins?.map(({ local }) => local)).toEqual(['AlphaPlugin'])
 		expect(facts.targets[0]?.pluginName).toBe('ConfiguredAlpha')
 	})
 
-	it('rejects a same-named Plugin from a different catalog module', async () => {
+	it('reports both positions when aliases repeat a fixed declaration', async () => {
 		await expect(
 			parseFixture(
 				staticEntry({
-					extra: `import { otherPlugins } from './other-plugins'`,
-					plugins: 'otherPlugins',
-					bindings:
-						"[envBinding(AlphaPlugin, { config: { schema: AlphaConfig, mapping: { endpoint: 'APP_ENDPOINT' } } })]",
+					extra: `import { AlphaPlugin as ConfiguredAlpha } from './plugins'`,
+					declarations: '[{plugin: AlphaPlugin}, {plugin: ConfiguredAlpha}]',
 				}),
+				true,
 			),
-		).rejects.toThrow('is not present in the statically resolved plugins catalog')
+		).rejects.toThrow(/plugins\[1\].*plugins\[0\]/)
+	})
+
+	it('projects bindings on an address-only declaration without loading its implementation', async () => {
+		const facts = await parseFixture(`
+			import { defineHostApplication, envBinding } from '@pluxel/host'
+			import { BillingReference, AlphaConfig } from './plugins'
+			export default defineHostApplication(startup => {
+				const paths = startup.env.MANAGED_PATHS ?? []
+				return {
+					sources: paths.map(file => ({ file })),
+					pluginNodes: [{
+						definition: BillingReference.address(),
+						forks: {
+							east: {envBindings: [envBinding({config: {schema: AlphaConfig, mapping: {endpoint: 'BILLING_ENDPOINT'}}})]},
+						},
+					}],
+				}
+			})
+		`)
+		expect(facts.hasSources).toBe(true)
+		expect(facts.plugins).toBeUndefined()
+		expect(facts.targets).toMatchObject([
+			{ pluginName: 'BillingReference', forkId: 'east', environmentName: 'BILLING_ENDPOINT' },
+		])
 	})
 
 	it.each([
 		{
 			name: 'indirect array',
 			code: staticEntry({
-				extra: `const declarations = [envBinding(AlphaPlugin, { config: { schema: AlphaConfig, mapping: 'APP_CONFIG' } })]`,
+				extra: `const declarations = [envBinding({ config: { schema: AlphaConfig, mapping: 'APP_CONFIG' } })]`,
 				bindings: 'declarations',
 			}),
 			message: 'must be a direct array literal',
@@ -429,22 +674,21 @@ describe('static config environment declaration lowering', () => {
 		{
 			name: 'indirect bind',
 			code: staticEntry({
-				extra: `const declaration = envBinding(AlphaPlugin, { config: { schema: AlphaConfig, mapping: 'APP_CONFIG' } })`,
+				extra: `const declaration = envBinding({ config: { schema: AlphaConfig, mapping: 'APP_CONFIG' } })`,
 				bindings: '[declaration]',
 			}),
-			message: 'must call envBinding imported from @pluxel/host directly',
+			message: 'must call envBinding imported directly from @pluxel/host/bindings or @pluxel/host',
 		},
 		{
 			name: 'spread element',
 			code: staticEntry({ bindings: '[...[]]' }),
-			message: 'must call envBinding imported from @pluxel/host directly',
+			message: 'must call envBinding imported directly from @pluxel/host/bindings or @pluxel/host',
 		},
 		{
 			name: 'indirect mapping',
 			code: staticEntry({
 				extra: `const mapping = { endpoint: 'APP_ENDPOINT' }`,
-				bindings:
-					'[envBinding(AlphaPlugin, { config: { schema: AlphaConfig, mapping: mapping } })]',
+				bindings: '[envBinding({ config: { schema: AlphaConfig, mapping: mapping } })]',
 			}),
 			message: 'must be a direct environment name string or object literal',
 		},
@@ -452,7 +696,7 @@ describe('static config environment declaration lowering', () => {
 			name: 'mapping spread',
 			code: staticEntry({
 				bindings:
-					"[envBinding(AlphaPlugin, { config: { schema: AlphaConfig, mapping: { ...{ endpoint: 'APP_ENDPOINT' } } } })]",
+					"[envBinding({ config: { schema: AlphaConfig, mapping: { ...{ endpoint: 'APP_ENDPOINT' } } } })]",
 			}),
 			message: 'does not allow spread properties',
 		},
@@ -460,7 +704,7 @@ describe('static config environment declaration lowering', () => {
 			name: 'computed key',
 			code: staticEntry({
 				bindings:
-					"[envBinding(AlphaPlugin, { config: { schema: AlphaConfig, mapping: { ['endpoint']: 'APP_ENDPOINT' } } })]",
+					"[envBinding({ config: { schema: AlphaConfig, mapping: { ['endpoint']: 'APP_ENDPOINT' } } })]",
 			}),
 			message: 'must use a direct key',
 		},
@@ -468,7 +712,7 @@ describe('static config environment declaration lowering', () => {
 			name: 'duplicate key',
 			code: staticEntry({
 				bindings:
-					"[envBinding(AlphaPlugin, { config: { schema: AlphaConfig, mapping: { endpoint: 'APP_A', endpoint: 'APP_B' } } })]",
+					"[envBinding({ config: { schema: AlphaConfig, mapping: { endpoint: 'APP_A', endpoint: 'APP_B' } } })]",
 			}),
 			message: 'contains duplicate key "endpoint"',
 		},
@@ -476,7 +720,7 @@ describe('static config environment declaration lowering', () => {
 			name: 'non-portable name',
 			code: staticEntry({
 				bindings:
-					"[envBinding(AlphaPlugin, { config: { schema: AlphaConfig, mapping: { endpoint: 'app-endpoint' } } })]",
+					"[envBinding({ config: { schema: AlphaConfig, mapping: { endpoint: 'app-endpoint' } } })]",
 			}),
 			message: 'must match [A-Z_][A-Z0-9_]*',
 		},
@@ -484,20 +728,16 @@ describe('static config environment declaration lowering', () => {
 			name: 'duplicate Plugin binding',
 			code: staticEntry({
 				bindings: `[
-					envBinding(AlphaPlugin, { config: { schema: AlphaConfig, mapping: { endpoint: 'APP_A' } } }),
-					envBinding(AlphaPlugin, { config: { schema: AlphaConfig, mapping: { endpoint: 'APP_B' } } }),
+					envBinding({ config: { schema: AlphaConfig, mapping: { endpoint: 'APP_A' } } }),
+					envBinding({ config: { schema: AlphaConfig, mapping: { endpoint: 'APP_B' } } }),
 				]`,
 			}),
 			message: 'duplicate environment target for Plugin AlphaPlugin',
 		},
 		{
-			name: 'unknown catalog Plugin',
-			code: staticEntry({
-				plugins: '[BetaPlugin]',
-				bindings:
-					"[envBinding(AlphaPlugin, { config: { schema: AlphaConfig, mapping: { endpoint: 'APP_ENDPOINT' } } })]",
-			}),
-			message: 'is not present in the statically resolved plugins catalog',
+			name: 'bare constructor',
+			code: staticEntry({ declarations: '[AlphaPlugin]' }),
+			message: 'must be a direct declaration object',
 		},
 	])('rejects $name with one direct-declaration diagnostic', async ({ code, message }) => {
 		await expect(parseFixture(code)).rejects.toThrow(message)
@@ -507,9 +747,9 @@ describe('static config environment declaration lowering', () => {
 		await expect(
 			parseFixture(
 				staticEntry({
-					bindings: `[
-						envBinding(AlphaPlugin, { config: { schema: AlphaConfig, mapping: { count: 'APP_SHARED' } } }),
-						envBinding(BetaPlugin, { config: { schema: BetaConfig, mapping: { endpoint: 'APP_SHARED' } } }),
+					declarations: `[
+						{plugin: AlphaPlugin, envBindings: [envBinding({ config: { schema: AlphaConfig, mapping: { count: 'APP_SHARED' } } })]},
+						{plugin: BetaPlugin, envBindings: [envBinding({ config: { schema: BetaConfig, mapping: { endpoint: 'APP_SHARED' } } })]},
 					]`,
 				}),
 			),
@@ -518,8 +758,8 @@ describe('static config environment declaration lowering', () => {
 		await expect(
 			parseFixture(
 				staticEntry({
-					bindings:
-						"[envBinding(BetaPlugin, { config: { schema: BetaConfig, mapping: { unknown: 'APP_UNKNOWN' } } })]",
+					declarations:
+						"[{plugin: BetaPlugin, envBindings: [envBinding({ config: { schema: BetaConfig, mapping: { unknown: 'APP_UNKNOWN' } } })]}]",
 				}),
 			),
 		).rejects.toThrow('Raw input transport cannot be derived from schema type unknown')
@@ -540,8 +780,10 @@ import { defineHostApplication, envBinding, fileBinding } from '@pluxel/host'
 				import { UnsafeConfig, UnsafePlugin } from './schema'
 				export default defineHostApplication(() => ({
 					name: 'unsafe',
-					plugins: [UnsafePlugin],
-					envBindings: [envBinding(UnsafePlugin, { config: { schema: UnsafeConfig, mapping: 'APP_CONFIG' } })],
+					plugins: [{
+						plugin: UnsafePlugin,
+						envBindings: [envBinding({ config: { schema: UnsafeConfig, mapping: 'APP_CONFIG' } })],
+					}],
 				}))
 			`,
 		})
@@ -562,7 +804,7 @@ import { defineHostApplication, envBinding, fileBinding } from '@pluxel/host'
 					throw new Error(message)
 				},
 			}),
-		).rejects.toThrow('only direct Valibot and valibot-form factory calls are allowed')
+		).rejects.toThrow('cannot resolve makeSchema to a Valibot or valibot-form factory import')
 	})
 
 	it('allows only an explicit inert Valibot factory set', async () => {
@@ -580,8 +822,10 @@ import { defineHostApplication, envBinding, fileBinding } from '@pluxel/host'
 				import { UnsafeConfig, UnsafePlugin } from './schema'
 				export default defineHostApplication(() => ({
 					name: 'unsafe-valibot-method',
-					plugins: [UnsafePlugin],
-					envBindings: [envBinding(UnsafePlugin, { config: { schema: UnsafeConfig, mapping: 'APP_CONFIG' } })],
+					plugins: [{
+						plugin: UnsafePlugin,
+						envBindings: [envBinding({ config: { schema: UnsafeConfig, mapping: 'APP_CONFIG' } })],
+					}],
 				}))
 			`,
 		})
@@ -602,6 +846,6 @@ import { defineHostApplication, envBinding, fileBinding } from '@pluxel/host'
 					throw new Error(message)
 				},
 			}),
-		).rejects.toThrow('Valibot method v.getDescription is not an allowed inert schema factory')
+		).rejects.toThrow('valibot.getDescription is not an allowed inert schema factory')
 	})
 })

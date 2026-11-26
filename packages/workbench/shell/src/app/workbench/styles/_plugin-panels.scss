@@ -1,55 +1,15 @@
 /* Content-local summaries, configuration, outline and actions. */
 
-.plx-pluginWorkbench__summaryRow {
-	align-items: flex-start;
-	display: grid;
-	gap: 8px;
-	grid-template-columns: 52px minmax(0, 1fr);
-}
-
-.plx-pluginWorkbench__summaryLabel {
-	color: var(--mantine-color-dimmed);
-	font-size: var(--mantine-font-size-xs);
-	font-weight: 600;
-	line-height: 1.7;
-	white-space: nowrap;
-}
-
-.plx-pluginWorkbench__summaryValue {
-	align-items: center;
-	display: flex;
-	flex-wrap: wrap;
-	gap: 8px;
-	min-width: 0;
-}
-
-.plx-pluginWorkbench__summaryValue[data-wrap='true'] {
-	align-items: flex-start;
-}
-
-.plx-pluginWorkbench__summaryText {
-	flex: 1;
-	min-width: 0;
-	overflow: hidden;
-	text-overflow: ellipsis;
-	white-space: nowrap;
-}
-
 .plx-pluginWorkbench__diagnostics {
 	border-top: 1px solid var(--plx-border);
 	font-size: var(--mantine-font-size-xs);
-	padding-top: 6px;
+	padding-top: 4px;
 }
 
 .plx-pluginWorkbench__diagnostics > summary {
 	color: var(--mantine-color-dimmed);
 	cursor: pointer;
 	font-weight: 600;
-}
-
-.plx-pluginWorkbench__diagnostics .plx-pluginWorkbench__summaryValue {
-	display: block;
-	overflow-wrap: anywhere;
 }
 
 .plx-pluginWorkbench__statusIssues {
@@ -62,7 +22,7 @@
 .plx-pluginDependencyDetail {
 	display: flex;
 	flex-direction: column;
-	gap: 12px;
+	gap: var(--mantine-spacing-xs);
 	min-width: 0;
 }
 
@@ -72,7 +32,7 @@
 
 .plx-pluginDependencyDetail__section + .plx-pluginDependencyDetail__section {
 	border-top: 1px solid color-mix(in srgb, var(--plx-border) 76%, transparent);
-	padding-top: 9px;
+	padding-top: 6px;
 }
 
 .plx-pluginDependencyDetail__sectionHeader {
@@ -123,9 +83,9 @@
 	display: grid;
 	gap: 8px;
 	grid-template-columns: minmax(0, 1fr) auto;
-	min-height: 40px;
+	min-height: 34px;
 	min-width: 0;
-	padding: 4px 4px 4px 8px;
+	padding: 2px 4px 2px 8px;
 }
 
 .plx-pluginDependencyDetail__relation + .plx-pluginDependencyDetail__relation {

@@ -9,20 +9,29 @@ import {
 	distributionCommandDefinition,
 	docsCommandDefinition,
 	newCommandDefinition,
-	normalizeDevArgs,
 	publishCommandDefinition,
 	sourceCommandDefinition,
 	workspaceCommandDefinition,
 } from './command-manifest'
+import {
+	scriptCommand,
+	normalizeDevArgs,
+	isControlCommandPath,
+	printCommandFailure,
+} from '@pluxel/agent-sdk/internal/cli'
 
 const commands = new Map<string, SubCommandable>([
+	['script', scriptCommand],
 	[
 		'pncat',
 		define({ name: 'pncat', description: 'Run the bundled pncat CLI with its native arguments' }),
 	],
 	[
 		'dev',
-		lazy(() => import('./commands/dev').then((module) => module.devCommand), devCommandDefinition),
+		lazy(
+			() => (ctx) => import('./commands/dev').then((module) => module.devCommand.run!(ctx)),
+			devCommandDefinition,
+		),
 	],
 	[
 		'docs',
@@ -89,6 +98,7 @@ const rootCommand = define({
 })
 
 async function main() {
+	let failureReported = false
 	try {
 		const argv = process.argv.slice(2)
 		if (argv[0] === 'pncat') {
@@ -102,8 +112,29 @@ async function main() {
 			version: pkg.version,
 			renderHeader: renderCliHeader,
 			subCommands: commands,
+			onBeforeCommand(ctx) {
+				// Run before Gunshi's global decorator renders validation errors on stdout.
+				if (
+					isControlCommandPath(ctx.commandPath, ctx.validationError) &&
+					!ctx.values.help &&
+					!ctx.values.version &&
+					ctx.validationError
+				)
+					throw ctx.validationError
+			},
+			async onErrorCommand(ctx, error) {
+				if (
+					!isControlCommandPath(ctx.commandPath, ctx.validationError) ||
+					ctx.values.help ||
+					ctx.values.version
+				)
+					return
+				await printCommandFailure(ctx.log, error, error === ctx.validationError)
+				failureReported = true
+			},
 		})
 	} catch (error) {
+		if (failureReported) return
 		const msg = error instanceof Error ? error.message : String(error)
 		process.stderr.write(`${msg}\n`)
 		process.exitCode = 1

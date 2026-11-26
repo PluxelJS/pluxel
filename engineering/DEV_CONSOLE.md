@@ -1,111 +1,53 @@
-# Host Development Console
+# Vite 项目执行与开发控制
 
-用户工作流与 API 示例见 [在线开发控制台](../docs/development/dev-console.md)。本文件记录执行边界和实现约束。
-
-本页用于修改控制台实现。实际执行脚本的唯一操作说明是[开发控制台指南](../docs/development/dev-console.md)。实现审查按[提交与执行](#提交与执行) → [Vite 更新边界](#vite-更新与执行边界) → [操作与资源](#操作-api-与资源)定位；transport/discovery/预算见[执行通道与预算](#执行通道与预算)。
+Host-vite 负责在项目模块图中加载脚本、等待源码更新并绑定当前 Host。脚本 SDK 和执行器由 [Agent Workflow](AGENT_WORKFLOW.md) 维护，操作步骤见[开发控制台](../docs/development/dev-console.md)。
 
 ## Ownership 与包边界
 
-`host({ entry, devConsole: true })` 安装可选的本地执行服务。CLI 是外部提交者；脚本由现有 `pluxel` environment ModuleRunner 求值，并借用当前 Host root。控制台不是 Plugin，不安装 Context property，不创建 test host、第二个 logger 或第二个 database。
+`host({ entry, scripts: true })` 启用私有本地通道。项目脚本使用 `@pluxel/agent-sdk/host` 的同一套 `Script` / `ScriptSdk`，通过现有 `pluxel` environment 的唯一 `ModuleRunner` 加载；通道可用于没有 Services、Management 或 Workbench 的 Host。
 
-- `@pluxel/host-vite/console`：独立脚本类型、typed targets、稳定错误与借用的 `RootContext`。
-- Host-vite：每 run 的基础插件/配置操作、执行队列、源码加载、IPC、Vite 更新 barrier、HMR 批次控制、host epoch 与清理。其中宿主操作仅依赖 Core/Host；控制台不依赖官方服务或其 optional peers。
-- Services 的 `vitePreset()`：组合官方开发附件，将 `devConsole` 开关交给通用 `host()`；不实现控制台。
-- 应用脚本：显式 import 服务 token/API，通过 `dev.ctx` 访问已安装能力，并拥有直接调用的取消传递与资源释放。
-- CLI：只做 discovery、脚本或 HMR 控制提交、结果与取消，不求值 Plugin，也不依赖开发驱动的发布产物。
-
-Dev API 不继承 RuntimeTestHost。插件与基础配置操作直接委托 Host，不要求 Management，不复制其协议或展示层。服务操作使用各包现有公开契约，不注册控制台适配器或修改 Context shape。
-
-跨命令只保留业务 ID、runId 与 JSON cursor，不持久化 live handles。Workbench 操作复用领域包的 `openLocalWorkbenchEntry()` 与 portable value consumption；CLI/编辑器必须分别保留请求接纳、脚本终态和领域结果，不能把它们合为一个 success。
+项目和上传执行共用 Host 的 ScriptExecutor，统一接纳、主体、预算、去重、取消和结算。脚本与 HMR 各有一个串行执行位置，使等待更新的脚本不会阻塞 apply。Host-vite 借用现有 Host、Context 和日志设施。
 
 ## 提交与执行
 
-一个 run 调用一个 project-local TS/JS 模块的导出函数，输入从 unknown 校验。`defineDevConsole()` 只提供回调上下文推导；函数只有一个 `dev` 参数，包含本次执行的 `id/input/signal` 与宿主访问。控制台执行不是 Plugin generation，不进入插件图，不因 HMR 自动重放。模块顶层不是可重复操作入口。一次运行拥有 id、signal、临时 driver scope；宿主业务状态持续存在。
+客户端在提交前生成 run ID、请求摘要和 v3 receipt。查询和取消由 `script result/cancel` 按原 receipt 连接，回执保存 root、instanceId、serviceId 和请求摘要。通用协议、输出与错误见 [Agent Workflow](AGENT_WORKFLOW.md#运行身份失败和预算)。Unix carrier 使用原生 RpcTransport/RpcSession；长度前缀只负责 framing、字节预算、背压和关闭。
 
-接纳前验证协议、实例凭据、允许的 realpath、输入/源码限额及函数导出名。入口不能在 .pluxel/.git/node_modules。已由 Vite 合法加载的工作区依赖可位于 Vite root 之外；追踪时只接受真实 absolute file，忽略虚拟/NUL id 和 node_modules。
+实例描述位于 `.pluxel/dev-console`：目录权限 0700、文件 0600，短 socket 的临时父目录也是 0700。握手验证 protocol、instanceId、nonce 后授予共享控制 target；nonce/socket 不进入 receipt 或公开状态。启动时捕获 project/profile/Pitchfork qualified serviceId，连接时连同 root 和实例核对归属。发现和执行直接使用这些记录。
 
-入口在提交、prepare 与 load 后核对内容 hash，变化报 source_changed。依赖使用执行时当前模块图，不承诺整个文件系统 snapshot。公共失败保留阶段（admission/load/execute/encode/cleanup），生产领域结果不被执行 envelope 吞并。
+默认发现严格报告坏记录与版本失配，用 root/recordFile/expectedProtocol/actualProtocol 提供可审查诊断，不自动删除。显式 instance 和原 receipt 在验证目录权限后只读取目标记录，仍完整检查文件权限、归属和握手；无关记录不阻断精确目标。
 
-脚本返回值先按纯 JSON 数据约束复制，拒绝 accessor/class/capability/toJSON side effect。undefined 遵循原生 JSON 约定；非有限数字、BigInt、循环等明确失败。结果包含 host epoch 和前后 catalog/state revision；日志数据由脚本显式读取并返回。失败或编码错误不回滚已经提交的操作，也不自动重试。
+项目请求包含文件、exportName 和 SHA-256。接纳前验证 realpath、源码预算与摘要；入口须位于 Vite root 内，并排除 node_modules、.git、.pluxel。`ModuleRunner` 合法加载的 workspace 依赖可以在 root 外。类型检查沿用最近的 TypeScript 配置和原生解析规则；starter 的服务端脚本继承 Host 配置，见[脚本布局](../docs/development/dev-console.md#编写可交互的开发脚本)。
 
 ## Vite 更新与执行边界
 
-每个 Vite server 只有既有 `pluxel` environment runner；不追加一次性 query ID 创建无限 namespace，不全量 clearCache，不建立第二套 import cache。运行未改变的导出函数可以直接复用模块。
+执行顺序为 prepare → watcher 更新屏障 → 绑定当前 Host epoch → load → 身份与摘要复核。prepare 后才选择 Host；绑定后 replacement 会撤回原 run，调用不能转到新 root。
 
-每次调用先核对已知依赖版本。尚未观察的修改等待真实 Vite watcher 在 route 同步入队时确认，再等待有限 barrier；此等待受 run signal 与 deadline 约束。等待范围覆盖统一开发驱动已经接纳的源码与来源更新序列。paused 且有运行时待处理变化时以 `hmr_pending` 拒绝加载，不隐式 apply；auto 也不能将失败后保留的 pending 当成已应用。不以全局 idle 或 sleep 模拟源码已应用。
+每个已运行入口保留有界依赖 hash。后续加载发现变动时，先等待真实 watcher 在 route 同步 admission 确认，再等待有限更新屏障，均受 signal/deadline 控制。首次加载使用当前已提交 Host 和已观察更新；屏障覆盖已接纳序列，不提供整个文件系统快照。
 
-真实 route admission 对已跟踪源码记录有界 hash 并唤醒等待者。来源 listener 与 Vite hook 的确认不重复失效同一已发布 constructor。控制台不合成文件事件、不吞真实 watcher 事件。删除/无法读取的文件仍进入正常 removal 路径。
-
-首次加载没有历史依赖版本，保证的是当前已提交宿主和已观察更新；不声称发现所有尚未观察的磁盘修改。typed target 与当前 catalog 身份不符时明确失败。禁用或忽略 watcher 的已知依赖修改可能等到 run timeout，控制台不会另建更新权威。
-
-失效必须发生在 route publication 之前。新 constructor 已成为 committed authority 后再失效，会令脚本 import 身份与 running Plugin 分裂。static catalog 更新采用精确 importer invalidation，未变化的 built Plugin 保持当前实例。script-only 更新不改变 catalog 或重建 root。
-
-脚本体不锁住整个 coordinator/HMR；它可以调用 restart 等异步 mutation。后台任务、浏览器和未来更新可交错，单个脚本不是全局事务。
+模块失效在 route publication 前完成。static catalog 精确失效 importer，script-only 更新保留 Plugin 实例；同一 watcher 事件不会再次驱逐已发布 constructor。删除和读取失败进入来源移除路径。paused 且有运行时 pending，或 auto 模式仍有失败 pending 时，加载以 `hmr_pending` 结束。constructor 与 catalog 不符报告 `stale_target`；定义缺失和节点未运行分别诊断。
 
 ### 独立 HMR 控制
 
-pause/apply/resume 直接调用 Host-vite 实例拥有的批次调度器，不加载项目模块、不依赖应用 ready，不借用 Host run scope。脚本和控制命令各有一个串行执行位置，避免等待更新的脚本占住应用该更新所需的入口；它们共用现有 IPC 的接纳、receipt、结果、取消与保留预算。run snapshot 用 `kind: script | hmr` 区分源码与控制元数据，不通过 `defineDevConsole()` 暴露另一套应用控制 API。full-host replacement 只撤销旧脚本 run，不能撤销引起 replacement 的控制操作；Vite server 关闭才结束该控制通道。
+pause/apply/resume 直接调用 [HMR 调度器](HMR.md#开发批次调度)，独立于脚本 loader、Host scope 和应用 ready。控制 owner 随 Vite 实例存活；full-host replacement 只 abortScripts，不撤回促成 replacement 的控制 run。
 
-`dev status` 的 hmr 与控制结果中的 hmr 读取同一调度状态，控制结果同时包含 application。状态暴露 mode、running、pending.files/full、observedRevision 与 attemptedRevision；不保留无限文件名或逐事件历史。最近候选和 lifecycle 结果仍读取 application.latestUpdate，控制请求成功不替代领域状态。pause 等待已有工作，apply 留在 paused 应用一次 pending，resume 等待有限工作后继续 auto；合并、失败恢复与关闭语义见 [HMR 调度](HMR.md#开发批次调度)。
-
-控制取消关闭进一步执行入口并等待已经开始的工作真实结算；不回滚已经切换的模式或已开始的候选提交。receipt 始终绑定原 Vite 实例，断线不能自动重放，也不能转投重启后的新实例。
+取消关闭后续接纳并等待已开始的控制工作结算。已经切换的模式和已开始的候选保留真实结果。只有 Vite server 关闭才结束开发 owner。
 
 ## 操作 API 与资源
 
-`plugins.require()` 对 typed constructor/`{plugin,forkId}` 做当前 catalog identity 检查；地址只用于管理操作，不用来声称具体实例类型。普通 JS 实例没有通用撤销语义，跨 await 使用过期对象的限制需诚实说明。
+Node/Vite 都由 `executeHostScript` 创建、关闭和排空同一 `ScriptScope`。`sdk.ctx` 提供 run-scoped 根 Context 视图；`await sdk.plugin(address).context()` 捕获 running generation 的 Plugin Context 视图。内建能力直接使用固定属性，应用安装的服务通过 `service` 读取；借用值使用守卫 view 保持原生 API，缺失、访问和契约错误保留原义。直接业务调用与原生资源由脚本 await、传递取消和释放。
 
-`plugins.isRunning()` 同步读取当前 running 状态。`list/status` 返回 Host 状态，`start/stop/restart` 返回 Host 所有的 `PluginApplyReportSnapshot`；配置结果使用相同报告投影，保留 `saved/application/applyFailure`。投影只把 Core slot 转成稳定地址，保留生命周期问题与错误，不将提交成功等同于启动成功。Management 与控制台共享投影，不维护平行协议。`updates.latest()` 读取 Host 最近的应用更新，覆盖尚无插件节点的候选失败。
+class 的 `nodeAddress(id?)` 在不可变地址上绑定精确 constructor。SDK 在规范化前固定证据；status/instance 在 committed read 中校验，生命周期在同一 exclusive session 内校验并提交，使用 coordinator 的 `pluginLifecycleUpdate`。校验与执行之间不能插入候选更替，缓存的旧 constructor（含 fork）在 replacement 后仍为 stale。
 
-`dev.ctx` 是本次执行借用的 RootContext；访问 getter 需要 scope 仍开启。通过 `ctx.require(Token)` 访问 all/root capability；owner-only capability 仍需要真实插件 Context。已经取得的 Context、实例或 handle 不能被 JavaScript getter 撤销，不得跨 run/epoch 缓存。执行不拥有宿主 effects，也不提供同名的临时清理设施；脚本使用 `using`、`await using` 或 `try/finally`。
+class 地址提供完整实例类型和动态配置；生成控制入口额外关联 Schema input/output 与 Part 配置。两者复用相同 run/generation 准入和成员视图，见 [Plugin Control](PLUGIN_CONTROL.md#typed-配置与实例)。SDK 控制成功直接返回值，失败抛出保留领域报告的 `ScriptError`。
 
-每 run 的 DevScope 在 abort 时关闭 admission；dispose 等待已接纳的 Host 操作。配置/lifecycle mutation 沿生产路径 settle，不声称强制中断或回滚。直接服务调用、Plugin 方法和用户自行创建的资源不受自动跟踪；脚本显式传递 `dev.signal`，await 操作并使用 `using`/`try/finally` 释放资源。
-
-full-host replacement 先 abort 旧 run、drain 已跟踪 Host 操作，再释放旧 root。后续 run 使用新 epoch。任意未协作脚本本体不能被强制终止；旧 run 不转接新 root，执行 slot 在其 settle 前仍被占用。
-
-## 日志
-
-Core 始终提供 `ctx.logger`，不要求插件 import 日志包。宿主 logging 配置拥有输出、过滤与 store；开启控制台不会配置日志或自动增加 store。应用通过 `runtime.logtape: logtape(...)` 选择输出；脚本从 `@pluxel/core/logging` 导入并解析当前 root 的 `Logging` 能力，调用既有 `RuntimeLogging`/store API，返回有界普通数据。`flushStores()` 只刷 store sink buffer，不依赖 policy persistence；正常 `flush()` 同时刷 store 和 policy。
-
-日志读取保留真实 epoch、sequence、retention 和 gap 契约，游标只是时间窗口，不提供因果隔离。控制台不提供另一条 HTTP/log follow 路由，也不在 run envelope 自动附加日志边界。
-
-## 执行通道与预算
-
-首版使用具有文件权限保护的 Unix socket，仅支持 Unix 系统。project discovery 目录 0700、描述文件 0600，socket 放在当前用户私有短临时目录；nonce/instance/root/protocol 握手发生在求值前。它是受信任项目代码执行能力，不是隔离恶意代码的 sandbox，也不通过 Vite 公共 HTTP listener 暴露。
-
-日常 CLI 从 `pluxel.dev` 中的具名 profile 解析 Vite root 与启动方式，配置发现规则由 [CLI_WORKSPACES](CLI_WORKSPACES.md) 维护。控制台以 root realpath、启动归属和 instanceId 定位运行实例；按 profile 筛选后只有一个候选时自动选择，多个候选必须显式 `--instance`，不能越过归属检查。启用控制台的 profile 的 status/instances/run/hmr 不查询 Pitchfork，也不自动启动；显式 console:false 的 Pitchfork 服务由 CLI 服务状态分支处理，不进入控制台发现或执行。
-
-前台命令由 CLI 自动注入 `PLUXEL_DEV_PROJECT` 与 `PLUXEL_DEV_PROFILE`，控制台启动时捕获声明 package 的 canonical 目录与 profile，结合 Vite root 校验归属。两项环境变量不要求用户配置。Pitchfork 服务捕获原生 `PITCHFORK_DAEMON_ID` 为不可变 serviceId，按配置中的短服务名过滤，启动后额外核对完整服务 ID。无配置的手动 Vite 可按 root/instance 连接。握手核对 instanceId/root/project/profile/serviceId，服务端核对 instanceId/nonce；原实例消失不重定向操作。
-
-协议固定为单请求/单响应 JSON 行。CLI 独立实现最小 wire contract，真实 client/server 互操作测试保护一致性；协议是 internal，不导出业务 RPC client 或 transport adapter。同步 CLI 在 stderr 先给带 `receipt` 的接纳信息，stdout 保持单一最终 JSON；run/result/cancel 输出保留 receipt 与 root/instanceId/runId 诊断。receipt 编码原 root、instanceId、runId 和 serviceId，不含 nonce；result/cancel 仅凭 receipt 定位原实例，不接收另一套目标选项，不因重启而重新选择当前实例。客户端错误以 code 供分支处理，以 context 和 hint 提供目标与恢复步骤；多实例只返回公开候选 metadata，不输出 nonce 或 socket path。
-
-| 预算                 | 上限/默认                                      |
-| -------------------- | ---------------------------------------------- |
-| 同时执行/排队        | 脚本与 HMR 控制各 1 / 16                       |
-| run timeout          | 默认30秒，最多5分钟，覆盖排队与执行            |
-| 输入/输出            | 各1MiB、64层、100000节点                       |
-| frame / open sockets | 2MiB / 32，socket空闲5秒关闭                   |
-| 完成结果             | 最近100个，总计16MiB；不保留已完成的大输入     |
-| admission tombstones | 每实例100000次，到限拒绝，不因结果过期允许重放 |
-| 脚本入口/本地依赖    | 128 / 每入口4096；每源码文件1MiB               |
-
-取消终态保留取消原因 `error`；若实际执行抛错不同于取消原因，另存 `executionError`。错误诊断按标准 AggregateError/SuppressedError 有界展开消息（深度 3、最多 16 节点、每组至多 4 个 Aggregate 子错误、最终 4096 字符，循环截断），不根据 cause 猜测业务/清理阶段。
-
-queued 取消不执行；running 取消保持 cancelling，直到真实代码 settle。断线/超时不自动重放。结果过期与执行结果不确定是不同失败；进程崩溃后的 exactly-once 不作承诺。
+结算后读取的 `revisions.after` 包含排空期间完成的变更。replacement 先 abort 原脚本并 drain 跟踪工作，再释放旧 root；同进程中无法强制终止不协作脚本。日志复用 Core Logging 的有界读取，或直接使用 `sdk.ctx.logger`；共享模块的 global console 属于应用进程。
 
 ## 实现与验证入口
 
-- `packages/host-vite/src/console.ts`、`src/dev/`：脚本契约、Host 操作与 run scope。
-- `packages/host-vite/src/console/`：队列、协议、IPC 与 Host attachment。
-- `packages/services/src/vite.ts`：官方开发附件组合。
-- `packages/cli/src/dev/client.ts`、`src/commands/dev.ts`：实例发现与命令交互。
-- Host-vite console tests：无服务 Host 的插件/配置操作、取消、Host replacement 与公开脚本入口。
-- Host-vite console/Vite scenarios：共享执行器、源码/HMR、JSON/socket 边界及 CLI 互操作。
-- Services Vite scenarios：真实 watcher 恢复、服务 replacement、HTTP/WebSocket 与 Workbench 制品。
+- [`packages/host/src/agent/`](../packages/host/src/agent/)：共用 SDK、scope、执行和传输。
+- [`packages/host-vite/src/console/`](../packages/host-vite/src/console/)：attachment/source 的 `ModuleRunner`、摘要、依赖和 epoch；server/discovery 的发现与握手。
+- [`packages/agent-sdk/src/client/`](../packages/agent-sdk/src/client/)：普通 Promise 客户端、归属选择和原 receipt 恢复。
+- [`packages/host-vite/tests/`](../packages/host-vite/tests/)：server/client/attachment 测试覆盖无 Services Host、fork、stale constructor、原生 Cap’n Web、摘要和权限。
+- [`hmr-control.smoke.mjs`](../packages/host-vite/tests/hmr-control.smoke.mjs) 经真实 watcher 验证同批入口的语法修复、脚本与应用共享 constructor、暂停及 Host replacement。[`initial-source-recovery.smoke.mjs`](../packages/host-vite/tests/initial-source-recovery.smoke.mjs) 验证缺失的导入出现时自动恢复。
 
-修改 public types、loader admission 或协议时，检查实际脚本调用边界，并运行直接 owner 的测试与类型检查。服务脚本遵循相应能力原有的回归覆盖。
-
-## 配置输入诊断
-
-`dev.config.get(target)` 与 `inspect(target)` 经过 coordinator 查询当前 Host，区分 mode/readonly、原始 managedInput、effectiveInput、schema 输出 config、sources/shadowedPaths 与 managedRevision。校验失败保留输入快照供修复。`dev.policy.get()` 提供八项独立 mode、稀疏保存输入、生效策略和执行预算待重建字段；不再提供重复的 state.inspect 入口。
-
-配置 mutation 使用 `{ set?, remove? }` 和可选 `expectedManagedRevision`；reset 省略 paths 删除全部保存输入，指定 `[]` 无操作，删除后按 mode 继承。声明覆盖不代表文档只读。策略和配置都返回 persistence 与运行采用事实，控制台只投影稳定地址，不绕过事务或另开后端。state 不观察外部文件，config 通过已订阅的文档接纳外部变化。公开用法见 [开发控制台](../docs/development/dev-console.md#编辑配置)，取值与事务由 [CONFIG](./CONFIG.md) 维护。
+通用执行和 Node/Workers 验证由 [Agent Workflow](AGENT_WORKFLOW.md#验证入口与已验证范围)维护。

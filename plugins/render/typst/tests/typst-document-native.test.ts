@@ -4,16 +4,24 @@ import { tmpdir } from 'node:os'
 import { dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { expect, it } from 'vitest'
-import type { TypstSourceFiles } from '@pluxel/plugin-typst/source'
 import { loadNativeCompiler } from '../src/native-binding.ts'
-import runTypst from '../src/worker.ts'
+import { compileFixture } from './compile-fixture.ts'
 import { createTypstDocumentEditor } from '../src/tiptap/document-editor.js'
-import { DocumentProject, documentEntry, documentSeed } from './consumer/document-private/project'
+import {
+	chapterPath,
+	DocumentProject,
+	documentAsset,
+	documentAssetPath,
+	documentDirectory,
+	documentEntry,
+	documentSeed,
+	documentTemplate,
+} from './consumer/document-private/project'
 import { fontFamilies } from './consumer/source-example'
 
 const normalized = (value: string) => value.normalize('NFKC').replaceAll(/\s/g, '')
 
-async function save(root: string, files: TypstSourceFiles) {
+async function save(root: string, files: Readonly<Record<string, string>>) {
 	for (const [path, contents] of Object.entries(files)) {
 		await mkdir(dirname(join(root, path)), { recursive: true })
 		await writeFile(join(root, path), contents)
@@ -21,14 +29,15 @@ async function save(root: string, files: TypstSourceFiles) {
 }
 
 it('natively prints the private three-chapter document and paginates complete edited content with working cross-references', async () => {
-	const seed = await documentSeed()
+	const seed = documentSeed()
 	const model = new DocumentProject(seed)
 	const titles = model.view().documents.map(({ title }) => title)
 	expect(titles).toEqual(['项目背景', '研究方法', '实施计划'])
 	const background = model.view().documents.find(({ id }) => id === 'background')!
-	const bodyHeading = background.document.content!.find((node) => node.type === 'heading')!
+	const edited = structuredClone(background.document)
+	const bodyHeading = edited.content!.find((node) => node.type === 'heading')!
 	bodyHeading.attrs = { ...bodyHeading.attrs, level: 1 }
-	background.document.content!.push({
+	edited.content!.push({
 		type: 'paragraph',
 		content: [
 			{ type: 'text', text: '引用策略验收：' },
@@ -50,7 +59,7 @@ it('natively prints the private three-chapter document and paginates complete ed
 			{ type: 'text', text: '。' },
 		],
 	})
-	model.edit(background.id, background.document)
+	model.edit(background.id, { kind: 'tiptap', document: edited })
 	const fontPaths = fontFamilies.map((family) => {
 		const [matched, path] = execFileSync('fc-match', ['-f', '%{family}\n%{file}', family], {
 			encoding: 'utf8',
@@ -68,21 +77,26 @@ it('natively prints the private three-chapter document and paginates complete ed
 	)
 	const tail = '长章末尾验收：全部观察记录已完整保留，后续研究方法与实施计划仍可引用。'
 	try {
+		await save(root, {
+			[documentEntry]: documentTemplate,
+			[documentAssetPath.slice(1)]: documentAsset,
+		})
 		const captures: { pages: number; nextChapter: number; printed: string }[] = []
 		for (const revision of [1, 2]) {
 			if (revision === 2) {
 				const chapter = model.view().documents.find(({ id }) => id === 'background')!
-				chapter.document.content!.push(
+				const document = structuredClone(chapter.document)
+				document.content!.push(
 					...[...paragraphs, tail].map((value) => ({
 						type: 'paragraph',
 						content: [{ type: 'text', text: value }],
 					})),
 				)
-				model.edit(chapter.id, chapter.document)
+				model.edit(chapter.id, { kind: 'tiptap', document })
 				model.reorder(['background', 'schedule', 'approach'])
 			}
-			await save(root, model.files())
-			const result = runTypst({
+			await save(join(root, 'inputs'), model.files())
+			const result = compileFixture({
 				root,
 				entry: documentEntry,
 				revision,
@@ -102,15 +116,14 @@ it('natively prints the private three-chapter document and paginates complete ed
 			)
 			expect(chapters.map(({ title }) => title)).toEqual(view.documents.map(({ title }) => title))
 			const navigation = model.navigation(result.navigation)
-			for (const value of [
-				'private-proposal',
-				'.typ',
-				'#import',
-				'"path":',
-				'"line":',
-				'"column":',
-			])
+			for (const value of ['inputs/chapters/', '.typ', '"path":', '"line":', '"column":'])
 				expect(JSON.stringify(navigation)).not.toContain(value)
+			expect(navigation.targets).toContainEqual(
+				expect.objectContaining({
+					id: 'object-architecture',
+					location: expect.objectContaining({ documentId: 'approach' }),
+				}),
+			)
 			const firstText = navigation.points.find(
 				(point) => point.documentId === 'background' && point.position === 1,
 			)
@@ -210,17 +223,11 @@ it('natively prints the private three-chapter document and paginates complete ed
 				printed,
 			})
 			for (const [path, contents] of Object.entries(seed)) {
-				if (
-					path === 'private-proposal/chapters/background.typ' ||
-					path === 'private-proposal/chapters.json'
-				)
-					continue
+				if (path === chapterPath('background') || path === documentDirectory) continue
 				expect(model.files()[path]).toEqual(contents)
 			}
-			for (const [path, contents] of Object.entries(seed).filter(
-				([file]) => file === documentEntry || file.startsWith('lib/'),
-			))
-				expect(await readFile(join(root, path))).toEqual(Buffer.from(contents))
+			expect(await readFile(join(root, documentEntry), 'utf8')).toBe(documentTemplate)
+			expect(await readFile(join(root, documentAssetPath.slice(1)), 'utf8')).toBe(documentAsset)
 		}
 		expect(captures[0]!.pages).toBeGreaterThanOrEqual(3)
 		expect(captures[1]!.pages).toBeGreaterThan(captures[0]!.pages)

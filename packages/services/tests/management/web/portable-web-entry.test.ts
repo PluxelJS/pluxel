@@ -21,7 +21,7 @@ describe('@pluxel/services/management/client framework boundary', () => {
 			ready: true,
 			protocol: {
 				name: 'pluxel.management',
-				major: 9,
+				major: 17,
 				capabilities: ['plugin-catalog'],
 			},
 			application: { product: null },
@@ -34,6 +34,9 @@ describe('@pluxel/services/management/client framework boundary', () => {
 			workbench: { enabled: true },
 		}
 		expect(parseRuntimeMeta(metadata)).toEqual(metadata)
+		expect(() =>
+			parseRuntimeMeta({ ...metadata, protocol: { ...metadata.protocol, major: 16 } }),
+		).toThrow('runtime metadata.protocol.major must be 17')
 		expect(() =>
 			parseRuntimeMeta({ ...metadata, platform: { ...metadata.platform, mode: ['test'] } }),
 		).toThrow(/platform.mode/)
@@ -48,7 +51,7 @@ describe('@pluxel/services/management/client framework boundary', () => {
 			ready: true,
 			protocol: {
 				name: 'pluxel.management',
-				major: 9,
+				major: 17,
 				capabilities: ['plugin-catalog'],
 			},
 			application: { product: null },

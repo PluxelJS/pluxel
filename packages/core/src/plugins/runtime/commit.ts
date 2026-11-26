@@ -67,6 +67,9 @@ export function computeInitPlan<T>(
 	for (const [id, degree] of remaining) {
 		if (degree > 0) leftovers.add(id)
 	}
+	if (leftovers.size === 0) {
+		return { nodes: plannedNodes, leftovers, dependencies, graph, inDegree }
+	}
 
 	// Prune graph/inDegree to only planned nodes. This avoids wasted scheduler work on leftovers.
 	const nodeSet = new Set(plannedNodes)
@@ -126,12 +129,9 @@ export async function startPluginsTopo<T>(
 	const failed = new Set<T>(plan.leftovers)
 	if (plan.nodes.length === 1 && failed.size === 0) {
 		const id = plan.nodes[0]!
-		const deps = plan.dependencies.get(id) ?? []
-		if (deps.length === 0) {
-			const ok = await instantiateAndStart(id)
-			if (!ok) failed.add(id)
-			return failed
-		}
+		// Any prerequisites are outside this plan and already settled.
+		if (!(await instantiateAndStart(id))) failed.add(id)
+		return failed
 	}
 
 	const concurrency = normalizeConcurrency(opts.concurrency, 8)

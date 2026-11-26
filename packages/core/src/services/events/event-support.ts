@@ -1,9 +1,15 @@
 import type { Context } from '../../context/Context'
-import type { EventureOptions, IEventMap } from 'eventure'
+import {
+	observeSubscriptionEnd,
+	type EventureOptions,
+	type IEventMap,
+	type Unsubscribe,
+} from 'eventure'
 
-export function deferEventCleanup(owner: Context, cleanup: () => void): void {
+export function deferEventCleanup(owner: Context, cleanup: Unsubscribe): void {
 	try {
-		owner.effects.defer(cleanup)
+		const registration = owner.effects.defer(cleanup)
+		observeSubscriptionEnd(cleanup, () => registration.cancel())
 	} catch (error) {
 		try {
 			cleanup()
@@ -12,6 +18,20 @@ export function deferEventCleanup(owner: Context, cleanup: () => void): void {
 		}
 		throw error
 	}
+}
+
+export function ownEventWaiter<T extends Promise<unknown> & { cancel(): void }>(
+	owner: Context,
+	pending: T,
+): T {
+	try {
+		deferEventCleanup(owner, pending.cancel)
+	} catch (error) {
+		// The caller receives the ownership failure and never receives the cancelled waiter.
+		void pending.catch(() => {})
+		throw error
+	}
+	return pending
 }
 
 export function withEventLogger<T extends IEventMap<T>>(

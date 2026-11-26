@@ -1,5 +1,4 @@
-import { Badge, Button, Group, Loader, Paper, Stack, Table, Text } from '@mantine/core'
-import { IconRefresh } from '@tabler/icons-react'
+import { Badge, Group, Loader, Paper, Stack, Table, Text, Title } from '@mantine/core'
 import { useQuery } from '@tanstack/react-query'
 import {
 	type SecurityAuditEvent,
@@ -8,15 +7,12 @@ import {
 } from '../../runtime'
 import { EmptyState, ErrorState } from '../../components'
 import { managementQueryKeys } from '../managementQuery'
+import { RefreshAction } from '../workbench/RefreshAction'
 
 const eventTimeFormatter = new Intl.DateTimeFormat(undefined, {
 	dateStyle: 'short',
 	timeStyle: 'short',
 })
-
-const tableWrapStyle = {
-	overflowX: 'auto' as const,
-}
 
 function toneForEventStatus(status: SecurityAuditEvent['status']): string {
 	switch (status) {
@@ -38,61 +34,52 @@ export function SecurityAuditScreen() {
 	const events = query.data ?? []
 	const loading = query.isPending
 	const refreshing = query.isFetching
-	const error = query.error
-		? runtimeErrorMessage(query.error, 'Failed to load security audit events')
-		: null
+	const error = query.error ? runtimeErrorMessage(query.error, '加载安全审计事件失败') : null
 
 	if (loading) {
 		return (
-			<Group justify="center" p="xl">
+			<Group role="status" justify="center" p="xl">
 				<Loader size="sm" />
-				<Text c="dimmed">Loading audit events</Text>
+				<Text c="dimmed">正在读取审计记录…</Text>
 			</Group>
 		)
 	}
 
 	if (error) {
 		return (
-			<ErrorState
-				title="Audit events unavailable"
-				message={error}
-				onRetry={() => void query.refetch()}
-			/>
+			<ErrorState title="无法读取审计记录" message={error} onRetry={() => void query.refetch()} />
 		)
 	}
 
 	const failures = events.filter((event) => event.status === 'failure').length
 
 	return (
-		<Stack gap="md" p="var(--plx-page-padding)" style={{ flex: 1, minHeight: 0 }}>
-			<Paper withBorder p="sm">
-				<Group justify="space-between" align="center" wrap="wrap" gap="xs">
-					<Group gap={6} wrap="wrap">
-						<Badge variant="light" color="gray">
-							事件 {events.length}
-						</Badge>
-						<Badge variant="light" color={failures > 0 ? 'red' : 'gray'}>
-							失败 {failures}
-						</Badge>
-					</Group>
-					<Button
-						leftSection={<IconRefresh size={16} />}
-						variant="light"
-						size="xs"
-						loading={refreshing}
-						onClick={() => void query.refetch()}
-					>
-						刷新
-					</Button>
+		<Stack gap="md" miw={0}>
+			<Group gap="sm">
+				<Title order={2} size="h4">
+					审计事件
+				</Title>
+				<RefreshAction
+					label="刷新审计记录"
+					loading={refreshing}
+					onClick={() => void query.refetch()}
+				/>
+				<Group gap="xs">
+					<Badge variant="light" color="gray">
+						事件 {events.length}
+					</Badge>
+					<Badge variant="light" color={failures > 0 ? 'red' : 'gray'}>
+						失败 {failures}
+					</Badge>
 				</Group>
-			</Paper>
+			</Group>
 
-			<Paper withBorder p="sm" style={{ flex: 1, minHeight: 0 }}>
+			<Paper withBorder p="sm">
 				{events.length === 0 ? (
 					<EmptyState title="暂无事件" description="安全事件会显示在这里。" minHeight="100%" />
 				) : (
-					<div style={tableWrapStyle}>
-						<Table striped highlightOnHover verticalSpacing={6} miw={720}>
+					<Table.ScrollContainer minWidth={720}>
+						<Table striped highlightOnHover verticalSpacing={6}>
 							<Table.Thead>
 								<Table.Tr>
 									<Table.Th>时间</Table.Th>
@@ -122,7 +109,7 @@ export function SecurityAuditScreen() {
 								))}
 							</Table.Tbody>
 						</Table>
-					</div>
+					</Table.ScrollContainer>
 				)}
 			</Paper>
 		</Stack>

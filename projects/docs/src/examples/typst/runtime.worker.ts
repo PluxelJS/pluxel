@@ -1,4 +1,5 @@
-import { createHost, type PluginHost } from '@pluxel/host/browser'
+import { defineHostApplication } from '@pluxel/host/application'
+import { startHost, type PluginHost } from '@pluxel/host/embedded'
 import { TypstPlugin } from '@pluxel/plugin-typst/wasm'
 import compilerWasmUrl from '@myriaddreamin/typst-ts-web-compiler/wasm?url&no-inline'
 import rendererWasmUrl from '@myriaddreamin/typst-ts-renderer/wasm?url&no-inline'
@@ -16,24 +17,23 @@ function send(message: ExampleResponse) {
 	postMessage(message)
 }
 
-async function start() {
-	host = await createHost({
-		plugins: [TypstPlugin, ThemePlugin, ReportPlugin],
-		config: {
-			records: [
-				{
-					owner: TypstPlugin.nodeAddress(),
-					config: {
-						compilerWasmUrl: new URL(compilerWasmUrl, self.location.href).href,
-						rendererWasmUrl: new URL(rendererWasmUrl, self.location.href).href,
-						fontUrls: [new URL(fontUrl, self.location.href).href],
-					},
-				},
-			],
+const application = defineHostApplication(() => ({
+	plugins: [
+		{
+			plugin: TypstPlugin,
+			config: {
+				compilerWasmUrl: new URL(compilerWasmUrl, self.location.href).href,
+				rendererWasmUrl: new URL(rendererWasmUrl, self.location.href).href,
+				fontUrls: [new URL(fontUrl, self.location.href).href],
+			},
 		},
-		policy: { autoStart: [ReportPlugin.nodeAddress()] },
-	})
-	await host.start()
+		{ plugin: ThemePlugin },
+		{ plugin: ReportPlugin, autoStart: true },
+	],
+}))
+
+async function start() {
+	host = await startHost(application)
 	const status = await host.status()
 	if (status.summary.running !== 3) {
 		throw new Error(

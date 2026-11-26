@@ -1,0 +1,9 @@
+{
+	"extends": "expo/tsconfig.base",
+	"compilerOptions": {
+		"strict": true,
+		"experimentalDecorators": true,
+		"lib": ["ES2024", "ESNext.Disposable", "DOM", "DOM.Iterable"]
+	},
+	"include": ["App.tsx", "src"]
+}

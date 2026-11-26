@@ -18,14 +18,9 @@ export default defineConfig({
 				exports['./plugins'] = { '@pluxel/hmr': './src/plugins.ts', default: './dist/plugins.mjs' }
 			return exports
 		},
-		exclude: ['internal/database/pglite', 'internal/database/postgres'],
 	},
 	deps: {
-		neverBundle: [
-			/^@pluxel\//,
-			'#pluxel/database-driver/pglite',
-			'#pluxel/database-driver/postgres',
-		],
+		neverBundle: [/^@pluxel\//],
 	},
 	entry: {
 		plugins: './src/plugins.ts',
@@ -50,19 +45,19 @@ export default defineConfig({
 		'elysia/vite': './src/development/elysia.ts',
 		'node/vite': './src/development/node.ts',
 
-		index: './src/index.ts',
 		internal: './src/internal.ts',
-		'database/pglite': './src/database/pglite.ts',
-		'database/postgres': './src/database/postgres.ts',
-		database: './src/database.ts',
-		'internal/database/pglite': './src/database/adapters/pglite.ts',
-		'internal/database/postgres': './src/database/adapters/postgres.ts',
+		'pg/pglite': './src/database/pg/pglite.ts',
+		'pg/postgres': './src/database/pg/postgres.ts',
+		pg: './src/pg.ts',
+		sqlite: './src/sqlite.ts',
+		'sqlite/libsql': './src/database/sqlite/libsql.ts',
+		'sqlite/d1': './src/database/sqlite/d1.ts',
+		'sqlite/d1/migrate': './src/database/sqlite/d1-migrate.ts',
 		elysia: './src/elysia.ts',
 		'elysia/node': './src/elysia-node.ts',
 		node: './src/node.ts',
 		workers: './src/workers.ts',
 		commands: './src/commands.ts',
-		vault: './src/vault.ts',
 	},
 	format: ['esm'],
 	dts: { eager: true },

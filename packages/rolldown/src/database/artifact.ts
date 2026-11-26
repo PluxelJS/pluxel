@@ -1,98 +1,223 @@
-import { createHash } from 'node:crypto'
 import { existsSync } from 'node:fs'
-import { readFile, readdir } from 'node:fs/promises'
+import { mkdir, readFile, readdir, writeFile } from 'node:fs/promises'
+import { readMigrationFiles, type MigrationMeta } from 'drizzle-orm/migrator'
 import { dirname, join, relative, resolve } from 'pathe'
+import { validatePostgresMigrationSql } from './postgres-sql.ts'
 
 export const databaseManifestFile = 'pluxel-migrations.json'
 
+export type DatabaseDialect = 'postgresql' | 'sqlite'
 export type DatabaseEvolutionArtifact = 'migrations' | 'reset-on-schema-change'
-
-export type DatabaseMigrationArtifact = Readonly<{
-	id: string
-	checksum: string
-	sql: string
-}>
 
 export type DatabaseBuildArtifact = Readonly<{
 	evolution: DatabaseEvolutionArtifact
 	lineage: string
-	migrations: readonly DatabaseMigrationArtifact[]
+	migrations: readonly MigrationMeta[]
 }>
 
-export type DatabaseMigrationManifest = Readonly<{
-	version: 2
-	evolution?: DatabaseEvolutionArtifact
-	lineage: string
-	migrations: readonly Readonly<{ id: string; file: string; checksum: string }>[]
-}>
+type JournalEntry = Readonly<{ idx: number; tag: string; when: number; breakpoints: boolean }>
+export type DatabaseHistory = Awaited<ReturnType<typeof readDatabaseHistory>>
 
-export async function loadDatabaseArtifactForSource(
-	sourceFile: string,
-	boundary: string,
-): Promise<
-	Readonly<{ packageRoot: string; migrationsDir: string; artifact: DatabaseBuildArtifact }>
-> {
-	const packageRoot = findDatabasePackageRoot(sourceFile, boundary)
-	if (!packageRoot) {
-		throw new Error(`[database] cannot locate package.json for ${sourceFile}`)
-	}
-	const migrationsDir = join(packageRoot, 'drizzle')
-	if (!existsSync(migrationsDir)) {
+export async function readDatabaseHistory(
+	migrationsDir: string,
+	dialect: DatabaseDialect,
+	watch?: (path: string) => void,
+) {
+	const manifestPath = join(migrationsDir, databaseManifestFile)
+	watch?.(manifestPath)
+	const lineage = await readDatabaseLineage(manifestPath, false)
+	const history = await readDrizzleHistory(migrationsDir, dialect, watch)
+	if ((await readDatabaseLineage(manifestPath, false)) !== lineage)
 		throw new Error(
-			`[database] ${relative(boundary, sourceFile)} declares defineDatabase() but ${relative(
-				boundary,
-				migrationsDir,
-			)} is missing; run \`pluxel database generate\` in the package`,
+			`[database] lineage changed while reading ${migrationsDir}; retry with the completed migration files`,
 		)
-	}
-	return {
-		packageRoot,
-		migrationsDir,
-		artifact: await loadDatabaseArtifact(migrationsDir),
-	}
+	return { dialect, lineage, ...history }
 }
 
-export async function loadDatabaseArtifact(migrationsDir: string): Promise<DatabaseBuildArtifact> {
-	const manifestPath = join(migrationsDir, databaseManifestFile)
-	let manifest: DatabaseMigrationManifest
-	try {
-		manifest = JSON.parse(await readFile(manifestPath, 'utf8')) as DatabaseMigrationManifest
-	} catch (error) {
-		throw new Error(`[database] cannot read migration manifest ${manifestPath}`, { cause: error })
-	}
-	validateManifest(manifest, manifestPath)
-	const sqlFiles = await listMigrationSqlFiles(migrationsDir)
-	const manifestFiles = manifest.migrations.map((entry) => entry.file).sort()
-	if (sqlFiles.join('\n') !== manifestFiles.join('\n')) {
-		throw new Error(
-			`[database] migration manifest does not exactly cover SQL files in ${migrationsDir}`,
-		)
-	}
-
-	const migrations: DatabaseMigrationArtifact[] = []
-	for (const entry of manifest.migrations) {
-		const sqlPath = join(migrationsDir, entry.file)
-		const contents = await readFile(sqlPath, 'utf8')
-		const source = contents.trim()
-		if (!source) throw new Error(`[database] migration ${entry.file} is empty`)
-		validateMigrationSql(source, sqlPath)
-		const checksum = migrationChecksum(source)
-		if (checksum !== entry.checksum) {
+export async function checkPublishedHistory(
+	directory: string,
+	current: DatabaseHistory,
+): Promise<void> {
+	const lineage = await readDatabaseLineage(join(directory, databaseManifestFile), true)
+	if (lineage !== current.lineage) return
+	const previous = await readDrizzleHistory(directory, current.dialect)
+	for (const [index, migration] of previous.migrations.entries()) {
+		const next = current.migrations[index]
+		if (
+			previous.tags[index] !== current.tags[index] ||
+			!next ||
+			migration.folderMillis !== next.folderMillis ||
+			migration.bps !== next.bps ||
+			migration.hash !== next.hash
+		) {
 			throw new Error(
-				`[database] migration history was rewritten: ${entry.file} (expected ${entry.checksum}, received ${checksum})`,
+				`[database] published migration history was rewritten at ${previous.tags[index]} in lineage "${lineage}"`,
 			)
 		}
-		migrations.push({ id: entry.id, checksum, sql: source })
-	}
-	return {
-		evolution: manifest.evolution ?? 'migrations',
-		lineage: manifest.lineage,
-		migrations,
 	}
 }
 
-export function migrationChecksum(sql: string): string {
-	return createHash('sha256').update(sql.trim()).digest('hex')
+export async function readDatabaseLineage(
+	manifestPath: string,
+	published: boolean,
+): Promise<string> {
+	const manifest = parseJson(manifestPath, await readFile(manifestPath, 'utf8')) as {
+		lineage?: unknown
+	} | null
+	if (!validDatabaseLineage(manifest?.lineage)) {
+		throw new Error(`[database] invalid database lineage in ${manifestPath}`)
+	}
+	if (!published && Object.keys(manifest).length !== 1) {
+		throw new Error(
+			`[database] ${manifestPath} must contain only "lineage"; convert the old migration manifest before building`,
+		)
+	}
+	return manifest.lineage
+}
+
+async function readDrizzleHistory(
+	migrationsDir: string,
+	dialect: DatabaseDialect,
+	watch?: (path: string) => void,
+) {
+	const journalPath = join(migrationsDir, 'meta', '_journal.json')
+	watch?.(journalPath)
+	const source = await readFile(journalPath, 'utf8')
+	const journal = parseJson(journalPath, source) as {
+		dialect?: string
+		entries?: JournalEntry[]
+	} | null
+	if (journal?.dialect !== dialect || !Array.isArray(journal.entries)) {
+		throw new Error(
+			`[database] expected a ${dialect} migration journal in ${journalPath}, found ${String(journal?.dialect)}`,
+		)
+	}
+	let lastWhen = -1
+	const tags = journal.entries.map((entry, index) => {
+		if (
+			!entry ||
+			entry.idx !== index ||
+			!validMigrationTag(entry.tag) ||
+			typeof entry.breakpoints !== 'boolean' ||
+			!Number.isSafeInteger(entry.when) ||
+			entry.when <= lastWhen
+		) {
+			throw new Error(
+				`[database] invalid entry ${index} in ${journalPath}; expected its index, a file tag, breakpoints and a strictly increasing timestamp`,
+			)
+		}
+		lastWhen = entry.when
+		watch?.(join(migrationsDir, `${entry.tag}.sql`))
+		return entry.tag
+	})
+	const files = await listMigrationSqlFiles(migrationsDir)
+	const expected = tags.map((tag) => `${tag}.sql`).sort()
+	if (expected.length !== files.length || expected.some((file, index) => file !== files[index])) {
+		throw new Error(
+			`[database] ${journalPath} must cover each SQL file in ${migrationsDir} exactly once`,
+		)
+	}
+
+	const migrations = readMigrationFiles({ migrationsFolder: migrationsDir })
+	// The native reader opens the journal again. Never pair its SQL with tags from a different generation.
+	if ((await readFile(journalPath, 'utf8')) !== source) {
+		throw new Error(
+			`[database] journal changed while reading ${journalPath}; retry with the completed migration files`,
+		)
+	}
+	for (const [index, migration] of migrations.entries()) {
+		const file = join(migrationsDir, `${tags[index]}.sql`)
+		if (!migration.sql.some((statement) => statement.trim())) {
+			throw new Error(`[database] empty migration ${file}`)
+		}
+		if (dialect === 'postgresql') {
+			for (const statement of migration.sql) await validatePostgresMigrationSql(statement, file)
+		}
+	}
+	return { journalSource: source, tags, migrations }
+}
+
+/** Materialize the verified native inputs in a fresh directory without reopening the source. */
+export async function writeDatabaseHistory(
+	directory: string,
+	history: DatabaseHistory,
+): Promise<void> {
+	await mkdir(join(directory, 'meta'), { recursive: true })
+	for (const [index, tag] of history.tags.entries()) {
+		if (!validMigrationTag(tag)) throw new Error('[database] invalid migration file tag')
+		await writeFile(
+			join(directory, `${tag}.sql`),
+			history.migrations[index]!.sql.join('--> statement-breakpoint'),
+			{ flag: 'wx' },
+		)
+	}
+	await writeFile(join(directory, 'meta/_journal.json'), history.journalSource, { flag: 'wx' })
+}
+
+export function requireDatabaseMigrations(history: DatabaseHistory) {
+	if (history.migrations.length === 0)
+		throw new Error('[database] a database definition must carry at least one migration')
+	return history
+}
+
+function validMigrationTag(tag: unknown): tag is string {
+	return typeof tag === 'string' && tag.length > 0 && !/[\\/\0]/u.test(tag)
+}
+
+export type DatabaseInputs = Readonly<{
+	history: DatabaseHistory
+	snapshots: readonly { file: string; contents: Buffer }[]
+}>
+
+/** A checked-in Kit history and the schema snapshots needed for further generation. */
+export async function readDatabaseInputs(
+	directory: string,
+	dialect: DatabaseDialect,
+	watch?: (file: string) => void,
+	includeSnapshots = true,
+): Promise<DatabaseInputs> {
+	const history = await readDatabaseHistory(directory, dialect, watch)
+	const snapshots = []
+	if (includeSnapshots) {
+		const meta = join(directory, 'meta')
+		for (const file of await readdir(meta)) {
+			if (!file.endsWith('_snapshot.json')) continue
+			const path = join(meta, file)
+			watch?.(path)
+			snapshots.push({ file, contents: await readFile(path) })
+		}
+		if ((await readFile(join(meta, '_journal.json'), 'utf8')) !== history.journalSource)
+			throw new Error(
+				`[database] journal changed while reading snapshots in ${meta}; retry with the completed migration files`,
+			)
+	}
+	return { history, snapshots }
+}
+
+export async function writeDatabaseInputs(
+	directory: string,
+	{ history, snapshots }: DatabaseInputs,
+) {
+	await writeDatabaseHistory(directory, history)
+	for (const { file, contents } of snapshots)
+		await writeFile(join(directory, 'meta', file), contents, { flag: 'wx' })
+	await writeDatabaseLineage(directory, history.lineage)
+}
+
+function parseJson(file: string, source: string): unknown {
+	try {
+		return JSON.parse(source)
+	} catch (error) {
+		throw new Error(`[database] invalid JSON in ${file}`, { cause: error })
+	}
+}
+
+export async function writeDatabaseLineage(directory: string, lineage: string): Promise<void> {
+	await writeFile(
+		join(directory, databaseManifestFile),
+		JSON.stringify({ lineage }, null, 2) + '\n',
+		{ flag: 'wx' },
+	)
 }
 
 export async function listMigrationSqlFiles(migrationsDir: string): Promise<string[]> {
@@ -120,53 +245,6 @@ export function findDatabasePackageRoot(sourceFile: string, boundary: string): s
 	}
 }
 
-function validateManifest(
-	manifest: DatabaseMigrationManifest,
-	manifestPath: string,
-): asserts manifest is DatabaseMigrationManifest {
-	if (
-		!manifest ||
-		manifest.version !== 2 ||
-		(manifest.evolution !== undefined &&
-			manifest.evolution !== 'migrations' &&
-			manifest.evolution !== 'reset-on-schema-change') ||
-		!validDatabaseLineage(manifest.lineage) ||
-		!Array.isArray(manifest.migrations)
-	) {
-		throw new Error(`[database] invalid migration manifest ${manifestPath}`)
-	}
-	let previous = ''
-	const files = new Set<string>()
-	for (const entry of manifest.migrations) {
-		if (
-			!entry ||
-			typeof entry.id !== 'string' ||
-			!entry.id ||
-			typeof entry.file !== 'string' ||
-			!entry.file.endsWith('.sql') ||
-			entry.file !== entry.file.split(/[\\/]/).at(-1) ||
-			entry.id !== entry.file.slice(0, -'.sql'.length) ||
-			!/^[a-f0-9]{64}$/.test(entry.checksum)
-		) {
-			throw new Error(`[database] invalid migration entry in ${manifestPath}`)
-		}
-		if (entry.id <= previous || files.has(entry.file)) {
-			throw new Error(`[database] migrations must have unique ascending ids in ${manifestPath}`)
-		}
-		previous = entry.id
-		files.add(entry.file)
-	}
-}
-
 export function validDatabaseLineage(value: unknown): value is string {
 	return typeof value === 'string' && /^[A-Za-z0-9][A-Za-z0-9._-]{0,63}$/.test(value)
-}
-
-function validateMigrationSql(source: string, sqlPath: string): void {
-	if (/\bpublic\s*\./i.test(source)) {
-		throw new Error(`[database] migration must not reference the public schema: ${sqlPath}`)
-	}
-	if (/\bpluxel_[a-z0-9_]+\s*\./i.test(source)) {
-		throw new Error(`[database] migration must not hard-code a physical plugin schema: ${sqlPath}`)
-	}
 }

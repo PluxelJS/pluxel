@@ -1,10 +1,17 @@
+import type { WorkbenchHost } from '@pluxel/workbench/server'
 import { createServer } from 'node:http'
-import { BasePlugin, Plugin } from '@pluxel/core'
-import { envBinding, defineHostApplication, resolveHostApplication, createHost } from '@pluxel/host'
-import { vault } from '@pluxel/services/vault'
+import { BasePlugin, Plugin, defineServiceRef } from '@pluxel/core'
+import {
+	envBinding,
+	defineHostApplication,
+	resolveHostApplication,
+	type HostStartupContext,
+} from '@pluxel/host'
+import { createResolvedHost } from '@pluxel/host/internal'
 import { expect, it } from 'vitest'
 import { S3, S3Config, S3VaultSchema, S3Plugin } from '../src/index.ts'
 
+const WorkbenchHostRef = defineServiceRef<WorkbenchHost>()
 @Plugin()
 class DeploymentWriter extends BasePlugin {
 	constructor(private readonly storage: S3) {
@@ -30,20 +37,27 @@ it('signs an S3 write without Workbench using env-backed configuration and Vault
 		const address = server.address()
 		if (!address || typeof address === 'string') throw new Error('Missing test listener')
 		const application = defineHostApplication(() => ({
-			plugins: [S3Plugin, DeploymentWriter],
-			services: [vault({ backend: 'bindings' })],
-			envBindings: [
-				envBinding(S3Plugin, {
-					config: { schema: S3Config, mapping: { buckets: 'S3_BUCKETS' } },
-					vault: {
-						schema: S3VaultSchema,
-						mapping: { primary: { accessKeyId: 'ACCESS_KEY', secretAccessKey: 'SECRET_KEY' } },
-					},
-				}),
+			plugins: [
+				{
+					plugin: S3Plugin,
+					envBindings: [
+						envBinding({
+							config: { schema: S3Config, mapping: { buckets: 'S3_BUCKETS' } },
+							vault: {
+								schema: S3VaultSchema,
+								mapping: { primary: { accessKeyId: 'ACCESS_KEY', secretAccessKey: 'SECRET_KEY' } },
+							},
+						}),
+					],
+				},
+				{
+					plugin: DeploymentWriter,
+					autoStart: true,
+				},
 			],
-			policy: { autoStart: [DeploymentWriter.nodeAddress()] },
+			coreConfig: { vault: { backend: 'bindings' } },
 		}))
-		const resolved = await resolveHostApplication(application, {
+		const startup: HostStartupContext = {
 			root: process.cwd(),
 			mode: 'test',
 			bindings: {},
@@ -62,28 +76,21 @@ it('signs an S3 write without Workbench using env-backed configuration and Vault
 					},
 				]),
 			},
-		})
-		const host = await createHost({
-			plugins: resolved.plugins,
-			services: resolved.services,
-			vaultBindings: resolved.vaultBindings,
-			name: resolved.name,
-			config: resolved.config,
-			policy: resolved.policy,
-			runtime: resolved.runtime,
-		})
-		try {
-			await host.start()
-			expect(host.ctx.workbench).toBeUndefined()
-			const status = await host.status()
-			expect(status.summary.running).toBe(2)
-			expect(requests).toHaveLength(1)
-			expect(requests[0]).toMatchObject({ url: '/deployment-check', body: 'payload' })
-			expect(requests[0]?.authorization).toContain('Credential=deployment-access/')
-			expect(requests[0]?.authorization).not.toContain('deployment-secret')
-		} finally {
-			await host.close()
 		}
+		await expect(
+			resolveHostApplication(application, {
+				...startup,
+				env: { ...startup.env, SECRET_KEY: undefined },
+			}),
+		).rejects.toThrow('SECRET_KEY')
+
+		await using host = await createResolvedHost(await resolveHostApplication(application, startup))
+		await host.start()
+		expect(host.ctx.service(WorkbenchHostRef)).toBeUndefined()
+		expect(requests).toHaveLength(1)
+		expect(requests[0]).toMatchObject({ url: '/deployment-check', body: 'payload' })
+		expect(requests[0]?.authorization).toContain('Credential=deployment-access/')
+		expect(requests[0]?.authorization).not.toContain('deployment-secret')
 	} finally {
 		await new Promise<void>((resolve, reject) =>
 			server.close((error) => (error ? reject(error) : resolve())),

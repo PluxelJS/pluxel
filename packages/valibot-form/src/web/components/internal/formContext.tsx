@@ -30,12 +30,17 @@ export const FormResetVersion = createContext(0)
 export function useAppForm<TValues>(defaultValues: TValues, formOpts?: AutoFormOptions<TValues>) {
 	const [resetVersion, setResetVersion] = useState(0)
 	const resetRef = useRef<AnyFormApi['reset'] | undefined>(undefined)
+	const providedDefaults = useRef(defaultValues)
+	const resetDefaults = useRef<{ provided: TValues; values: TValues } | undefined>(undefined)
+	providedDefaults.current = defaultValues
+	if (resetDefaults.current?.provided !== defaultValues) resetDefaults.current = undefined
+	const baseline = resetDefaults.current?.values ?? defaultValues
 
 	const opts = useMemo(() => {
 		const listeners = formOpts?.listeners
 		return {
 			...formOpts,
-			defaultValues,
+			defaultValues: baseline,
 			listeners: {
 				...listeners,
 				onMount: (
@@ -50,12 +55,15 @@ export function useAppForm<TValues>(defaultValues: TValues, formOpts?: AutoFormO
 				},
 			},
 		}
-	}, [defaultValues, formOpts])
+	}, [baseline, formOpts])
 
 	const form = useForm(opts)
 	const resetWithDrafts = useMemo(() => {
 		const reset = form.reset
 		const wrapped: typeof reset = (...args) => {
+			const [values, options] = args
+			if (values !== undefined && !options?.keepDefaultValues)
+				resetDefaults.current = { provided: providedDefaults.current, values }
 			reset(...args)
 			setResetVersion((current) => current + 1)
 		}
@@ -63,7 +71,7 @@ export function useAppForm<TValues>(defaultValues: TValues, formOpts?: AutoFormO
 	}, [form])
 	form.reset = resetWithDrafts
 	resetRef.current = resetWithDrafts
-	return { form, resetVersion }
+	return { form, resetVersion, baseline }
 }
 
 // -------- Context（暴露同一表单实例与渲染数据） ----------

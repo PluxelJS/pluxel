@@ -1,4 +1,5 @@
 import { createHash } from 'node:crypto'
+import { assertWorkbenchApplicationRuntime } from '@pluxel/host/internal/shared-runtime'
 import { readSourceExportEntries } from '../source-exports'
 import { safeReadManifest } from '../workspace/manifest'
 import { applicationCatalogHash } from './application-hash'
@@ -121,8 +122,17 @@ export async function createModulesApplicationConfig(options: {
 	}
 	let environmentExample: string | undefined
 	let ownedExample = false
+	let applicationCapnweb: string | undefined
 	const assembly: Plugin = {
 		name: 'pluxel:modules-application',
+		buildStart() {
+			if (options.variant === 'headless') return
+			const host = resolveWithOxc(dirname(entry), '@pluxel/host/package.json', {
+				conditionNames: ['node', 'import', 'default'],
+			})
+			if (!host) this.error(`[pluxel:modules] Cannot resolve the external Host from ${entry}`)
+			applicationCapnweb = assertWorkbenchApplicationRuntime(entry, host.path)
+		},
 		resolveId(id) {
 			if (id === bootstrap) return bootstrap
 			if (id.startsWith('@oxc-project/runtime/helpers/'))
@@ -221,7 +231,9 @@ export default application;`
 							version: manifest.version,
 							type: 'module',
 							exports,
-							dependencies: manifest.dependencies,
+							dependencies: applicationCapnweb
+								? { ...manifest.dependencies, capnweb: applicationCapnweb }
+								: manifest.dependencies,
 							optionalDependencies: manifest.optionalDependencies,
 							peerDependencies: manifest.peerDependencies,
 							peerDependenciesMeta: manifest.peerDependenciesMeta,
@@ -229,6 +241,7 @@ export default application;`
 								...metadata,
 								artifactRoot: '.',
 								nodeArtifacts: true,
+								control: './control/manifest.json',
 								workbenchArtifacts: (options.variant ?? 'workbench') === 'workbench',
 								workbenchCapnweb,
 								modules: { version: 1 },

@@ -8,6 +8,7 @@ const ignoredDirectories = new Set(['.git', '.pluxel', '.vercel', 'dist', 'node_
 const nativeDependencyTrees = new Set([
 	'plugins/render/typst/native/.build',
 	'projects/embedded-launcher/native/vendor',
+	'projects/host-llrt/native/vendor',
 ])
 const declarationPattern = /\.d\.[cm]?ts$/
 const declarationMapPattern = /\.d\.[cm]?ts\.map$/
@@ -22,8 +23,6 @@ const allowedDeclarations = new Set([
 	'packages/workbench/shell/src/vite-env.d.ts',
 	'projects/docs/src/examples/typst/theme-variants.d.ts',
 	'projects/docs/src/styles.d.ts',
-	'projects/embedded-launcher/src/execution/native.d.ts',
-	'projects/report-template-studio/src/renderer/modern-monaco.d.ts',
 ])
 
 const declarationGroups = await Promise.all(

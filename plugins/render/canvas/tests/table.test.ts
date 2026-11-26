@@ -1,5 +1,4 @@
 import { type PluginConstructor, BasePlugin, Plugin } from '@pluxel/core'
-import { standardServices } from '@pluxel/services'
 import { createTestHost, type TestHost } from '@pluxel/test'
 import { describe, expect, it } from 'vitest'
 import { FontsPlugin } from '@pluxel/plugin-fonts'
@@ -21,17 +20,15 @@ async function startCanvasFixture(
 ): Promise<void> {
 	await host.commit((change) => {
 		change.catalog.add(plugins)
-		change.start(plugins)
+		change.start(plugins.map((plugin) => plugin.nodeAddress()))
 	})
 }
 
 describe('Canvas table tools', () => {
 	it('lays out bounded Pretext text and draws onto a caller-owned root surface', async () => {
-		await using host = await createTestHost({
-			services: standardServices(),
-		})
+		await using host = await createTestHost()
 		await startCanvasFixture(host, [FontsPlugin, CanvasPlugin, CanvasTableConsumer])
-		const canvas = host.require(CanvasTableConsumer).canvas
+		const canvas = host.require(CanvasTableConsumer.nodeAddress()).canvas
 		const font = `14px ${canvas.defaultFont.cssFamily}`
 		const table = layoutTable({
 			x: 8,
@@ -97,11 +94,9 @@ describe('Canvas table tools', () => {
 	})
 
 	it('uses the same table path with a detached worker text adapter', async () => {
-		await using host = await createTestHost({
-			services: standardServices(),
-		})
+		await using host = await createTestHost()
 		await startCanvasFixture(host, [FontsPlugin, CanvasPlugin, CanvasTableConsumer])
-		const snapshot = host.require(CanvasTableConsumer).canvas.workerSnapshot
+		const snapshot = host.require(CanvasTableConsumer.nodeAddress()).canvas.workerSnapshot
 		const workerCanvas = createCanvasWorkerAdapter(structuredClone(snapshot))
 		const workerText = createCanvasWorkerTextLayout(structuredClone(snapshot))
 		try {

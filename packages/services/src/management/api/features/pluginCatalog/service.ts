@@ -1,4 +1,5 @@
-import { resolveContextCapability } from '@pluxel/core/host'
+import { resolveContextService } from '@pluxel/core/internal'
+
 import { CatalogLayout } from '../../../token'
 import { pluginDefinitionIndexKey, type Context } from '@pluxel/core'
 import {
@@ -39,7 +40,7 @@ export async function writePluginCatalogLayout(
 }
 
 function requirePluginCatalogLayout(ctx: Context) {
-	const service = resolveContextCapability(ctx.root, CatalogLayout)
+	const service = resolveContextService(ctx.root, CatalogLayout)
 	if (!service) {
 		throw new Error('[pluxel/runtime] Plugin catalog layout requires the management plane')
 	}
@@ -61,20 +62,22 @@ async function readPinnedCatalog(ctx: Context, options?: HostOperationOptions) {
 			})
 		})
 		const policy = requireHostStateStore(ctx).configurationSnapshot()
-		const overriddenFields = (
-			['autoStart', 'forks', 'providerDefaults', 'dependencyOverrides'] as const
-		).filter(
-			(field) =>
-				policy.mode[field] === 'declared-only' ||
-				(policy.mode[field] === 'declared-first' && policy.sources[field] === 'declared'),
-		)
 		return Object.freeze({
 			projection,
 			layoutEntries: Object.freeze(layoutEntries),
 			statePolicy: Object.freeze({
 				readonly: policy.readonly,
 				managedRevision: policy.managedRevision,
-				overriddenFields: Object.freeze(overriddenFields),
+				mode: Object.freeze({
+					autoStart: policy.mode.autoStart,
+					forks: policy.mode.forks,
+					providerDefaults: policy.mode.providerDefaults,
+					dependencyOverrides: policy.mode.dependencyOverrides,
+				}),
+				providerDefaultsSource: policy.sources.providerDefaults,
+				providerDefaultsShadowed: policy.shadowedFields.includes('providerDefaults'),
+				nodeModes: policy.nodeModes,
+				selections: policy.selections,
 			}),
 		})
 	}, options)

@@ -38,15 +38,15 @@ interface OtherApi extends RpcTarget {
 	inspect(): Promise<Readonly<{ value: string }>>
 }
 
-const renderer = workbench.entry(import.meta.url, './renderer-scope.type-probes.tsx')
-const ProbeWorkbench = workbench.define({
+const renderer = './renderer-scope.type-probes.tsx'
+const ProbeWorkbench = workbench.define(import.meta.url, {
 	settings: workbench.view<SettingsApi>({
 		renderer,
-		placement: workbench.tab(),
+		placement: { kind: 'tab' },
 	}),
 	other: workbench.view<OtherApi>({
 		renderer,
-		placement: workbench.tab(),
+		placement: { kind: 'tab' },
 	}),
 })
 

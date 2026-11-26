@@ -20,15 +20,22 @@ vi.mock('../src/native-binding.ts', async () => {
 
 const bindingPath = fileURLToPath(new URL('../native/compiler.node', import.meta.url))
 const NodeCompiler = loadNativeCompiler(bindingPath)
-const compileTypst = (input: TypstWorkerInput) => runTypst({ ...input, bindingPath })
+const compileTypst = (input: Omit<TypstWorkerInput, 'templateRoot' | 'inputsRoot'>) =>
+	runTypst({
+		...input,
+		root: join(input.root, 'workspace'),
+		templateRoot: join(input.root, 'template'),
+		inputsRoot: join(input.root, 'inputs'),
+		bindingPath,
+	})
 
 const roots: string[] = []
 
 async function workspace(source: string): Promise<string> {
 	const root = await mkdtemp(join(tmpdir(), 'pluxel-typst-worker-'))
 	roots.push(root)
-	await mkdir(join(root, 'inputs'))
-	await writeFile(join(root, 'main.typ'), source)
+	await Promise.all(['inputs', 'template', 'workspace'].map((name) => mkdir(join(root, name))))
+	await writeFile(join(root, 'template', 'main.typ'), source)
 	return root
 }
 
@@ -42,7 +49,10 @@ describe('Typst native worker', () => {
 		const root = await workspace(
 			'#include "共享.typ"\n#pagebreak()\n== Appendix\n#image("/inputs/logo.svg", width: 20pt)',
 		)
-		await writeFile(join(root, '共享.typ'), '= Overview\nA😀B\n#rotate(25deg)[Rotated]\n$x^2$')
+		await writeFile(
+			join(root, 'template', '共享.typ'),
+			'= Overview\nA😀B\n#rotate(25deg)[Rotated]\n$x^2$',
+		)
 		await writeFile(
 			join(root, 'inputs/logo.svg'),
 			'<svg xmlns="http://www.w3.org/2000/svg" width="10" height="10"><rect width="10" height="10"/></svg>',
@@ -115,8 +125,8 @@ Report
 	it('preserves portable nested source paths and ranges in native diagnostics', async () => {
 		const path = '报表/季度经营分析/排版.typ'
 		const root = await workspace(`#include "${path}"`)
-		await mkdir(join(root, '报表/季度经营分析'), { recursive: true })
-		await writeFile(join(root, path), '#let x = missing\n#x')
+		await mkdir(join(root, 'template', '报表/季度经营分析'), { recursive: true })
+		await writeFile(join(root, 'template', path), '#let x = missing\n#x')
 		const result = compileTypst({ revision: 1, root, entry: 'main.typ', maxOutputBytes: 8_000_000 })
 		expect(result).toMatchObject({
 			ok: false,
@@ -153,21 +163,21 @@ Report
 
 it('retains one native compiler and updates changed and removed shadow files', async () => {
 	const root = await workspace('#include "shared.typ"')
-	await writeFile(join(root, 'shared.typ'), 'Original')
+	await writeFile(join(root, 'template', 'shared.typ'), 'Original')
 	const create = vi.mocked(NodeCompiler.create)
 	create.mockClear()
 	try {
 		const input = { revision: 1, root, entry: 'main.typ', maxOutputBytes: 8_000_000 }
 		const first = compileTypst(input)
 		expect(first.ok).toBe(true)
-		await writeFile(join(root, 'shared.typ'), 'Edited shared content')
+		await writeFile(join(root, 'template', 'shared.typ'), 'Edited shared content')
 		const changed = compileTypst(input)
 		expect(changed.ok).toBe(true)
 		if (!first.ok || !changed.ok) throw new Error('Expected document')
 		expect(changed.vector).not.toEqual(first.vector)
-		await rm(join(root, 'shared.typ'))
+		await rm(join(root, 'template', 'shared.typ'))
 		expect(compileTypst(input).ok).toBe(false)
-		await writeFile(join(root, 'shared.typ'), 'Recovered')
+		await writeFile(join(root, 'template', 'shared.typ'), 'Recovered')
 		expect(compileTypst(input).ok).toBe(true)
 		expect(create).toHaveBeenCalledTimes(1)
 	} finally {
@@ -228,7 +238,7 @@ it('renders retained pages and exact gradient crops without compiling again, wit
 		expect(() => renderTypstPage(options)).toThrow(
 			expect.objectContaining({ code: 'STALE_REVISION' }),
 		)
-		await writeFile(join(root, 'main.typ'), '#missing()')
+		await writeFile(join(root, 'template', 'main.typ'), '#missing()')
 		expect(compileTypst({ ...input, revision: 12 }).ok).toBe(false)
 		expect(renderTypstPage({ ...options, revision: 11 }).width).toBe(200)
 	} finally {

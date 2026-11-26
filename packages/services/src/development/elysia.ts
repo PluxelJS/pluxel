@@ -1,3 +1,6 @@
+import { resolveContextService } from '@pluxel/core/internal'
+import { defineServiceRef } from '@pluxel/core'
+import type { WorkbenchHost } from '@pluxel/workbench/server'
 import { requestWithSignal } from '../elysia/request'
 import { dirname, resolve } from 'node:path'
 import { dispatchElysiaRequest } from '../elysia/dispatch'
@@ -5,7 +8,7 @@ import { serve } from 'srvx/node'
 import type { Server as NodeHttpServer } from 'node:http'
 import { installPluxelViteUrlPrinter } from '@pluxel/host-vite/internal'
 import { resolveHostEnv } from '@pluxel/host/environment'
-import { resolveContextCapability } from '@pluxel/core/host'
+
 import { ElysiaRuntime, type ElysiaRuntimeApi } from '../elysia/runtime'
 import { NodeElysiaApplicationCarrier } from '../elysia/node'
 import type { Plugin } from 'vite'
@@ -15,6 +18,8 @@ import {
 	createViteNodeElysiaApplicationCarrier,
 	type SrvxViteNodeCarrierAttachment,
 } from './vite-node-carrier'
+
+const WorkbenchHostRef = defineServiceRef<WorkbenchHost>()
 
 /** Borrow Vite's listener for the explicitly installed HTTP service. */
 export function elysiaDevelopment(): Plugin<HostVitePluginApi> {
@@ -32,7 +37,7 @@ export function elysiaDevelopment(): Plugin<HostVitePluginApi> {
 				async attach({ host, server, profile, catalog, startup }) {
 					const environment = resolveHostEnv(startup.env)
 					if (active) throw new Error('[services/elysia/vite] HTTP attachment is already active')
-					const http = resolveContextCapability(host.ctx, ElysiaRuntime)
+					const http = resolveContextService(host.ctx, ElysiaRuntime)
 					if (profile === 'production') {
 						const carrier = new NodeElysiaApplicationCarrier({
 							fetch: http.fetch,
@@ -104,13 +109,12 @@ export function elysiaDevelopment(): Plugin<HostVitePluginApi> {
 						matches: http.matchesWebSocketRoute,
 					})
 					const detach = http.attachApplicationCarrier(carrier)
-					const removeUrlPrinter =
-						'workbench' in host.ctx
-							? undefined
-							: installPluxelViteUrlPrinter(server, {
-									publicOrigin: environment.publicOrigin,
-									workbenchBasePath: () => undefined,
-								})
+					const removeUrlPrinter = host.ctx.service(WorkbenchHostRef)
+						? undefined
+						: installPluxelViteUrlPrinter(server, {
+								publicOrigin: environment.publicOrigin,
+								workbenchBasePath: () => undefined,
+							})
 					const current = { http, carrier }
 					active = current
 					try {

@@ -1,16 +1,19 @@
-import { BasePlugin, Plugin } from '@pluxel/core'
-import { createHost, defineHostApplication, envBinding, resolveHostApplication } from '@pluxel/host'
+import type { Workbench } from '@pluxel/workbench'
+import { BasePlugin, Plugin, defineServiceRef } from '@pluxel/core'
+import { defineHostApplication, envBinding, resolveHostApplication } from '@pluxel/host'
+import { createResolvedHost } from '@pluxel/host/internal'
 import { createElysiaHandler, elysia } from '@pluxel/services/elysia'
 import { expect, it } from 'vitest'
 import { Otel, OtelConfig, OtelPlugin } from '../src/index.ts'
 
+const WorkbenchRef = defineServiceRef<Workbench>()
 @Plugin()
 class HeadlessMeter extends BasePlugin {
 	constructor(private readonly otel: Otel) {
 		super()
 	}
 	init() {
-		expect(this.ctx.workbench).toBeUndefined()
+		expect(this.ctx.service(WorkbenchRef)).toBeUndefined()
 		this.otel.meter.createCounter('headless.orders').add(3)
 		expect(() => this.otel.tracer).toThrow('disabled')
 	}
@@ -18,17 +21,24 @@ class HeadlessMeter extends BasePlugin {
 
 it('uses the exported config schema for env-only Prometheus selection without Workbench', async () => {
 	const application = defineHostApplication(() => ({
-		plugins: [OtelPlugin, HeadlessMeter],
-		services: [elysia()],
-		envBindings: [
-			envBinding(OtelPlugin, {
-				config: {
-					schema: OtelConfig,
-					mapping: { otlp: 'TELEMETRY_SIGNALS', prometheus: 'TELEMETRY_PROMETHEUS' },
-				},
-			}),
+		plugins: [
+			{
+				plugin: OtelPlugin,
+				envBindings: [
+					envBinding({
+						config: {
+							schema: OtelConfig,
+							mapping: { otlp: 'TELEMETRY_SIGNALS', prometheus: 'TELEMETRY_PROMETHEUS' },
+						},
+					}),
+				],
+			},
+			{
+				plugin: HeadlessMeter,
+				autoStart: true,
+			},
 		],
-		policy: { autoStart: [HeadlessMeter.nodeAddress()] },
+		services: [elysia()],
 	}))
 	const resolved = await resolveHostApplication(application, {
 		root: process.cwd(),
@@ -36,14 +46,7 @@ it('uses the exported config schema for env-only Prometheus selection without Wo
 		bindings: {},
 		env: { TELEMETRY_SIGNALS: '[]', TELEMETRY_PROMETHEUS: '{"path":"/headless-metrics"}' },
 	})
-	const host = await createHost({
-		plugins: resolved.plugins,
-		services: resolved.services,
-		name: resolved.name,
-		config: resolved.config,
-		policy: resolved.policy,
-		runtime: resolved.runtime,
-	})
+	const host = await createResolvedHost(resolved)
 	try {
 		await host.start()
 		const status = await host.status()

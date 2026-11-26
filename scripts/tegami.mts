@@ -9,7 +9,7 @@ import { runCli } from 'tegami/cli'
 import { github } from 'tegami/plugins/github'
 import { unifiedReleaseVersions } from './release-policy.mts'
 import {
-	isPublishablePackage,
+	isFrameworkReleasePackage,
 	repositoryPackages,
 	tegamiIgnorePattern,
 } from './repository-packages.mjs'
@@ -26,7 +26,7 @@ export const paper = tegami({
 	},
 	packages: Object.fromEntries(
 		repositoryPackages
-			.filter(isPublishablePackage)
+			.filter(isFrameworkReleasePackage)
 			.map(({ manifest }) => [manifest.name, { group: 'pluxel' as const }]),
 	),
 	npm: {

@@ -165,35 +165,100 @@ export const items = pgTable('items', { id: text('id').primaryKey() })`,
 		})
 	})
 
-	it('embeds checked migrations without exposing an author artifact argument', async () => {
-		const migration = 'CREATE TABLE items (id text PRIMARY KEY)'
-		const checksum = createHash('sha256').update(migration).digest('hex')
+	it.each(['postgresql', 'sqlite'] as const)(
+		'embeds checked %s migrations in the published plugin',
+		async (dialect) => {
+			const entry = dialect === 'sqlite' ? 'sqlite' : 'pg'
+			const migration = 'CREATE TABLE items (id text PRIMARY KEY)'
+			const checksum = createHash('sha256')
+				.update(migration + '\n')
+				.digest('hex')
+			await using fixture = await createFixture({
+				'package.json': JSON.stringify({ name: 'database-fixture', type: 'module' }),
+				'node_modules/@pluxel/services/package.json': JSON.stringify({
+					name: '@pluxel/services',
+					type: 'module',
+					exports: { [`./${entry}`]: './database.js' },
+				}),
+				'node_modules/@pluxel/services/database.js':
+					'export const defineDatabase = (definition, artifact) => ({ definition, artifact })',
+				'src/index.ts': `import * as dialect from '@pluxel/services/${entry}'\nexport const database = dialect.defineDatabase(({ schema: {} }), /* trailing comma */)\n`,
+				'drizzle/0000_initial.sql': `${migration}\n`,
+				'drizzle/meta/0000_snapshot.json': '{"id":"original snapshot"}',
+				'drizzle/pluxel-migrations.json': JSON.stringify({ lineage: 'main' }),
+				'drizzle/meta/_journal.json': JSON.stringify({
+					dialect,
+					entries: [{ idx: 0, tag: '0000_initial', when: 1, breakpoints: true }],
+				}),
+			})
+			const bundle = await rolldown({
+				input: `${fixture.path}/src/index.ts`,
+				external: [`@pluxel/services/${entry}`],
+				plugins: [
+					pluginArtifactBuildPlugin({ root: fixture.path, buildDir: 'dist' }),
+					{
+						name: 'edit-sql-after-source-transform',
+						async generateBundle() {
+							await writeFile(join(fixture.path, 'drizzle/0000_initial.sql'), 'SELECT 2;')
+							await writeFile(
+								join(fixture.path, 'drizzle/meta/0000_snapshot.json'),
+								'{"id":"changed"}',
+							)
+						},
+					},
+				],
+			})
+			await bundle.write({ dir: `${fixture.path}/dist`, format: 'esm' })
+			await bundle.close()
+
+			const server = await readFile(`${fixture.path}/dist/index.js`, 'utf8')
+			expect(server).toContain('main')
+			expect(server).toContain(checksum)
+			expect(server).toContain(migration)
+			const built = await import(pathToFileURL(join(fixture.path, 'dist/index.js')).href)
+			expect(built.database).toMatchObject({
+				definition: { schema: {} },
+				artifact: {
+					lineage: 'main',
+					migrations: [{ folderMillis: 1, hash: checksum, bps: true, sql: [migration + '\n'] }],
+				},
+			})
+			await expect(
+				readFile(`${fixture.path}/dist/database/migrations/0000_initial.sql`, 'utf8'),
+			).resolves.toBe(`${migration}\n`)
+			expect(
+				await readFile(
+					join(fixture.path, 'dist/database/migrations/meta/0000_snapshot.json'),
+					'utf8',
+				),
+			).toBe('{"id":"original snapshot"}')
+		},
+	)
+
+	it('rejects parallel database declarations from the same package', async () => {
+		const declaration =
+			"import { defineDatabase } from '@pluxel/services/pg'\nexport const db = defineDatabase({ schema: {} })"
 		await using fixture = await createFixture({
-			'package.json': JSON.stringify({ name: 'database-fixture', type: 'module' }),
-			'src/index.ts':
-				"import { defineDatabase } from '@pluxel/services/database'\nexport const database = defineDatabase({ schema: {} })\n",
-			'drizzle/0000_initial.sql': `${migration}\n`,
-			'drizzle/pluxel-migrations.json': JSON.stringify({
-				version: 2,
-				lineage: 'main',
-				migrations: [{ id: '0000_initial', file: '0000_initial.sql', checksum }],
+			'package.json': JSON.stringify({ name: 'duplicate-db', type: 'module' }),
+			'first.ts': declaration,
+			'second.ts': declaration,
+			'drizzle/pluxel-migrations.json': JSON.stringify({ lineage: 'main' }),
+			'drizzle/0000_initial.sql': 'SELECT 1;',
+			'drizzle/meta/_journal.json': JSON.stringify({
+				dialect: 'postgresql',
+				entries: [{ idx: 0, tag: '0000_initial', when: 1, breakpoints: true }],
 			}),
 		})
 		const bundle = await rolldown({
-			input: `${fixture.path}/src/index.ts`,
-			external: ['@pluxel/services/database'],
-			plugins: [pluginArtifactBuildPlugin({ root: fixture.path, buildDir: 'dist' })],
+			input: [join(fixture.path, 'first.ts'), join(fixture.path, 'second.ts')],
+			external: ['@pluxel/services/pg'],
+			plugins: [pluginArtifactBuildPlugin({ root: fixture.path })],
 		})
-		await bundle.write({ dir: `${fixture.path}/dist`, format: 'esm' })
-		await bundle.close()
-
-		const server = await readFile(`${fixture.path}/dist/index.js`, 'utf8')
-		expect(server).toContain('main')
-		expect(server).toContain(checksum)
-		expect(server).toContain(migration)
-		await expect(
-			readFile(`${fixture.path}/dist/database/migrations/0000_initial.sql`, 'utf8'),
-		).resolves.toBe(`${migration}\n`)
+		try {
+			await expect(bundle.generate({ format: 'esm' })).rejects.toThrow('declares databases in both')
+		} finally {
+			await bundle.close()
+		}
 	})
 
 	it('builds reset-on-schema-change without a checked-in migration directory', async () => {
@@ -216,12 +281,12 @@ export const items = pgTable('items', { id: text('id').primaryKey() })`,
 			JSON.stringify({
 				name: '@pluxel/services',
 				type: 'module',
-				exports: { './database': './database.js' },
+				exports: { './pg': './pg.js' },
 			}),
 			'utf8',
 		)
 		await writeFile(
-			join(root, 'node_modules/@pluxel/services/database.js'),
+			join(root, 'node_modules/@pluxel/services/pg.js'),
 			'export const defineDatabase = (input) => input\n',
 			'utf8',
 		)
@@ -229,7 +294,7 @@ export const items = pgTable('items', { id: text('id').primaryKey() })`,
 			join(root, 'src/index.ts'),
 			[
 				"import { pgTable, text } from 'drizzle-orm/pg-core'",
-				"import { defineDatabase } from '@pluxel/services/database'",
+				"import { defineDatabase } from '@pluxel/services/pg'",
 				"export const items = pgTable('items', { id: text('id').primaryKey() })",
 				"export const database = defineDatabase({ schema: { items }, evolution: 'reset-on-schema-change' })",
 			].join('\n'),
@@ -239,7 +304,7 @@ export const items = pgTable('items', { id: text('id').primaryKey() })`,
 		try {
 			const bundle = await rolldown({
 				input: join(root, 'src/index.ts'),
-				external: ['@pluxel/services/database', 'drizzle-orm/pg-core'],
+				external: ['@pluxel/services/pg', 'drizzle-orm/pg-core'],
 				plugins: [pluginArtifactBuildPlugin({ root, buildDir: 'dist' })],
 			})
 			await bundle.write({ dir: join(root, 'dist'), format: 'esm' })
@@ -250,8 +315,11 @@ export const items = pgTable('items', { id: text('id').primaryKey() })`,
 			expect(server).toMatch(/reset-[a-f0-9]{40}/)
 			const manifest = JSON.parse(
 				await readFile(join(root, 'dist/database/migrations/pluxel-migrations.json'), 'utf8'),
-			) as { evolution: string; lineage: string }
-			expect(manifest.evolution).toBe('reset-on-schema-change')
+			) as { lineage: string }
+			expect(Object.keys(manifest)).toEqual(['lineage'])
+			await expect(
+				readFile(join(root, 'dist/database/migrations/meta/_journal.json'), 'utf8'),
+			).resolves.toContain('0000_baseline')
 			expect(server).toContain(manifest.lineage)
 			await expect(
 				readFile(join(root, 'dist/database/migrations/0000_baseline.sql'), 'utf8'),
@@ -277,12 +345,12 @@ export const items = pgTable('items', { id: text('id').primaryKey() })`,
 			JSON.stringify({
 				name: '@pluxel/services',
 				type: 'module',
-				exports: { './database': './database.js' },
+				exports: { './pg': './pg.js' },
 			}),
 			'utf8',
 		)
 		await writeFile(
-			join(root, 'node_modules/@pluxel/services/database.js'),
+			join(root, 'node_modules/@pluxel/services/pg.js'),
 			'export const defineDatabase = (input) => input\n',
 			'utf8',
 		)
@@ -290,7 +358,7 @@ export const items = pgTable('items', { id: text('id').primaryKey() })`,
 			join(root, 'src/index.ts'),
 			[
 				"import { pgTable, text } from 'drizzle-orm/pg-core'",
-				"import { defineDatabase } from '@pluxel/services/database'",
+				"import { defineDatabase } from '@pluxel/services/pg'",
 				"export const items = pgTable('items', { id: text('id').primaryKey() })",
 				"export const database = defineDatabase({ schema: { items }, evolution: 'reset-on-schema-change' })",
 			].join('\n'),
@@ -300,7 +368,7 @@ export const items = pgTable('items', { id: text('id').primaryKey() })`,
 		try {
 			const bundle = await rolldown({
 				input: join(root, 'src/index.ts'),
-				external: ['@pluxel/services/database', 'drizzle-orm/pg-core'],
+				external: ['@pluxel/services/pg', 'drizzle-orm/pg-core'],
 				plugins: [databaseSourceVitePlugin({ root })],
 			})
 			await bundle.write({ dir: join(root, 'dist'), format: 'esm' })
@@ -318,45 +386,18 @@ export const items = pgTable('items', { id: text('id').primaryKey() })`,
 		}
 	})
 
-	it('lowers a Node declaration and publishes its Node ESM artifact', async () => {
+	it('publishes executable Node modules and workers from one package', async () => {
 		await using fixture = await createFixture({
-			'src/index.ts':
-				"import { defineNodeModule } from '@pluxel/services/node'\nexport const task = defineNodeModule(import.meta.url, './task.ts')\n",
+			'src/index.ts': `import { defineNodeModule } from '@pluxel/services/node'
+import { defineWorkerTask } from '@pluxel/services/workers'
+export const task = defineNodeModule(import.meta.url, './task.ts')
+export const worker = defineWorkerTask<number, number>(import.meta.url, './worker.ts')
+`,
 			'src/task.ts': 'export const answer = 42\n',
-		})
-		const bundle = await rolldown({
-			input: `${fixture.path}/src/index.ts`,
-			external: ['@pluxel/services/node', '@pluxel/services/workers'],
-			plugins: [
-				pluginArtifactBuildPlugin({
-					root: fixture.path,
-					buildDir: 'dist',
-					workbench: false,
-					node: { minify: false },
-				}),
-			],
-		})
-		await bundle.write({ dir: `${fixture.path}/dist`, format: 'esm' })
-		await bundle.close()
-
-		const server = await readFile(`${fixture.path}/dist/index.js`, 'utf8')
-		const key = server.match(
-			/defineNodeModule\(import\.meta\.url,\s*['"]\.\/task\.ts['"],\s*['"]([^'"]+)/,
-		)?.[1]
-		expect(key).toMatch(/^node-[a-f\d]{16}$/)
-		const artifact = await readFile(`${fixture.path}/dist/artifacts/node/${key}.mjs`, 'utf8')
-		expect(artifact).toContain('answer')
-		expect(artifact).not.toContain('@pluxel/core')
-	})
-
-	it('lowers a worker declaration through the shared Node artifact pipeline', async () => {
-		await using fixture = await createFixture({
-			'src/index.ts':
-				"import { defineWorkerTask } from '@pluxel/services/workers'\nexport const task = defineWorkerTask<number, number>(\n  import.meta.url,\n  './worker.ts',\n)\n",
 			'src/worker.ts': 'export default (value: number) => value * 2\n',
 		})
 		const bundle = await rolldown({
-			input: `${fixture.path}/src/index.ts`,
+			input: join(fixture.path, 'src/index.ts'),
 			external: ['@pluxel/services/node', '@pluxel/services/workers'],
 			plugins: [
 				pluginArtifactBuildPlugin({
@@ -367,20 +408,28 @@ export const items = pgTable('items', { id: text('id').primaryKey() })`,
 				}),
 			],
 		})
-		await bundle.write({ dir: `${fixture.path}/dist`, format: 'esm' })
-		await bundle.close()
+		try {
+			await bundle.write({ dir: join(fixture.path, 'dist'), format: 'esm' })
+		} finally {
+			await bundle.close()
+		}
 
-		const server = await readFile(`${fixture.path}/dist/index.js`, 'utf8')
-		const key = server.match(
-			/defineWorkerTask(?:<[^>]+>)?\(import\.meta\.url,\s*['"]\.\/worker\.ts['"],\s*['"]([^'"]+)/,
+		const server = await readFile(join(fixture.path, 'dist/index.js'), 'utf8')
+		const taskKey = server.match(
+			/defineNodeModule\(import\.meta\.url,\s*['"]\.\/task\.ts['"],\s*['"](node-[a-f\d]{16})/,
 		)?.[1]
-		expect(key).toMatch(/^node-[a-f\d]{16}$/)
-		const artifact = await readFile(`${fixture.path}/dist/artifacts/node/${key}.mjs`, 'utf8')
-		expect(artifact).toContain('value * 2')
-		const builtTask = await import(
-			pathToFileURL(`${fixture.path}/dist/artifacts/node/${key}.mjs`).href
-		)
-		expect(builtTask.default(21)).toBe(42)
+		const workerKey = server.match(
+			/defineWorkerTask\(import\.meta\.url,\s*['"]\.\/worker\.ts['"],\s*['"](node-[a-f\d]{16})/,
+		)?.[1]
+		expect(taskKey).toBeDefined()
+		expect(workerKey).toBeDefined()
+		expect(taskKey).not.toBe(workerKey)
+
+		const output = join(fixture.path, 'dist/artifacts/node')
+		const task = await import(pathToFileURL(join(output, `${taskKey}.mjs`)).href)
+		const worker = await import(pathToFileURL(join(output, `${workerKey}.mjs`)).href)
+		expect(task.answer).toBe(42)
+		expect(worker.default(21)).toBe(42)
 	})
 
 	it('rebuilds native ownership for standalone and loads after relocation without the source package', async () => {

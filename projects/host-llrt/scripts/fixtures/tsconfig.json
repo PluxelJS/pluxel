@@ -1,0 +1,4 @@
+{
+	"extends": "../../../../packages/host/tsconfig.json",
+	"include": ["session.ts"]
+}

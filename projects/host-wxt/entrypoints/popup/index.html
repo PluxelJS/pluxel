@@ -1,0 +1,38 @@
+<!doctype html>
+<html lang="zh-CN">
+	<head>
+		<meta charset="UTF-8" />
+		<meta name="viewport" content="width=device-width, initial-scale=1" />
+		<title>净链</title>
+	</head>
+	<body>
+		<main class="popup">
+			<header>
+				<h1><img src="../../assets/icon.svg" width="32" height="32" alt="" />净链</h1>
+				<button id="settings" class="quiet">规则设置</button>
+			</header>
+			<section>
+				<div class="row">
+					<label for="source">原始链接</label>
+					<button id="canonical" class="text-button" hidden>读取网页规范链接</button>
+				</div>
+				<textarea
+					id="source"
+					rows="3"
+					placeholder="粘贴 HTTP 或 HTTPS 链接"
+					spellcheck="false"
+				></textarea>
+			</section>
+			<section class="preview">
+				<label for="result">清理结果</label>
+				<output id="result"></output>
+				<p id="changes"></p>
+			</section>
+			<footer>
+				<p role="status" id="status"></p>
+				<button id="copy" class="primary" disabled>复制链接</button>
+			</footer>
+		</main>
+		<script type="module" src="./main.ts"></script>
+	</body>
+</html>

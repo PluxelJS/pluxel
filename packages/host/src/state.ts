@@ -2,6 +2,7 @@ import {
 	pluginDefinitionIndexKey,
 	pluginNodeIndexKey,
 	type PluginDefinitionAddress,
+	type PluginForkNodeAddress,
 	type PluginNodeAddress,
 } from '@pluxel/core'
 import {
@@ -15,13 +16,11 @@ export type HostStatePatchOperation =
 	| Readonly<{ type: 'set-auto-start'; node: PluginNodeAddress; autoStart: boolean }>
 	| Readonly<{
 			type: 'ensure-fork'
-			definition: PluginDefinitionAddress
-			forkId: string
+			node: PluginForkNodeAddress
 	  }>
 	| Readonly<{
 			type: 'remove-fork'
-			definition: PluginDefinitionAddress
-			forkId: string
+			node: PluginForkNodeAddress
 	  }>
 	| Readonly<{
 			type: 'set-provider-default'
@@ -91,22 +90,12 @@ export function applyHostStatePatch(
 				break
 			}
 			case 'ensure-fork': {
-				const node: PluginNodeAddress = {
-					definition: operation.definition,
-					variant: 'fork',
-					forkId: operation.forkId,
-				}
+				const { node } = operation
 				forks.set(pluginNodeIndexKey(node), node)
 				break
 			}
 			case 'remove-fork': {
-				forks.delete(
-					pluginNodeIndexKey({
-						definition: operation.definition,
-						variant: 'fork',
-						forkId: operation.forkId,
-					}),
-				)
+				forks.delete(pluginNodeIndexKey(operation.node))
 				break
 			}
 			case 'set-provider-default': {

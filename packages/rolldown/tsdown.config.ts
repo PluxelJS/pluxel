@@ -29,7 +29,10 @@ export default defineConfig({
 	},
 	entry: {
 		index: 'src/application.ts',
-		inspect: 'src/inspect/index.ts',
+		'internal/agent': 'src/inspect/index.ts',
+		'internal/control-inspection': 'src/control/inspection.ts',
+		control: 'src/control/index.ts',
+		scripts: 'src/scripts.ts',
 		build: 'src/cli/index.ts',
 		'internal/cli': 'src/internal-cli.ts',
 		database: 'src/database/index.ts',
@@ -51,6 +54,7 @@ export default defineConfig({
 	},
 	copy: ['schemas'],
 	dts: {
+		tsconfig: '../../tsconfig.rolldown-build.json',
 		sourcemap: true,
 		eager: true,
 	},

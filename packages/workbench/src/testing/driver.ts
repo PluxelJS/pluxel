@@ -1,4 +1,5 @@
 import type { RootContext, PluginNodeAddress } from '@pluxel/core'
+import { WorkbenchHost } from '../token'
 import { PluginTestOperationGate, type PluginTestTarget } from '@pluxel/core/internal/test'
 import {
 	openLocalWorkbenchEntry,
@@ -30,7 +31,11 @@ export function createWorkbenchTestDriver({
 				: controller.signal
 			try {
 				const target = resolveTarget(options.target)
-				const opened = await openLocalWorkbenchEntry(ctx, { ...options, target, signal })
+				const opened = await openLocalWorkbenchEntry(ctx.service(WorkbenchHost), {
+					...options,
+					target,
+					signal,
+				})
 				let lease!: OpenedLocalWorkbenchEntry<Entry>
 				const dispose = () => {
 					signal.removeEventListener('abort', onAbort)

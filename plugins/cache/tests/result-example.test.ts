@@ -5,9 +5,14 @@ import { AccountSource, CachedAccounts } from './fixtures/result-consumer.ts'
 
 it('caches plain accounts and deliberate absence, but never caches a rejected load as an Err', async () => {
 	await using host = await createTestHost()
-	await host.start([MemoryCacheBackendPlugin, CachePlugin, AccountSource, CachedAccounts])
-	const source = host.require(AccountSource)
-	const accounts = host.require(CachedAccounts)
+	await host.start([
+		MemoryCacheBackendPlugin.nodeAddress(),
+		CachePlugin.nodeAddress(),
+		AccountSource.nodeAddress(),
+		CachedAccounts.nodeAddress(),
+	])
+	const source = host.require(AccountSource.nodeAddress())
+	const accounts = host.require(CachedAccounts.nodeAddress())
 
 	const first = await accounts.find('alice')
 	const cached = await accounts.find('alice')

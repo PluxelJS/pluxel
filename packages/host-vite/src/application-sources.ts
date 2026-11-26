@@ -30,6 +30,7 @@ export type HostSourceCandidate<T extends ApplicationSources> = Readonly<{
 	declarationsChanged: boolean
 	files: Set<string>
 	sourceFiles: Set<string>
+	sourceFilesByPlugin: ReadonlyMap<PluginConstructor, readonly string[]>
 	sourceModules: Set<string>
 	/** Switches source admission before draining the previous watcher. Idempotent. */
 	accept(): Promise<void>
@@ -107,7 +108,7 @@ export function createHostSourceEvaluator(options: {
 								pluginSourceCovers({
 									source,
 									root: options.root,
-									requirement: { kind: 'file', path },
+									requirement: { file: path },
 								}),
 							)),
 			)
@@ -119,7 +120,8 @@ export function createHostSourceEvaluator(options: {
 			if (closed) throw new Error('[host-vite] source evaluator is closed')
 			const declarations = input.application.sources ?? []
 			for (const declaration of declarations)
-				if (declaration.kind === 'file') options.onEntry?.(resolve(options.root, declaration.path))
+				if (declaration.file !== undefined)
+					options.onEntry?.(resolve(options.root, declaration.file))
 			const slot =
 				active && sameSources(active.declarations, declarations) ? active : openSlot(declarations)
 			const owned = slot !== active
@@ -134,6 +136,7 @@ export function createHostSourceEvaluator(options: {
 				const files = new Set(input.entryFiles)
 				const plugins = [...input.application.plugins]
 				const seen = new Set(plugins)
+				const sourceFilesByPlugin = new Map<PluginConstructor, string[]>()
 				for (const path of entries) {
 					options.onEntry?.(path)
 					const namespace = await importHostModule(options.server, path)
@@ -142,11 +145,15 @@ export function createHostSourceEvaluator(options: {
 						throw new TypeError(
 							`[host-vite] Plugin source exports no lowered Plugin definitions: ${path}`,
 						)
-					for (const plugin of definitions)
+					for (const plugin of definitions) {
+						const exportingFiles = sourceFilesByPlugin.get(plugin)
+						if (exportingFiles) exportingFiles.push(path)
+						else sourceFilesByPlugin.set(plugin, [path])
 						if (!seen.has(plugin)) {
 							seen.add(plugin)
 							plugins.push(plugin)
 						}
+					}
 					for (const file of collectHostImportFiles(options.server, path)) {
 						files.add(file)
 						sourceModules.add(file)
@@ -159,6 +166,7 @@ export function createHostSourceEvaluator(options: {
 					declarationsChanged: owned,
 					files,
 					sourceFiles,
+					sourceFilesByPlugin,
 					sourceModules,
 					async accept() {
 						if (settled) return

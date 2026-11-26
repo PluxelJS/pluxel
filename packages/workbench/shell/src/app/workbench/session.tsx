@@ -5,8 +5,9 @@ import {
 } from '@pluxel/core'
 import {
 	readWorkbenchShortcuts,
+	readWorkbenchEntryLink,
 	type WorkbenchLayoutEntry,
-	type WorkbenchShortcut,
+	type WorkbenchEntryLink,
 } from '@pluxel/workbench/client'
 import {
 	panelIdentity,
@@ -37,6 +38,7 @@ import { PluginTool } from './PluginTools'
 import { PluginNavigation } from './PluginNavigation'
 import { notifyAndRecord } from '../notifications/notifyBridge'
 import { WorkspaceSnapshotStorage, WorkspaceRestoreError, workspaceStorageKey } from './snapshot'
+import { sidebarShortcutId } from '../../workbench/entry-link'
 
 export const navigationTab = {
 	type: 'tab' as const,
@@ -179,7 +181,7 @@ const panelLayoutPolicy = {
 
 export function defaultWorkspaceLayout(
 	compact = window.innerWidth <= 680,
-	shortcuts: readonly WorkbenchShortcut[] = [],
+	shortcuts: readonly WorkbenchEntryLink[] = [],
 ): IJsonModel {
 	return {
 		global: {
@@ -256,14 +258,14 @@ export class WorkspaceSession {
 	private disposing?: Promise<void>
 	private synchronizingPanels?: Promise<void>
 	private panelsPending = false
-	private readonly initialShortcuts: readonly WorkbenchShortcut[]
+	private readonly initialShortcuts: readonly WorkbenchEntryLink[]
 
 	constructor(
 		options: {
 			basepath?: string
 			snapshot?: unknown
 			storage?: WorkspaceSnapshotStorage
-			initialShortcuts?: readonly WorkbenchShortcut[]
+			initialShortcuts?: readonly WorkbenchEntryLink[]
 		} = {},
 	) {
 		this.initialShortcuts = readWorkbenchShortcuts(
@@ -380,7 +382,7 @@ export class WorkspaceSession {
 					this.panelsPending = false
 					const owner = this.currentPanelOwner()
 					for (const side of ['left', 'right', 'bottom'] as const) {
-						let border = this.workbench.model.getNodeById(`border_${side}`)
+						const border = this.workbench.model.getNodeById(`border_${side}`)
 						if (!(border instanceof BorderNode)) continue
 						const config = border.getConfig() ?? {}
 						if (config.panelOwner !== owner) {
@@ -410,7 +412,7 @@ export class WorkspaceSession {
 								if (result.status !== 'applied') throw new Error('无法恢复插件面板布局')
 							}
 							const expanded = border.getSelected() >= 0
-							border = this.workbench.model.getNodeById(`border_${side}`) as BorderNode
+							const updatedBorder = this.workbench.model.getNodeById(border.getId()) as BorderNode
 							const selectedId = restore
 								? restore.selected
 								: expanded
@@ -422,10 +424,14 @@ export class WorkspaceSession {
 									: undefined
 							this.check(
 								await this.workbench.dispatch(
-									Actions.updateNodeAttributes(border.getId(), {
-										config: { ...config, panelOwner: owner, panelArchives: archives },
+									Actions.updateNodeAttributes(updatedBorder.getId(), {
+										config: {
+											...updatedBorder.getConfig(),
+											panelOwner: owner,
+											panelArchives: archives,
+										},
 										selected: selectedId
-											? border.getChildren().findIndex((node) => node.getId() === selectedId)
+											? updatedBorder.getChildren().findIndex((node) => node.getId() === selectedId)
 											: -1,
 									}),
 								),
@@ -450,30 +456,42 @@ export class WorkspaceSession {
 	navigationMode(): 'icons' | 'labels' {
 		return this.navigationConfig().navigationMode === 'labels' ? 'labels' : 'icons'
 	}
-	sidebarShortcuts(): readonly WorkbenchShortcut[] {
+	sidebarShortcuts(): readonly WorkbenchEntryLink[] {
 		return (
-			(this.navigationConfig().shortcuts as readonly WorkbenchShortcut[] | undefined) ??
+			(this.navigationConfig().shortcuts as readonly WorkbenchEntryLink[] | undefined) ??
 			this.initialShortcuts
 		)
 	}
-	isSidebarShortcut(shortcut: WorkbenchShortcut): boolean {
+	isSidebarShortcut(shortcut: WorkbenchEntryLink): boolean {
 		return this.sidebarShortcuts().some(
 			(saved) =>
 				saved.entryKey === shortcut.entryKey &&
 				pluginNodeAddressEqual(saved.target, shortcut.target),
 		)
 	}
-	async setSidebarShortcut(shortcut: WorkbenchShortcut, pinned: boolean): Promise<void> {
-		const [validated] = readWorkbenchShortcuts([shortcut])
+	async setSidebarShortcut(shortcut: WorkbenchEntryLink, pinned: boolean): Promise<void> {
+		const validated = readWorkbenchEntryLink(shortcut)
 		const current = this.sidebarShortcuts()
-		const matches = (saved: WorkbenchShortcut) =>
-			saved.entryKey === validated!.entryKey &&
-			pluginNodeAddressEqual(saved.target, validated!.target)
+		const matches = (saved: WorkbenchEntryLink) =>
+			saved.entryKey === validated.entryKey &&
+			pluginNodeAddressEqual(saved.target, validated.target)
 		const shortcuts = pinned
 			? current.some(matches)
-				? current.map((saved) => (matches(saved) ? validated! : saved))
-				: [...current, validated!]
+				? current.map((saved) => (matches(saved) ? validated : saved))
+				: [...current, validated]
 			: current.filter((saved) => !matches(saved))
+		await this.saveSidebarShortcuts(shortcuts)
+	}
+	async moveSidebarShortcut(id: string, overId: string): Promise<void> {
+		const shortcuts = [...this.sidebarShortcuts()]
+		const from = shortcuts.findIndex((shortcut) => sidebarShortcutId(shortcut) === id)
+		const to = shortcuts.findIndex((shortcut) => sidebarShortcutId(shortcut) === overId)
+		if (from === -1 || to === -1 || from === to) return
+		const [moved] = shortcuts.splice(from, 1)
+		shortcuts.splice(to, 0, moved!)
+		await this.saveSidebarShortcuts(shortcuts)
+	}
+	private async saveSidebarShortcuts(shortcuts: readonly WorkbenchEntryLink[]): Promise<void> {
 		const result = await this.workbench.dispatch(
 			Actions.updateNodeAttributes('border_left', {
 				config: { ...this.navigationConfig(), shortcuts },

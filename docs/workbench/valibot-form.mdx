@@ -151,7 +151,7 @@ export class ExamplePlugin extends BasePlugin {
 
 > [!TIP]
 > **组合规范**
-> 当字段同时具有默认值与表单元数据时，请使用 `v.optional(v.pipe(baseSchema, metadata), defaultValue)` 结构。让 `v.optional` 位于外层，这样在解包 Schema 时表单引擎依然能正常读取内层的元数据。
+> 使用 `v.optional(v.pipe(baseSchema, metadata), defaultValue)` 可以把默认值和展示元数据一起交给表单。配置页以已保存输入为草稿，默认值和声明来源显示在字段说明中。
 
 ## 常用元数据函数
 
@@ -160,3 +160,13 @@ export class ExamplePlugin extends BasePlugin {
 - **`f.numberMeta({ step, min, max })`**：数值控件，设置步长调节器。
 - **`f.picklistMeta({ control, labels })`**：枚举选项，支持切换为分段选择器（`segmented`）或下拉选择框（`select`）。
 - **`f.arrayMeta({ layout, addLabel })`**：数组列表，提供列表展开与新增项文案提示。
+
+## 在浏览器扩展中使用 AutoForm
+
+WXT 选项页从 embedded Host 读取规则的 Valibot 声明和保存输入，通过 `extractFormFields` 生成字段，并用 `prepareEditableConfigFields(fields, saved)` 根据保存值保护不能安全编辑的字段。保存时，`buildEditableConfigPatch(fields, draft, saved)` 生成差异，扩展将差异和开始编辑时的版本提交给 `host.config.patch`。Host 校验并通知运行中的规则。[WXT 规则设置](https://github.com/PluxelJS/pluxel/tree/main/projects/host-wxt)
+
+## 从字段数据渲染表单
+
+包根的 `extractFormFields` 与 `parseFormFields` 共用只读 `FieldNode`。前者读取本地 schema，后者校验收到的字段数据。把结果传入 `<AutoForm fields={fields} formOpts={opts}>`，在 `opts` 中提供原始草稿初值和提交处理。持有本地 schema 时，可以使用 `<AutoForm schema={schema}>` 直接编辑输入并在提交时自行解析。
+
+`valibot-form/web` 的 `renderers` 为一份表单替换 string、number、boolean 或 picklist 控件。控件拿到真实值路径和原始值，也可委托给 `webRenderers` 中的预制控件。Workbench 配置页用此接口提供「继承」「开」「关」，同一文档的 Content 表单继续使用默认开关。[包的用法与示例](https://github.com/PluxelJS/pluxel/tree/main/packages/valibot-form#web-adapter)

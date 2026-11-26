@@ -1,12 +1,12 @@
 import type { PluginApplyReport } from './coordinator'
-import type { PluginHost } from './host'
-import type { HostPluginStatusOverview } from './status'
-import type { HostStartupContext, ResolvedHostApplication } from './application'
+import type { HostApplication, PluginHost } from './host'
+import { readUnreadyHostStatus, type HostPluginStatusOverview } from './status'
+import type { HostStartupContext } from './node-application'
 
 /** Settled startup facts. This snapshot is not a continuing health guarantee. */
-export type HostApplicationStartup = Readonly<{
+export type HostApplicationStartup<Startup = HostStartupContext> = Readonly<{
 	host: PluginHost
-	startup: HostStartupContext
+	startup: Startup
 	report: PluginApplyReport
 	status: HostPluginStatusOverview
 }>
@@ -38,30 +38,38 @@ export class HostApplicationStartupError extends Error {
 }
 
 /** The caller owns rollback and invokes this after attachments are ready and before Plugin admission. */
-export async function prepareHostApplication(
-	application: ResolvedHostApplication,
+export async function prepareHostApplication<Startup>(
+	application: Pick<HostApplication<Startup>, 'prepare'> & { readonly startup: Startup },
 	host: PluginHost,
 ): Promise<void> {
 	await application.prepare?.({ host, startup: application.startup })
 }
 
 /** @internal Run once for a fresh, attached Host. Native and bundled launchers share this boundary. */
-export async function startHostApplication(
-	application: ResolvedHostApplication,
+export async function startHostApplication<Startup>(
+	application: Pick<HostApplication<Startup>, 'prepare' | 'acceptStartup' | 'launch'> & {
+		readonly startup: Startup
+	},
 	host: PluginHost,
 ): Promise<PluginApplyReport> {
 	try {
 		await prepareHostApplication(application, host)
 		const report = await host.start()
-		const status = await host.status()
-		const accepted = application.acceptStartup
-			? await application.acceptStartup({ host, startup: application.startup, report, status })
-			: status.statuses.every(
-					(node) => node.desiredState !== 'running' || node.lifecycleState === 'running',
-				)
-		if (typeof accepted !== 'boolean')
-			throw new TypeError('[host] Application acceptStartup must return a boolean')
-		if (!accepted) throw new HostApplicationStartupError(report, status)
+		if (application.acceptStartup) {
+			const status = await host.status()
+			const accepted = await application.acceptStartup({
+				host,
+				startup: application.startup,
+				report,
+				status,
+			})
+			if (typeof accepted !== 'boolean')
+				throw new TypeError('[host] Application acceptStartup must return a boolean')
+			if (!accepted) throw new HostApplicationStartupError(report, status)
+		} else {
+			const status = await readUnreadyHostStatus(host.ctx)
+			if (status) throw new HostApplicationStartupError(report, status)
+		}
 		await application.launch?.({ host, startup: application.startup })
 		return report
 	} catch (error) {

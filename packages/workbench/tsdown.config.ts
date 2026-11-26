@@ -1,6 +1,19 @@
+import { createServiceBuildPlugin } from '../rolldown/src/service-build'
 import { defineConfig } from 'vite-plus/pack'
+
 export default defineConfig({
-	exports: { devExports: '@pluxel/source' },
+	plugins: [createServiceBuildPlugin({ root: import.meta.dirname })],
+	exports: {
+		devExports: '@pluxel/source',
+		customExports(exports) {
+			exports['./control'] = {
+				types: './dist/control/index.d.mts',
+				import: './dist/control/index.mjs',
+				default: './dist/control/index.mjs',
+			}
+			return exports
+		},
+	},
 	copy: ['public'],
 	entry: {
 		test: 'src/test.ts',
@@ -39,7 +52,7 @@ export default defineConfig({
 			'react-dom',
 		],
 	},
-	dts: { eager: true },
+	dts: { tsconfig: './tsconfig.build.json', eager: true },
 	format: ['esm'],
 	clean: true,
 	sourcemap: true,

@@ -5,17 +5,7 @@ description: 使用 React 与 Cap'n Web RPC 编写功能完整的 Workbench 页�
 
 当管理页面需要复杂交互、表格分页、图表展示或实时流式数据时，可使用 **View** 视图。开发者使用 React 编写前端组件，后端插件通过 Cap'n Web 暴露强类型的 RPC 接口，Workbench 负责处理权限校验、窗口挂载与生命周期注销。
 
-## 架构组成（五件套）
-
-开发一个完整的 View 通常包含以下五个部分：
-
-1. **页面契约声明（`src/workbench.ts`）**：定义 DTO 数据类型、RPC 接口与视图路由；
-2. **服务端 Target 实现（`src/OrdersPlugin.ts`）**：继承 `RpcTarget`，实现具体的业务数据读取与操作逻辑；
-3. **渲染器作用域（`src/ui/overview.scope.ts`）**：定义基于 TanStack Query 封装的查询（Query）与操作（Mutation）；
-4. **React 页面组件（`src/ui/orders-page.tsx`）**：纯前端组件，渲染界面并响应用户交互；
-5. **视图入口（`src/ui/overview.tsx`）**：将页面组件绑定至渲染器作用域并默认导出。
-
----
+页面有三个入口。Definition 声明页面和 RPC 类型，插件在 `init()` 发布每次打开时创建的 Target，React renderer 默认导出页面组件。下面把 scope、查询和组件放在一个 renderer 文件里。
 
 <span id="默认路径snapshot--mutation"></span>
 
@@ -42,10 +32,10 @@ export interface OrdersApi extends RpcTarget {
 }
 
 // 声明工作台视图
-export const OrdersWorkbench = workbench.define({
+export const OrdersWorkbench = workbench.define(import.meta.url, {
 	overview: workbench.view<OrdersApi>({
-		renderer: workbench.entry(import.meta.url, './ui/overview.tsx'),
-		placement: workbench.tab({ label: '订单管理', order: 20 }),
+		renderer: './ui/overview.tsx',
+		placement: { kind: 'tab', label: '订单管理', order: 20 },
 	}),
 })
 ```
@@ -55,10 +45,13 @@ export const OrdersWorkbench = workbench.define({
 在插件中实现 `OrdersApi`，并在 `init()` 阶段发布：
 
 ```ts
-import { BasePlugin, Plugin } from '@pluxel/core'
+import type { Workbench } from '@pluxel/workbench'
+import { BasePlugin, Plugin, defineServiceRef } from '@pluxel/core'
 import { RpcTarget } from 'capnweb'
 import { assertWorkbenchDto } from '@pluxel/workbench/server'
 import { OrdersWorkbench, type OrdersApi, type OrdersSnapshot } from './workbench.ts'
+
+const WorkbenchRef = defineServiceRef<Workbench>()
 
 @Plugin({ displayName: 'Orders' })
 export class OrdersPlugin extends BasePlugin {
@@ -66,7 +59,7 @@ export class OrdersPlugin extends BasePlugin {
 
 	protected override init() {
 		// 每次前端打开页面时，创建一个新的 Target 会话实例
-		this.ctx.workbench?.publish(OrdersWorkbench, {
+		this.ctx.service(WorkbenchRef)?.publish(OrdersWorkbench, {
 			overview: () => new OrdersTarget(this),
 		})
 	}
@@ -97,77 +90,49 @@ class OrdersTarget extends RpcTarget implements OrdersApi {
 }
 ```
 
-### 3. 定义查询与变更（Query & Mutation）
+### 3. 编写 renderer
 
-在 `src/ui/overview.scope.ts` 中创建渲染器作用域，声明对服务端 API 的调用：
+在 `src/ui/overview.tsx` 中，通过模块级 `createWorkbenchRenderer(OrdersWorkbench.overview)` 绑定页面。组件通过这个 scope 使用查询、写入和宿主能力。每次打开页面独立持有相应的缓存和订阅。
 
-```ts
+```tsx
 import { createWorkbenchRenderer } from '@pluxel/workbench/react'
 import { OrdersWorkbench } from '../workbench.ts'
 
-export const overviewScope = createWorkbenchRenderer(OrdersWorkbench.overview)
-
-// 声明数据查询
-export const ordersQuery = overviewScope.query(({ api }) => ({
+const overviewScope = createWorkbenchRenderer(OrdersWorkbench.overview)
+const ordersQuery = overviewScope.query(({ api }) => ({
 	queryKey: ['orders', 'snapshot'] as const,
 	queryFn: () => api.snapshotDto(),
 }))
-
-// 声明操作变更：操作成功后自动使 ordersQuery 失效并重新拉取
-export const refreshOrders = overviewScope.mutation(({ api }) => ({
+const refreshOrders = overviewScope.mutation(({ api }) => ({
 	mutationFn: () => api.refresh(),
 	workbench: { invalidates: [ordersQuery] },
 }))
-```
 
-### 4. 编写 React 界面组件
-
-在 `src/ui/orders-page.tsx` 中编写交互界面：
-
-```tsx
-import { ordersQuery, refreshOrders } from './overview.scope.ts'
-
-export function OrdersPage() {
+function OrdersPage() {
 	const orders = ordersQuery.useQuery()
 	const refresh = refreshOrders.useMutation()
 
-	if (orders.status === 'pending') {
-		return <p>正在加载订单数据...</p>
-	}
-
+	if (orders.status === 'pending') return <p>正在加载订单数据…</p>
 	if (orders.status === 'error') {
-		return (
-			<div>
-				<p>加载失败，请重试</p>
-				<button onClick={() => orders.refetch()}>重试</button>
-			</div>
-		)
+		return <button onClick={orders.invalidate}>加载失败，重试</button>
 	}
 
 	return (
-		<div style={{ padding: 16 }}>
-			<h2>订单列表（版本：{orders.data.revision}）</h2>
-			<p>当前待处理订单数：{orders.data.openOrders}</p>
+		<section>
+			<h2>订单列表（版本 {orders.data.revision}）</h2>
+			<p>待处理订单数 {orders.data.openOrders}</p>
 			<button disabled={refresh.isPending} onClick={() => refresh.mutate()}>
-				{refresh.isPending ? '正在刷新...' : '手动刷新'}
+				刷新
 			</button>
-		</div>
+			{refresh.status === 'error' && <p>刷新失败，请重试。</p>}
+		</section>
 	)
 }
-```
-
-### 5. 视图入口绑定
-
-在 `src/ui/overview.tsx` 中导出页面：
-
-```tsx
-import { OrdersPage } from './orders-page.tsx'
-import { overviewScope } from './overview.scope.ts'
 
 export default overviewScope.render(OrdersPage)
 ```
 
----
+多个组件共用查询时，可以把 scope 和资源声明移到单独的模块，各组件导入所需资源。纯展示 renderer 可以直接默认导出零参数组件。
 
 <span id="检查结果"></span>
 
@@ -175,9 +140,8 @@ export default overviewScope.render(OrdersPage)
 
 启动应用并访问 `/__pluxel/workbench`：
 
-1. 在左侧应用栏中可看到“订单管理”入口；
-2. 点击打开后，将呈现订单数据与操作按钮；
-3. 点击“手动刷新”，按钮进入加载状态，执行完成后界面数据与版本号自动更新。
+1. 在插件目录打开 Orders 的详情，选择“订单管理”选项卡。
+2. 点击“刷新”。操作期间按钮禁用，完成后订单列表显示递增的版本号。
 
 ---
 
@@ -188,11 +152,17 @@ export default overviewScope.render(OrdersPage)
 在 React 组件中，除了调用当前插件的服务端 `api` 外，还可以调用宿主提供的全局能力（例如触发宿主通知、导航至其他标签页）：
 
 ```tsx
-const { host } = overviewScope.useWorkbench()
-
-// 弹出全局提示通知
-host.notify({ title: '操作完成', message: '已同步最新订单' })
+function RevisionNotice({ revision }: { revision: number }) {
+	const { host } = overviewScope.useWorkbench()
+	return (
+		<button onClick={() => host.notify({ message: `当前订单版本 ${revision}` })}>
+			显示当前版本
+		</button>
+	)
+}
 ```
+
+在 Shell 中，`host.navigation.openDocument({ path, title })` 打开当前插件的路由，`openDocument({ plugin, title })` 打开指定节点的内置插件详情。从业务 API 拿到另一个插件提供的 `WorkbenchEntryLink` 时，用 `openDocument({ entry, title })` 打开对应文档，Shell 核对发布节点、入口和具体位置。入口已撤回或位置失效时，调用会抛错，页面可在按钮旁显示原因。导航不可用时 `host.navigation` 为 `null`。 [向中心插件注册来源](./composition.md#向中心插件注册来源)
 
 ---
 
@@ -200,5 +170,5 @@ host.notify({ title: '操作完成', message: '已同步最新订单' })
 
 ## 依赖与构建
 
-- 插件前端依赖的 React、Mantine、TanStack Query 等基础库由 Workbench Shell 在运行时统一提供，构建工具会自动配置模块联邦（Module Federation）与外部化。
-- 服务端模块与前端 UI 组件应当严格解耦，前端组件只能引用 `workbench.ts` 中暴露的类型与 Schema，避免将服务端的 Node.js 逻辑打包进浏览器产物中。
+- Shell 与插件共享固定版本的 React、ReactDOM、Mantine、React Bridge 和 Workbench 浏览器入口。页面通过 `scope.query` 和 `scope.mutation` 使用 Workbench 内部的 TanStack Query 缓存。插件自行引入的其他前端库由 producer 打包。
+- Renderer 中绑定 scope 的模块直接导入自己的 definition。同一句 import 可以用 `type` 引入 RPC 接口或表单类型。构建时 definition 值只包含当前条目的浏览器 descriptor，类型仍指向作者声明。其他模块按需导入 scope、资源或类型。

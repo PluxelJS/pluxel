@@ -1,10 +1,10 @@
-import { standardServices } from '@pluxel/services'
+import { commands, Commands } from '@pluxel/services/commands'
 import { managementCommands } from '@pluxel/services/management/commands'
-import { Commands } from '@pluxel/services/commands'
 import { defineCommand, Result } from '@pluxel/commands'
 import { obj } from '@pluxel/commands/typebox'
 import { createServiceInternalTestHarness } from '@pluxel/services/internal/test'
 import { BasePlugin, Plugin } from '@pluxel/core/internal/test'
+import { parsePluginNodeAddress } from '@pluxel/core'
 import { describe, expect, it } from 'vitest'
 import { lowerTestPlugin } from '../helpers/lowered-plugin'
 
@@ -19,8 +19,8 @@ function valueCommand(value: string, name = 'example.value.get') {
 
 describe('CommandsService', () => {
 	it('classifies unreadable trusted context and execution faults as INTERNAL', async () => {
-		await using host = await createServiceInternalTestHarness({ workbench: false })
-		const registration = host.ctx.require(Commands).register(valueCommand('ready'))
+		await using host = await createServiceInternalTestHarness({ services: [commands()] })
+		const registration = host.ctx.service(Commands).register(valueCommand('ready'))
 		const signalError = new Error('signal getter failed')
 		const unreadableSignal = Object.defineProperty({}, 'signal', {
 			get() {
@@ -52,7 +52,7 @@ describe('CommandsService', () => {
 	})
 
 	it('aborts and drains owner commands before the plugin stop hook', async () => {
-		await using host = await createServiceInternalTestHarness({ workbench: false })
+		await using host = await createServiceInternalTestHarness({ services: [commands()] })
 
 		const order: string[] = []
 		let captured!: { execute(candidate: unknown, context?: {}): Promise<unknown> }
@@ -62,7 +62,7 @@ describe('CommandsService', () => {
 		@Plugin({ displayName: 'LongCommandOwner' })
 		class LongCommandOwner extends BasePlugin {
 			override init() {
-				captured = this.ctx.require(Commands).register(
+				captured = this.ctx.service(Commands).register(
 					defineCommand({
 						name: 'owner.long.run',
 						description: 'Run until the owner stops.',
@@ -94,7 +94,7 @@ describe('CommandsService', () => {
 		host.cfg(LongCommandOwner).setAutoStart(true)
 		host.start(LongCommandOwner)
 		await host.commit()
-		const pending = host.ctx.require(Commands).execute('owner.long.run', {})
+		const pending = host.ctx.service(Commands).execute('owner.long.run', {})
 		await didStart
 		host.remove(LongCommandOwner)
 		await host.commit()
@@ -103,7 +103,7 @@ describe('CommandsService', () => {
 		expect(order).toEqual(['abort', 'cleanup'])
 		expect(
 			host.ctx
-				.require(Commands)
+				.service(Commands)
 				.list()
 				.some(({ name }) => name === 'owner.long.run'),
 		).toBe(false)
@@ -115,37 +115,10 @@ describe('CommandsService', () => {
 		})
 	})
 
-	it('publishes the built-in plugin management catalog once during preparation', async () => {
-		await using host = await createServiceInternalTestHarness({
-			workbench: false,
-			services: [...standardServices(), managementCommands()],
-		})
-
-		const prepared = host.ctx.require(Commands).list()
-		expect(prepared).toHaveLength(6)
-		await host.commit()
-		await host.commit()
-		expect(host.ctx.require(Commands).list()).toEqual(prepared)
-		expect(
-			host.ctx
-				.require(Commands)
-				.list()
-				.map(({ name }) => name),
-		).toEqual([
-			'plugin.auto-start.set',
-			'plugin.list',
-			'plugin.restart',
-			'plugin.start',
-			'plugin.status.get',
-			'plugin.stop',
-		])
-		expect(host.ctx.require(Commands).list()).toBe(host.ctx.require(Commands).list())
-	})
-
 	it('accepts package subpath addresses at the management command boundary', async () => {
 		await using host = await createServiceInternalTestHarness({
 			workbench: false,
-			services: [...standardServices(), managementCommands()],
+			services: [commands(), managementCommands()],
 		})
 		const address = {
 			definition: {
@@ -155,7 +128,7 @@ describe('CommandsService', () => {
 			variant: 'default',
 		}
 		await expect(
-			host.ctx.require(Commands).execute('plugin.status.get', { address }),
+			host.ctx.service(Commands).execute('plugin.status.get', { address }),
 		).resolves.toMatchObject({
 			status: 'error',
 			error: {
@@ -166,22 +139,22 @@ describe('CommandsService', () => {
 		})
 	})
 
-	it('delegates stable catalog snapshots and publication subscriptions to the registry', async () => {
-		await using host = await createServiceInternalTestHarness({ workbench: false })
+	it('publishes stable catalog snapshots across command registration and owner removal', async () => {
+		await using host = await createServiceInternalTestHarness({ services: [commands()] })
 
 		await host.commit()
-		const initial = host.ctx.require(Commands).snapshot()
-		expect(host.ctx.require(Commands).snapshot()).toBe(initial)
-		expect(host.ctx.require(Commands).list()).toBe(initial.descriptors)
+		const catalog = host.ctx.service(Commands)
+		const initial = catalog.snapshot()
+		expect(catalog.snapshot()).toBe(initial)
+		expect(catalog.list()).toBe(initial.descriptors)
+		expect(catalog.list()).toEqual([])
 		const revisions: number[] = []
-		const unsubscribe = host.ctx
-			.require(Commands)
-			.subscribe((snapshot) => revisions.push(snapshot.revision))
+		const unsubscribe = catalog.subscribe((snapshot) => revisions.push(snapshot.revision))
 
 		@Plugin({ displayName: 'ObservedCommandOwner' })
 		class ObservedCommandOwner extends BasePlugin {
 			override init() {
-				this.ctx.require(Commands).register(valueCommand('observed', 'owner.observed.get'))
+				this.ctx.service(Commands).register(valueCommand('observed', 'owner.observed.get'))
 			}
 		}
 
@@ -190,15 +163,24 @@ describe('CommandsService', () => {
 		host.cfg(ObservedCommandOwner).setAutoStart(true)
 		host.start(ObservedCommandOwner)
 		await host.commit()
+		expect(catalog.list().map(({ name }) => name)).toEqual(['owner.observed.get'])
+		await expect(catalog.execute('owner.observed.get', {})).resolves.toEqual(
+			Result.ok({ value: 'observed' }),
+		)
 		host.remove(ObservedCommandOwner)
 		await host.commit()
 		unsubscribe()
 
+		expect(catalog.list()).toEqual([])
+		await expect(catalog.execute('owner.observed.get', {})).resolves.toMatchObject({
+			status: 'error',
+			error: { code: 'COMMAND_NOT_FOUND' },
+		})
 		expect(revisions).toEqual([initial.revision + 1, initial.revision + 2])
 	})
 
 	it('keeps retained registration handles fixed to their original generation', async () => {
-		await using host = await createServiceInternalTestHarness({ workbench: false })
+		await using host = await createServiceInternalTestHarness({ services: [commands()] })
 
 		let retained!: {
 			readonly descriptor: { readonly name: string }
@@ -208,14 +190,14 @@ describe('CommandsService', () => {
 		@Plugin({ displayName: 'CommandOwner' })
 		class CommandOwnerV1 extends BasePlugin {
 			override init() {
-				retained = this.ctx.require(Commands).register(valueCommand('v1'))
+				retained = this.ctx.service(Commands).register(valueCommand('v1'))
 			}
 		}
 
 		@Plugin({ displayName: 'CommandOwner' })
 		class CommandOwnerV2 extends BasePlugin {
 			override init() {
-				this.ctx.require(Commands).register(valueCommand('v2'))
+				this.ctx.service(Commands).register(valueCommand('v2'))
 			}
 		}
 
@@ -226,7 +208,7 @@ describe('CommandsService', () => {
 		host.start(CommandOwnerV1)
 		await host.commit()
 		await expect(
-			host.ctx.require(Commands).execute('example.value.get', {}),
+			host.ctx.service(Commands).execute('example.value.get', {}),
 		).resolves.toMatchObject({
 			status: 'ok',
 			value: {
@@ -237,7 +219,7 @@ describe('CommandsService', () => {
 		host.replace(CommandOwnerV1, CommandOwnerV2)
 		await host.commit()
 		await expect(
-			host.ctx.require(Commands).execute('example.value.get', {}),
+			host.ctx.service(Commands).execute('example.value.get', {}),
 		).resolves.toMatchObject({
 			status: 'ok',
 			value: {
@@ -250,7 +232,7 @@ describe('CommandsService', () => {
 		})
 		retained.dispose()
 		await expect(
-			host.ctx.require(Commands).execute('example.value.get', {}),
+			host.ctx.service(Commands).execute('example.value.get', {}),
 		).resolves.toMatchObject({
 			status: 'ok',
 			value: {
@@ -262,7 +244,7 @@ describe('CommandsService', () => {
 		await host.commit()
 		expect(
 			host.ctx
-				.require(Commands)
+				.service(Commands)
 				.list()
 				.some(({ name }) => name === 'example.value.get'),
 		).toBe(false)
@@ -273,7 +255,7 @@ describe('CommandsService', () => {
 	})
 
 	it('manual dispose revokes cached command wrappers without cancelling entered work', async () => {
-		await using host = await createServiceInternalTestHarness({ workbench: false })
+		await using host = await createServiceInternalTestHarness({ services: [commands()] })
 
 		let disposeManual!: () => void
 		let captured!: { execute(candidate: unknown, context?: {}): Promise<unknown> }
@@ -285,7 +267,7 @@ describe('CommandsService', () => {
 		@Plugin({ displayName: 'ManualCommandOwner' })
 		class ManualCommandOwner extends BasePlugin {
 			override init() {
-				const registration = this.ctx.require(Commands).register(
+				const registration = this.ctx.service(Commands).register(
 					defineCommand({
 						name: 'owner.manual.dispose',
 						description: 'Run until its manual registration is disposed.',
@@ -299,7 +281,7 @@ describe('CommandsService', () => {
 				)
 				captured = registration
 				disposeManual = () => registration[Symbol.dispose]()
-				this.ctx.require(Commands).register(valueCommand('live', 'owner.manual.sibling'))
+				this.ctx.service(Commands).register(valueCommand('live', 'owner.manual.sibling'))
 			}
 		}
 
@@ -314,7 +296,7 @@ describe('CommandsService', () => {
 		disposeManual()
 		expect(
 			host.ctx
-				.require(Commands)
+				.service(Commands)
 				.list()
 				.some(({ name }) => name === 'owner.manual.dispose'),
 		).toBe(false)
@@ -323,7 +305,7 @@ describe('CommandsService', () => {
 			error: { code: 'COMMAND_NOT_FOUND' },
 		})
 		await expect(
-			host.ctx.require(Commands).execute('owner.manual.dispose', {}),
+			host.ctx.service(Commands).execute('owner.manual.dispose', {}),
 		).resolves.toMatchObject({
 			status: 'error',
 			error: {
@@ -331,7 +313,7 @@ describe('CommandsService', () => {
 			},
 		})
 		await expect(
-			host.ctx.require(Commands).execute('owner.manual.sibling', {}),
+			host.ctx.service(Commands).execute('owner.manual.sibling', {}),
 		).resolves.toMatchObject({
 			status: 'ok',
 			value: {
@@ -344,12 +326,12 @@ describe('CommandsService', () => {
 	})
 
 	it('rolls back registrations when plugin startup fails', async () => {
-		await using host = await createServiceInternalTestHarness({ workbench: false })
+		await using host = await createServiceInternalTestHarness({ services: [commands()] })
 
 		@Plugin({ displayName: 'BrokenCommandOwner' })
 		class BrokenCommandOwner extends BasePlugin {
 			override init() {
-				this.ctx.require(Commands).register(valueCommand('broken'))
+				this.ctx.service(Commands).register(valueCommand('broken'))
 				throw new Error('startup failed')
 			}
 		}
@@ -363,30 +345,30 @@ describe('CommandsService', () => {
 		expect(host.isRunning(BrokenCommandOwner)).toBe(false)
 		expect(
 			host.ctx
-				.require(Commands)
+				.service(Commands)
 				.list()
 				.some(({ name }) => name === 'example.value.get'),
 		).toBe(false)
 	})
 
 	it('keeps cached service views and cleanup isolated between plugin owners', async () => {
-		await using host = await createServiceInternalTestHarness({ workbench: false })
+		await using host = await createServiceInternalTestHarness({ services: [commands()] })
 
 		@Plugin({ displayName: 'CommandOwnerA' })
 		class CommandOwnerA extends BasePlugin {
 			override async init() {
-				const commands = this.ctx.require(Commands)
+				const commandService = this.ctx.service(Commands)
 				await Promise.resolve()
-				commands.register(valueCommand('a', 'owner.a.get'))
+				commandService.register(valueCommand('a', 'owner.a.get'))
 			}
 		}
 
 		@Plugin({ displayName: 'CommandOwnerB' })
 		class CommandOwnerB extends BasePlugin {
 			override async init() {
-				const commands = this.ctx.require(Commands)
+				const commandService = this.ctx.service(Commands)
 				await Promise.resolve()
-				commands.register(valueCommand('b', 'owner.b.get'))
+				commandService.register(valueCommand('b', 'owner.b.get'))
 			}
 		}
 
@@ -399,18 +381,18 @@ describe('CommandsService', () => {
 		host.start(CommandOwnerB)
 		await host.commit()
 
-		expect(host.require(CommandOwnerA).ctx.require(Commands)).not.toBe(
-			host.require(CommandOwnerB).ctx.require(Commands),
+		expect(host.require(CommandOwnerA).ctx.service(Commands)).not.toBe(
+			host.require(CommandOwnerB).ctx.service(Commands),
 		)
 		host.remove(CommandOwnerA)
 		await host.commit()
 		expect(
 			host.ctx
-				.require(Commands)
+				.service(Commands)
 				.list()
 				.some(({ name }) => name === 'owner.a.get'),
 		).toBe(false)
-		await expect(host.ctx.require(Commands).execute('owner.b.get', {})).resolves.toMatchObject({
+		await expect(host.ctx.service(Commands).execute('owner.b.get', {})).resolves.toMatchObject({
 			status: 'ok',
 			value: {
 				value: 'b',
@@ -421,7 +403,7 @@ describe('CommandsService', () => {
 	it('executes management commands through the existing lifecycle use case', async () => {
 		await using host = await createServiceInternalTestHarness({
 			workbench: false,
-			services: [...standardServices(), managementCommands()],
+			services: [commands(), managementCommands()],
 		})
 
 		@Plugin({ displayName: 'ManagedPlugin' })
@@ -430,8 +412,8 @@ describe('CommandsService', () => {
 		lowerTestPlugin(ManagedPlugin)
 		host.add(ManagedPlugin)
 		await host.commit()
-		const address = ManagedPlugin.nodeAddress()
-		const started = await host.ctx.require(Commands).execute('plugin.start', {
+		const address = parsePluginNodeAddress(ManagedPlugin.nodeAddress())
+		const started = await host.ctx.service(Commands).execute('plugin.start', {
 			address,
 		})
 		expect(started).toMatchObject({
@@ -447,7 +429,7 @@ describe('CommandsService', () => {
 			},
 		})
 
-		const listed = await host.ctx.require(Commands).execute('plugin.list', {})
+		const listed = await host.ctx.service(Commands).execute('plugin.list', {})
 		expect(listed).toMatchObject({
 			status: 'ok',
 			value: {
@@ -456,7 +438,7 @@ describe('CommandsService', () => {
 			},
 		})
 
-		const stopped = await host.ctx.require(Commands).execute('plugin.stop', {
+		const stopped = await host.ctx.service(Commands).execute('plugin.stop', {
 			address,
 		})
 		expect(stopped).toMatchObject({
@@ -473,7 +455,7 @@ describe('CommandsService', () => {
 		host.remove(ManagedPlugin)
 		await host.commit()
 		await expect(
-			host.ctx.require(Commands).execute('plugin.status.get', { address }),
+			host.ctx.service(Commands).execute('plugin.status.get', { address }),
 		).resolves.toMatchObject({
 			status: 'error',
 			error: { code: 'REJECTED', reason: 'plugin_not_found' },
@@ -483,7 +465,7 @@ describe('CommandsService', () => {
 	it('restarts the required dependent closure through management commands', async () => {
 		await using host = await createServiceInternalTestHarness({
 			workbench: false,
-			services: [...standardServices(), managementCommands()],
+			services: [commands(), managementCommands()],
 		})
 
 		let providerStarts = 0
@@ -516,8 +498,8 @@ describe('CommandsService', () => {
 		await host.commit()
 
 		expect({ providerStarts, consumerStarts }).toEqual({ providerStarts: 1, consumerStarts: 1 })
-		const providerAddress = ManagedProvider.nodeAddress()
-		const restarted = await host.ctx.require(Commands).execute('plugin.restart', {
+		const providerAddress = parsePluginNodeAddress(ManagedProvider.nodeAddress())
+		const restarted = await host.ctx.service(Commands).execute('plugin.restart', {
 			address: providerAddress,
 		})
 

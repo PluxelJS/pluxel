@@ -15,39 +15,40 @@ Workbench 是 Pluxel 内置的可视化管理工作台。它为开发者和运�
 - **业务应用（Apps）**：插件发布的独立业务交互页面（例如报表看板、可视化编辑器或机器人管理界面）。
 - **上下文工具栏与面板**：右侧与底部抽屉面板，提供实时的日志流查看、节点状态自省与快捷操作。
 
-## 界面开发形态
+## 声明扩展
 
-根据业务复杂程度，插件可选择以下不同层次的展示能力：
+通用配置由插件的 Valibot Schema 自动生成表单。需要自定义界面时，在模块顶层导出一份 `workbench.define(import.meta.url, entries)`。对象的键标识入口，文件路径相对于这份定义所在的模块。 [插件配置](../plugin-development/configuration.md)
 
-| 视图类型                 | 适用场景                                 | 说明                                                                                     |
-| ------------------------ | ---------------------------------------- | ---------------------------------------------------------------------------------------- |
-| **标准配置表单**         | 修改通用配置参数（如并发数、超时、开关） | 直接使用 Valibot Schema 自动生成，详见[声明配置](../plugin-development/configuration.md) |
-| **Content 内容页**       | 展示结构化说明、指标摘要或简单操作按钮   | 使用声明式数据驱动的轻量页面，详见 [Content 页面](./content.md)                          |
-| **View 完整视图**        | 复杂前端交互、动态数据流或图表应用       | 使用 React 开发完整的单页组件与 RPC 交互，详见 [View 视图](./view.md)                    |
-| **Attachment 组合视图**  | 将一个插件的视图嵌入到另一个插件中       | 跨插件的视图组合复用，详见 [Attachment 组合](./composition.md)                           |
-| **上下文面板（Panels）** | 挂载在主界面侧边或底部的辅助操作栏       | 快捷查看状态或常用指令，详见 [上下文面板](./panels.md)                                   |
+| 入口                   | 插件提供的内容                               | 发布时的绑定                                                                                                     |
+| ---------------------- | -------------------------------------------- | ---------------------------------------------------------------------------------------------------------------- |
+| `workbench.content`    | Markdown 文件，可在 `slots` 中声明数据和操作 | 纯文档直接发布，有槽位时提供数据或操作工厂。[Content 页面](./content.md)                                         |
+| `workbench.view`       | 一个 React renderer 和打开位置               | 工厂为每次打开创建新的 RPC target。[View 视图](./view.md)                                                        |
+| `workbench.attachment` | 其他插件可以复用的 React renderer            | 提供方创建 target，消费方通过 `.place(placement)` 放置并绑定自己的 provider 实例。[跨插件组合](./composition.md) |
 
-## 快速上手：声明与发布入口
+位置独立于内容。使用 `{ kind: 'tab', label }` 添加插件选项卡，使用 `{ kind: 'route', path, title }` 声明可导航的页面，使用 `{ kind: 'panel', region, label }` 添加左侧、右侧或底部面板。路由需要在应用导航中展示时提供 `navigation: { label }`。 [上下文面板](./panels.md)
 
-为插件接入工作台只需两步：
+如果一个中心页面要列出其他插件管理的对象，来源插件可以随业务数据提供 `WorkbenchEntryLink`，让用户从列表或详情进入该插件自己的编辑器。 [向中心插件注册来源](./composition.md#向中心插件注册来源)
 
-1. **静态声明入口**：在插件元数据中通过 `workbench.define()` 声明界面类型、标题与路由位置；
-2. **动态发布能力**：在插件的 `init()` 钩子中调用 `this.ctx.workbench?.publish()`，绑定实际的业务数据与操作方法。
+## 发布一个 Markdown 入口
+
+插件在 `init()` 中通过可选的 Workbench 服务发布整份定义。以下例子只需在定义旁放置一份 `overview.md`。
 
 ```ts no-twoslash
-import { BasePlugin, Plugin } from '@pluxel/core'
+import { workbench, type Workbench } from '@pluxel/workbench'
+import { BasePlugin, Plugin, defineServiceRef } from '@pluxel/core'
+
+const WorkbenchRef = defineServiceRef<Workbench>()
+export const AnalyticsWorkbench = workbench.define(import.meta.url, {
+	overview: workbench.content({
+		document: './overview.md',
+		placement: { kind: 'tab', label: '概览' },
+	}),
+})
 
 @Plugin({ displayName: 'Analytics' })
 export class AnalyticsPlugin extends BasePlugin {
 	protected override init() {
-		// 仅在宿主启用了 Workbench 时发布交互能力
-		this.ctx.workbench?.publish('analytics:overview', {
-			async getStats() {
-				return { activeUsers: 42 }
-			},
-		})
+		this.ctx.service(WorkbenchRef)?.publish(AnalyticsWorkbench)
 	}
 }
 ```
-
-使用可选链 `?.` 可以确保插件在没有安装 Workbench 服务的纯后台宿主中依然能平稳运行。

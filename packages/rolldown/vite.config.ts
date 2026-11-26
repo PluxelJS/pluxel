@@ -20,14 +20,16 @@ export default defineConfig({
 			},
 			compile: {
 				command: 'vp pack',
-				dependsOn: ['@pluxel/core#compile', 'valibot-form#compile'],
+				dependsOn: ['@pluxel/host#compile', 'valibot-form#compile'],
 				cache: {
 					input: [
+						'tsconfig.rolldown-build.json',
 						'packages/workbench/package.json',
 						'packages/host/package.json',
 						'packages/host/src/shared-runtime.ts',
+						'packages/host/src/native-import.ts',
 						'packages/workbench/src/workbench/shared-transport.ts',
-						'packages/workbench/src/workbench/definition.ts',
+						'packages/workbench/src/workbench/entry-options.ts',
 						'!packages/rolldown/dist/**',
 					].map((pattern) => ({ pattern, base: 'workspace' as const })),
 					output: ['dist/**'],

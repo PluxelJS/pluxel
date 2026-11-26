@@ -1,6 +1,11 @@
 import type { Context, PluginContext } from '../context/Context'
-import { enterOwnerInvocation } from '../internal/owner-invocations'
-import type { HostDocumentStorage } from '../storage/documents'
+import { assertCoreConfigObject } from '../context/core-config-object'
+import {
+	admitOwnerInvocation,
+	releaseOwnerInvocation,
+	type OwnerInvocationAdmission,
+} from '../internal/owner-invocations'
+import type { CoreStorage, CoreDocumentStorage } from '../storage/documents'
 import {
 	createStore,
 	type Content,
@@ -9,19 +14,24 @@ import {
 	type ValuesSchema,
 } from 'tinybase'
 import type { OptionalSchemas, Store as SchemaStore } from 'tinybase/with-schemas'
-import { decodeSnapshot, encodeSnapshot, sameContent } from './codec'
+import { decodeSnapshot, encodeStoreSnapshot, sameContent } from './codec'
 import { TinyBaseError } from './error'
-import { observeFile } from '../fs/observe'
-import type { TinyBaseIdentity, TinyBaseService, TinyBaseStatus } from './types'
+import type {
+	TinyBaseIdentity,
+	TinyBaseService,
+	TinyBaseStatus,
+	TinyBaseSuppliedStore,
+} from './types'
 
-type Snapshot = { revision: number; content: Content; text: string }
+type Snapshot = { revision: number; text: string }
 // Retired instances remain marked: a stale generation's Store must never become another writer.
-const storeOwners = new WeakMap<object, object>()
+const usedStores = new WeakSet<object>()
+const openFields = new Set(['durable', 'store'])
 
 export class StoreWriter implements TinyBaseService {
 	readonly identity: TinyBaseIdentity
 	private store?: Store
-	private opening?: Promise<Store>
+	private opening?: { result: Promise<Store>; signal: AbortSignal }
 	private listenerIds: string[] = []
 	private transaction = false
 	private published = false
@@ -39,13 +49,16 @@ export class StoreWriter implements TinyBaseService {
 	private outcome: 'confirmed' | 'unknown' = 'confirmed'
 	private scheduled = false
 	private loading = false
-	private initialText?: string
-	private stopObserving?: () => Promise<void>
+	private unsubscribe?: () => void
+	private reloadPending = false
+	private reloading?: Promise<void>
+	private retryRead?: ReturnType<typeof setTimeout>
 	private reloadError?: unknown
 
 	constructor(
 		readonly ctx: PluginContext,
-		private readonly documents: HostDocumentStorage,
+		private readonly documents: CoreDocumentStorage,
+		private readonly retention: ReturnType<CoreStorage['documents']['documentRetention']>,
 		private readonly file: string,
 		private readonly maxBytes: number,
 		private readonly claim: () => void,
@@ -56,14 +69,25 @@ export class StoreWriter implements TinyBaseService {
 		ctx.effects.defer(() => this.close(), { tag: 'TinyBaseStore', phase: 'final' })
 	}
 
-	open(): Promise<Store>
-	open<TStore extends Store>(store: TStore): Promise<TStore>
+	open(options?: Readonly<{ durable: true; store?: undefined }>): Promise<Store>
+	open<TStore extends Store>(input: TinyBaseSuppliedStore<TStore>): Promise<TStore>
 	open<TSchemas extends OptionalSchemas>(
-		store: SchemaStore<TSchemas>,
+		input: TinyBaseSuppliedStore<SchemaStore<TSchemas>>,
 	): Promise<SchemaStore<TSchemas>>
 	open(input?: unknown): Promise<unknown> {
-		return this.run(async (signal) => {
+		return runOperation(this.ctx, async (root, owner) => {
 			this.assertUsable()
+			if (input && typeof input === 'object' && 'durable' in input && !('getContent' in input)) {
+				assertCoreConfigObject(input, '[core.tinybase] open options', openFields)
+				if (!Object.hasOwn(input, 'durable') || input.durable !== true)
+					throw new TypeError('[core.tinybase] open options require durable: true')
+				if (this.retention !== 'declared-durable')
+					throw this.error(
+						'DURABILITY_UNAVAILABLE',
+						`Opening this Store requires durable backing. Snapshot directory retention is ${this.retention}.`,
+					)
+				input = Object.hasOwn(input, 'store') ? Reflect.get(input, 'store') : undefined
+			}
 			if (this.opening) {
 				if (input !== undefined && input !== this.store)
 					throw this.error(
@@ -72,32 +96,34 @@ export class StoreWriter implements TinyBaseService {
 					)
 			} else {
 				const store = input === undefined ? createStore() : input
-				if (typeof store === 'object' && store !== null && storeOwners.has(store))
+				if (typeof store === 'object' && store !== null && usedStores.has(store))
 					throw this.error(
 						'STORE_IN_USE',
 						'The Store already belongs to a current or retired generation.',
 					)
 				assertFreshStore(store, this.identity)
+				const signal = owner ? AbortSignal.any([root.signal, owner.signal]) : root.signal
 				this.claim()
-				storeOwners.set(store, this)
+				usedStores.add(store)
 				this.store = store
-				this.opening = this.restore(store, signal)
+				this.opening = { result: this.restore(store, signal), signal }
 			}
-			const store = await this.opening
-			signal.throwIfAborted()
+			const opening = this.opening
+			const store = await opening.result
+			opening.signal.throwIfAborted()
 			this.assertUsable()
 			return store
 		})
 	}
 
 	flush(): Promise<void> {
-		return this.run(async () => {
+		return runOperation(this.ctx, async () => {
 			this.assertUsable()
 			if (!this.opening) throw this.error('NOT_OPEN', 'Call open() before flush().')
 			// A ready Store must capture synchronously: an already-resolved Promise still yields.
 			let snapshot = this.last
 			if (!snapshot) {
-				await this.opening
+				await this.opening.result
 				this.assertUsable()
 				snapshot = this.last!
 			}
@@ -125,7 +151,7 @@ export class StoreWriter implements TinyBaseService {
 		this.published = true
 		if (this.last) this.enqueue(this.last)
 		this.schedule()
-		if (this.last) this.observe()
+		if (this.last) queueMicrotask(() => this.observe())
 	}
 
 	status(): TinyBaseStatus {
@@ -197,8 +223,8 @@ export class StoreWriter implements TinyBaseService {
 
 	private async restore(store: Store, signal: AbortSignal): Promise<Store> {
 		try {
+			await this.documents.requireWritable?.()
 			const text = await this.documents.getText(this.file)
-			this.initialText = text
 			// A withdrawn acquisition must not publish a snapshot or enable autosave.
 			signal.throwIfAborted()
 			if (text !== undefined) {
@@ -219,16 +245,19 @@ export class StoreWriter implements TinyBaseService {
 					this.transaction = false
 					if (this.closing || this.fault || this.loading) return
 					try {
-						const content = store.getContent()
-						if (sameContent(content, this.last!.content)) return
+						const [changedTables, changedValues] = store.getTransactionChanges()
+						if (Object.keys(changedTables).length === 0 && Object.keys(changedValues).length === 0)
+							return
 						this.revision++
-						this.last = this.snapshot(content)
+						this.last = this.snapshot()
 						if (this.published) {
 							this.enqueue(this.last)
 							this.schedule()
 						}
 					} catch (cause) {
 						this.fail(cause)
+					} finally {
+						this.reloadIfIdle()
 					}
 				}),
 			)
@@ -249,72 +278,130 @@ export class StoreWriter implements TinyBaseService {
 		}
 	}
 
-	private snapshot(content = this.store!.getContent()): Snapshot {
+	private snapshot(): Snapshot {
 		return {
 			revision: this.revision,
-			content,
-			text: encodeSnapshot(this.identity, content, this.maxBytes),
+			text: encodeStoreSnapshot(this.identity, this.store!, this.maxBytes),
 		}
 	}
 
 	private observe(): void {
-		if (this.stopObserving || this.closing) return
-		let readRevision = this.revision
-		this.stopObserving = observeFile(
-			() => {
-				readRevision = this.revision
-				return this.documents.getText(this.file)
-			},
-			this.initialText,
-			(text) => {
-				if (this.closing || this.fault) return true
-				if (this.transaction || this.inFlight || this.pending || readRevision !== this.revision)
-					return false
-				const content: Content =
-					text === undefined ? [{}, {}] : decodeSnapshot(text, this.identity, this.maxBytes)
-				const store = this.store!
-				const candidate = createStore()
-				if (store.hasTablesSchema())
-					candidate.setTablesSchema(JSON.parse(store.getTablesSchemaJson()) as TablesSchema)
-				if (store.hasValuesSchema())
-					candidate.setValuesSchema(JSON.parse(store.getValuesSchemaJson()) as ValuesSchema)
-				candidate.setContent(content)
-				if (!sameContent(content, candidate.getContent()))
-					throw this.error(
-						'SNAPSHOT_INVALID',
-						'External Content does not match the native schema; source data has been preserved.',
-					)
-				this.reloadError = undefined
-				if (sameContent(content, store.getContent())) return true
-				this.revision++
-				this.savedRevision = this.revision
-				this.loading = true
-				let listenerFailed = false
-				let listenerError: unknown
-				try {
-					store.setContent(content)
-				} catch (error) {
-					listenerFailed = true
-					listenerError = error
-				} finally {
-					this.loading = false
-				}
-				// Listener-authored mutations are local writes; loading the file itself never writes back.
-				if (!sameContent(content, store.getContent())) this.revision++
-				this.last = this.snapshot()
-				this.enqueue(this.last)
-				this.schedule()
-				if (listenerFailed) throw listenerError
-				return true
-			},
-			(error) => {
-				this.reloadError = error
-				this.ctx.logger.error('Cannot reload TinyBase file for {owner}', {
-					owner: this.identity,
-					error,
-				})
-			},
+		if (!this.documents.subscribe || this.unsubscribe || this.closing) return
+		const changed = () => {
+			if (this.closing || this.fault) return
+			clearTimeout(this.retryRead)
+			this.retryRead = undefined
+			this.reloadPending = true
+			this.reloadIfIdle()
+		}
+		try {
+			this.unsubscribe = this.documents.subscribe(changed, {
+				key: this.file,
+				onError: (error) => this.reportReloadError(error),
+			})
+		} catch (error) {
+			this.reportReloadError(error)
+			return
+		}
+		// Catch a write between restore and subscription, including a push-only backend.
+		changed()
+	}
+
+	private reloadIfIdle(): void {
+		if (
+			!this.reloadPending ||
+			this.reloading ||
+			this.transaction ||
+			this.inFlight ||
+			this.pending ||
+			this.fault ||
+			this.closing
 		)
+			return
+		this.reloadPending = false
+		const revision = this.revision
+		this.reloading = Promise.resolve()
+			.then(() => this.readExternal(revision))
+			.catch((error) => this.reportReloadError(error))
+			.finally(() => {
+				this.reloading = undefined
+				this.reloadIfIdle()
+			})
+	}
+
+	private async readExternal(revision: number): Promise<void> {
+		let text: string | undefined
+		try {
+			text = await this.documents.getText(this.file)
+		} catch (error) {
+			if (this.closing || this.fault) return
+			if (this.retryRead === undefined) this.reportReloadError(error)
+			// A push backend may have sent its only notification. Retry the failed read
+			// until confirmed; subsequent notifications supersede the timer.
+			if (this.reloadPending) return
+			clearTimeout(this.retryRead)
+			this.retryRead = setTimeout(() => {
+				this.reloadPending = true
+				this.reloadIfIdle()
+			}, 250)
+			if (typeof this.retryRead === 'object' && 'unref' in this.retryRead) this.retryRead.unref()
+			return
+		}
+		clearTimeout(this.retryRead)
+		this.retryRead = undefined
+		if (this.closing || this.fault) return
+		if (this.transaction || this.inFlight || this.pending || this.revision !== revision) {
+			this.reloadPending = true
+			return
+		}
+		if (!this.reloadPending) this.applyExternal(text)
+	}
+
+	private reportReloadError(error: unknown): void {
+		if (this.closing) return
+		this.reloadError = error
+		this.ctx.logger.error('Cannot reload TinyBase snapshot for {owner}', {
+			owner: this.identity,
+			error,
+		})
+	}
+
+	private applyExternal(text: string | undefined): void {
+		const content: Content =
+			text === undefined ? [{}, {}] : decodeSnapshot(text, this.identity, this.maxBytes)
+		const store = this.store!
+		const candidate = createStore()
+		if (store.hasTablesSchema())
+			candidate.setTablesSchema(JSON.parse(store.getTablesSchemaJson()) as TablesSchema)
+		if (store.hasValuesSchema())
+			candidate.setValuesSchema(JSON.parse(store.getValuesSchemaJson()) as ValuesSchema)
+		candidate.setContent(content)
+		if (!sameContent(content, candidate.getContent()))
+			throw this.error(
+				'SNAPSHOT_INVALID',
+				'External Content does not match the native schema; source data has been preserved.',
+			)
+		this.reloadError = undefined
+		if (sameContent(content, store.getContent())) return
+		this.revision++
+		this.savedRevision = this.revision
+		this.loading = true
+		let listenerFailed = false
+		let listenerError: unknown
+		try {
+			store.setContent(content)
+		} catch (error) {
+			listenerFailed = true
+			listenerError = error
+		} finally {
+			this.loading = false
+		}
+		// Listener-authored mutations are local writes; loading the file itself never writes back.
+		if (!sameContent(content, store.getContent())) this.revision++
+		this.last = this.snapshot()
+		this.enqueue(this.last)
+		this.schedule()
+		if (listenerFailed) throw listenerError
 	}
 
 	private enqueue(snapshot: Snapshot): void {
@@ -359,6 +446,7 @@ export class StoreWriter implements TinyBaseService {
 				this.inFlight = undefined
 				this.saving = undefined
 				if (this.published && this.pending && !this.fault && !this.closing) this.schedule()
+				this.reloadIfIdle()
 			}
 		})()
 		// Autosave failures are supervised here; explicit flush and shutdown still reject the same error.
@@ -377,34 +465,40 @@ export class StoreWriter implements TinyBaseService {
 		if (this.disposal) return this.disposal
 		this.closing = true
 		this.disposal = (async () => {
-			try {
-				await this.stopObserving?.()
-				await this.opening?.catch((): undefined => undefined)
-				for (const id of this.listenerIds.splice(0)) this.store!.delListener(id)
-				await this.inFlight?.catch((): undefined => undefined)
-				if (this.fault) throw this.fault
-				if (this.published && this.last) {
-					if (this.transaction) {
-						this.fail(
-							this.error(
-								'TRANSACTION_ACTIVE',
-								'Stopped with an unfinished native transaction; no partial transaction was saved.',
-							),
-						)
-						throw this.fault
-					}
-					this.enqueue(this.last)
-					await this.waitFor(this.last.revision)
-				} else {
-					// Explicit init flush may already have committed. Later uncommitted candidates are discarded.
-					await this.inFlight
-					this.pending = undefined
-				}
-			} finally {
-				if (!this.fault) this.release()
-			}
+			await using _drain = { [Symbol.asyncDispose]: () => this.drain() }
+			clearTimeout(this.retryRead)
+			this.unsubscribe?.()
 		})()
 		return this.disposal
+	}
+
+	private async drain(): Promise<void> {
+		try {
+			await this.reloading
+			await this.opening?.result.catch((): undefined => undefined)
+			for (const id of this.listenerIds.splice(0)) this.store!.delListener(id)
+			await this.inFlight?.catch((): undefined => undefined)
+			if (this.fault) throw this.fault
+			if (this.published && this.last) {
+				if (this.transaction) {
+					this.fail(
+						this.error(
+							'TRANSACTION_ACTIVE',
+							'Stopped with an unfinished native transaction; no partial transaction was saved.',
+						),
+					)
+					throw this.fault
+				}
+				this.enqueue(this.last)
+				await this.waitFor(this.last.revision)
+			} else {
+				// Explicit init flush may already have committed. Later uncommitted candidates are discarded.
+				await this.inFlight
+				this.pending = undefined
+			}
+		} finally {
+			if (!this.fault) this.release()
+		}
 	}
 
 	private fail(cause: unknown): void {
@@ -437,26 +531,22 @@ export class StoreWriter implements TinyBaseService {
 			cause === undefined ? undefined : { cause },
 		)
 	}
-
-	private async run<T>(run: (signal: AbortSignal) => Promise<T>): Promise<T> {
-		return runOperation(this.ctx, run)
-	}
 }
 
 export async function runOperation<T>(
 	ctx: Context,
-	run: (signal: AbortSignal) => Promise<T>,
+	run: (root: OwnerInvocationAdmission, owner?: OwnerInvocationAdmission) => Promise<T>,
 ): Promise<T> {
-	const root = enterOwnerInvocation(ctx.root)
+	const root = admitOwnerInvocation(ctx.root)
 	try {
-		const owner = ctx === ctx.root ? undefined : enterOwnerInvocation(ctx, root.signal)
+		const owner = ctx === ctx.root ? undefined : admitOwnerInvocation(ctx)
 		try {
-			return await run(owner?.signal ?? root.signal)
+			return await run(root, owner)
 		} finally {
-			owner?.dispose()
+			if (owner) releaseOwnerInvocation(owner)
 		}
 	} finally {
-		root.dispose()
+		releaseOwnerInvocation(root)
 	}
 }
 
@@ -499,6 +589,9 @@ function nativeStore(input: unknown): input is Store {
 		[
 			'getContent',
 			'setContent',
+			'forEachTable',
+			'forEachValue',
+			'getTransactionChanges',
 			'isMergeable',
 			'getListenerStats',
 			'transaction',

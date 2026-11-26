@@ -1,3 +1,4 @@
+import { Subscription } from '../core/registration'
 import type { EventArgs, EventDescriptor, EventListener, Unsubscribe } from '../types'
 import type { WrapFn } from './limitSingle'
 
@@ -45,6 +46,11 @@ export function waitForSingle<D extends EventDescriptor>(
 	let timer: ReturnType<typeof setTimeout> | null = null
 	let abortListener: (() => void) | null = null
 	let settled = false
+	let rejectRef!: (e: unknown) => void
+	const cancellation = new Subscription(() => {
+		cleanup()
+		rejectRef(new Error(waitForMessage(label, 'cancelled')))
+	})
 
 	const cleanup = () => {
 		if (settled) return
@@ -62,9 +68,19 @@ export function waitForSingle<D extends EventDescriptor>(
 			signal.removeEventListener('abort', abortListener)
 			abortListener = null
 		}
+		cancellation.end()
 	}
 
-	let rejectRef!: (e: unknown) => void
+	const registerListener = (listener: EventListener<D>) => {
+		try {
+			const unsubscribe = register(wrap(listener))
+			if (settled) unsubscribe()
+			else offRef = unsubscribe
+		} catch (error) {
+			cleanup()
+			throw error
+		}
+	}
 
 	const p = new Promise<EventArgs<D>>((resolve, reject) => {
 		rejectRef = reject
@@ -90,16 +106,15 @@ export function waitForSingle<D extends EventDescriptor>(
 		}
 
 		if (filter === undefined) {
-			const handler = wrap(((...args: EventArgs<D>) => {
+			registerListener(((...args: EventArgs<D>) => {
 				if (settled) return
 				cleanup()
 				resolve(args)
 			}) as EventListener<D>)
-			offRef = register(handler)
 			return
 		}
 
-		const handler = wrap(((...args: EventArgs<D>) => {
+		registerListener(((...args: EventArgs<D>) => {
 			if (settled) return
 			let matched: boolean
 			try {
@@ -113,14 +128,9 @@ export function waitForSingle<D extends EventDescriptor>(
 			cleanup()
 			resolve(args)
 		}) as EventListener<D>)
-		offRef = register(handler)
 	}) as CancellablePromise<EventArgs<D>>
 
-	p.cancel = () => {
-		if (settled) return
-		cleanup()
-		rejectRef(new Error(waitForMessage(label, 'cancelled')))
-	}
+	p.cancel = cancellation.unsubscribe
 
 	return p
 }

@@ -1,7 +1,7 @@
 import type { PluginConstructor } from '@pluxel/core'
 import type { StandardSchemaV1 } from '@standard-schema/spec'
 import * as v from 'valibot'
-import { defineHostApplication } from './application'
+import { defineHostApplication } from './node-application'
 import { envBinding, fileBinding } from './bindings'
 
 const config = v.object({
@@ -18,14 +18,14 @@ const vault = v.object({ credentials: v.object({ token: v.string(), expires: v.n
 declare const Plugin: PluginConstructor
 declare const nonValibotSchema: StandardSchemaV1
 
-envBinding(Plugin, {
+envBinding({
 	config: {
 		// @ts-expect-error Host input projection requires a Valibot schema.
 		schema: nonValibotSchema,
 		mapping: 'CONFIG',
 	},
 })
-fileBinding(Plugin, {
+fileBinding({
 	config: {
 		// @ts-expect-error File bindings also require a Valibot schema.
 		schema: nonValibotSchema,
@@ -34,30 +34,34 @@ fileBinding(Plugin, {
 })
 
 defineHostApplication(() => ({
-	plugins: [Plugin],
-	envBindings: [
-		envBinding(Plugin, {
-			config: {
-				schema: config,
-				mapping: {
-					nested: { count: 'COUNT' },
-					values: 'VALUES',
-					dynamic: 'DYNAMIC',
-					transformed: { raw: 'RAW' },
-				},
-			},
-			vault: { schema: vault, mapping: { credentials: { token: 'TOKEN', expires: 'EXPIRY' } } },
-		}),
-	],
-	fileBindings: [
-		fileBinding(Plugin, {
-			config: { schema: config, path: 'config.json' },
-			vault: { schema: vault, paths: { credentials: 'credential.json' } },
-		}),
+	plugins: [
+		{
+			plugin: Plugin,
+			envBindings: [
+				envBinding({
+					config: {
+						schema: config,
+						mapping: {
+							nested: { count: 'COUNT' },
+							values: 'VALUES',
+							dynamic: 'DYNAMIC',
+							transformed: { raw: 'RAW' },
+						},
+					},
+					vault: { schema: vault, mapping: { credentials: { token: 'TOKEN', expires: 'EXPIRY' } } },
+				}),
+			],
+			fileBindings: [
+				fileBinding({
+					config: { schema: config, path: 'config.json' },
+					vault: { schema: vault, paths: { credentials: 'credential.json' } },
+				}),
+			],
+		},
 	],
 }))
 
-envBinding(Plugin, {
+envBinding({
 	config: {
 		schema: config,
 		mapping: {
@@ -66,7 +70,7 @@ envBinding(Plugin, {
 		},
 	},
 })
-envBinding(Plugin, {
+envBinding({
 	config: {
 		schema: config,
 		mapping: {
@@ -75,7 +79,7 @@ envBinding(Plugin, {
 		},
 	},
 })
-envBinding(Plugin, {
+envBinding({
 	config: {
 		schema: config,
 		mapping: {
@@ -84,7 +88,7 @@ envBinding(Plugin, {
 		},
 	},
 })
-envBinding(Plugin, {
+envBinding({
 	config: {
 		schema: config,
 		mapping: {
@@ -95,7 +99,7 @@ envBinding(Plugin, {
 		},
 	},
 })
-envBinding(Plugin, {
+envBinding({
 	vault: {
 		schema: vault,
 		mapping: {
@@ -106,7 +110,7 @@ envBinding(Plugin, {
 		},
 	},
 })
-envBinding(Plugin, {
+envBinding({
 	vault: {
 		schema: vault,
 		mapping: {
@@ -115,7 +119,7 @@ envBinding(Plugin, {
 		},
 	},
 })
-fileBinding(Plugin, {
+fileBinding({
 	vault: {
 		schema: vault,
 		paths: {
@@ -124,9 +128,14 @@ fileBinding(Plugin, {
 		},
 	},
 })
-envBinding(Plugin, {
+envBinding({
 	vault: {
 		schema: v.record(v.string(), v.object({ token: v.string() })),
 		mapping: { account: { token: 'TOKEN' } },
 	},
 })
+
+// @ts-expect-error Deployment references use a full node address, not an implementation.
+envBinding(Plugin, { config: { schema: config, mapping: 'CONFIG' } })
+// @ts-expect-error File inputs use the same node address selection.
+fileBinding(Plugin, { config: { schema: config, path: 'config.json' } })

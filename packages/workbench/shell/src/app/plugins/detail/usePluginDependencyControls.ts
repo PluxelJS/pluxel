@@ -2,6 +2,7 @@ import {
 	pluginDefinitionIndexKey,
 	pluginNodeIndexKey,
 	type PluginDefinitionAddress,
+	type PluginForkNodeAddress,
 	type PluginNodeAddress,
 } from '@pluxel/core'
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
@@ -13,7 +14,7 @@ import {
 } from '../../../runtime'
 import { usePluginScope } from './context'
 import { usePluginOverview } from '../pluginOverview'
-import { canWritePluginState } from '../pluginOverviewModel'
+import { readPluginPolicyTarget } from '../pluginOverviewModel'
 import {
 	managementQueryKeys,
 	refreshDependencyQueries,
@@ -99,12 +100,18 @@ export function buildConsumerOverrideSelection(row: PluginConsumerRequirementSta
 export function usePluginDependencyControls() {
 	const { owner, refetch } = usePluginScope()
 	const statePolicy = usePluginOverview().overview?.statePolicy
-	const canChangeConsumerOverride = canWritePluginState(statePolicy, 'dependencyOverrides')
-	const canCreateFork = canWritePluginState(
-		statePolicy,
-		'forks',
-		'autoStart',
-		'dependencyOverrides',
+	const overridePolicy = useCallback(
+		(requirementAddress: PluginDefinitionAddress) =>
+			readPluginPolicyTarget(statePolicy, {
+				field: 'dependencyOverrides',
+				consumerAddress: owner,
+				requirementAddress,
+			}),
+		[owner, statePolicy],
+	)
+	const forkPolicy = useCallback(
+		(node: PluginForkNodeAddress) => readPluginPolicyTarget(statePolicy, { field: 'forks', node }),
+		[statePolicy],
 	)
 	const management = useRuntimeManagementClient()
 	const queryClient = useQueryClient()
@@ -113,6 +120,11 @@ export function usePluginDependencyControls() {
 		queryKey: managementQueryKeys.configState(),
 		queryFn: () => management.config.status(),
 	})
+	const canRemoveFork = useCallback(
+		(fork: PluginForkNodeAddress) =>
+			configStateQuery.data?.readonly === false && forkPolicy(fork)?.canWrite === true,
+		[configStateQuery.data, forkPolicy],
+	)
 	const requirementsQuery = useQuery<readonly PluginConsumerRequirementState[]>({
 		queryKey: managementQueryKeys.consumerRequirements(owner),
 		queryFn: async () => {
@@ -162,6 +174,8 @@ export function usePluginDependencyControls() {
 				async () => {
 					try {
 						if (!statePolicy) throw new Error('运行策略尚未加载')
+						if (!overridePolicy(requirement)?.canWrite)
+							throw new Error('当前依赖选择由宿主策略控制')
 						const result = await management.dependencies.setConsumerOverride(
 							{
 								consumer: owner,
@@ -179,7 +193,7 @@ export function usePluginDependencyControls() {
 					}
 				},
 			),
-		[management.dependencies, owner, ownerKey, refreshAll, runPending, statePolicy],
+		[management.dependencies, owner, ownerKey, overridePolicy, refreshAll, runPending, statePolicy],
 	)
 
 	const createFork = useCallback(
@@ -189,10 +203,12 @@ export function usePluginDependencyControls() {
 				async () => {
 					try {
 						if (!statePolicy) throw new Error('运行策略尚未加载')
+						const fork = { definition: base.definition, variant: 'fork' as const, forkId }
+						if (!forkPolicy(fork)?.canWrite || !overridePolicy(requirement)?.canWrite)
+							throw new Error('当前 Fork 或依赖选择由宿主策略控制')
 						const result = await management.forks.ensure(
 							{
-								fork: { definition: base.definition, variant: 'fork', forkId },
-								autoStart: false,
+								fork,
 								selectFor: { consumer: owner, requirement },
 							},
 							{ expectedManagedRevision: statePolicy.managedRevision },
@@ -206,20 +222,23 @@ export function usePluginDependencyControls() {
 					}
 				},
 			),
-		[management.forks, owner, ownerKey, refreshAll, runPending, statePolicy],
+		[
+			forkPolicy,
+			management.forks,
+			owner,
+			ownerKey,
+			overridePolicy,
+			refreshAll,
+			runPending,
+			statePolicy,
+		],
 	)
 
 	const removeFork = useCallback(
 		async (fork: Extract<PluginNodeAddress, { variant: 'fork' }>) =>
 			await runPending(`${ownerKey}:fork-remove:${pluginNodeIndexKey(fork)}`, async () => {
 				try {
-					const state = configStateQuery.data
-					if (
-						!state ||
-						!statePolicy ||
-						state.readonly ||
-						!canWritePluginState(statePolicy, 'forks', 'autoStart', 'dependencyOverrides')
-					)
+					if (!statePolicy || !canRemoveFork(fork))
 						throw new Error('当前宿主的 Fork 策略或配置只读或尚未加载')
 					const result = await management.forks.remove(fork, {
 						expectedManagedRevision: statePolicy.managedRevision,
@@ -237,7 +256,7 @@ export function usePluginDependencyControls() {
 					throw error
 				}
 			}),
-		[configStateQuery.data, statePolicy, management.forks, ownerKey, refreshAll, runPending],
+		[canRemoveFork, statePolicy, management.forks, ownerKey, refreshAll, runPending],
 	)
 
 	const requirements = requirementsQuery.data ?? null
@@ -253,12 +272,9 @@ export function usePluginDependencyControls() {
 	)
 
 	return {
-		canRemoveFork:
-			configStateQuery.data !== undefined &&
-			!configStateQuery.data.readonly &&
-			canWritePluginState(statePolicy, 'forks', 'autoStart', 'dependencyOverrides'),
-		canChangeConsumerOverride,
-		canCreateFork,
+		canRemoveFork,
+		overridePolicy,
+		forkPolicy,
 		requirements,
 		byRequirement,
 		isLoading: requirementsQuery.isPending,

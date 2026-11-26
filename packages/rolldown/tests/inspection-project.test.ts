@@ -2,7 +2,13 @@ import { mkdir, mkdtemp, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { afterEach, describe, expect, it } from 'vitest'
-import { openProject, type InspectionSection } from '../src/inspect/index.ts'
+import {
+	inspectPlugin,
+	listPlugins,
+	inspectFile,
+	inspectProject,
+	type InspectionSection,
+} from '@pluxel/agent-sdk/source'
 
 const roots: string[] = []
 const mailReference = 'package:@fixture/mail::MailPlugin'
@@ -71,12 +77,15 @@ afterEach(async () => {
 describe('project inspection public API', () => {
 	it('lists package Plugins and locates repeated Part config without executing project code', async () => {
 		const { root, packageRoot } = await fixture()
-		await using project = await openProject({ root })
-		const listResult = await project.plugins({ packageName: '@fixture/mail' })
+		const context = { root }
+		const listResult = await listPlugins({ ...context, packageName: '@fixture/mail' })
 		const list = available(listResult.data)
 		expect(list.items.map((item) => item.exportName).sort()).toEqual(['MailPlugin', 'OtherPlugin'])
 		expect(list.nextCursor).toBeNull()
-		const result = await project.plugin(mailReference, { include: ['parts', 'config', 'checks'] })
+		const result = await inspectPlugin(mailReference, {
+			...context,
+			include: ['parts', 'config', 'checks'],
+		})
 		expect(result.data.summary.reference).toBe(mailReference)
 		expect(result.data.summary.declaration.file).toBe(join(packageRoot, 'src/index.ts'))
 		expect(Object.keys(result.data.sections).sort()).toEqual(['checks', 'config', 'parts'])
@@ -94,14 +103,15 @@ describe('project inspection public API', () => {
 				.scripts.map((script) => script.name)
 				.sort(),
 		).toEqual(['test', 'typecheck'])
-		const summary = await project.plugin(mailReference)
+		const summary = await inspectPlugin(mailReference, context)
 		expect(summary.data.sections).toEqual({})
 	})
 
 	it('filters by occurrence while retaining canonical Plugin ownership', async () => {
 		const { root } = await fixture()
-		await using project = await openProject({ root })
-		const result = await project.plugin(mailReference, {
+		const context = { root }
+		const result = await inspectPlugin(mailReference, {
+			...context,
 			partPath: ['backup'],
 			include: ['parts', 'config'],
 		})
@@ -112,15 +122,17 @@ describe('project inspection public API', () => {
 		expect(
 			available(result.data.sections.config).declarations.map((config) => config.configPath),
 		).toEqual([['backup']])
-		await expect(project.plugin(mailReference, { partPath: ['missing'] })).rejects.toMatchObject({
+		await expect(
+			inspectPlugin(mailReference, { ...context, partPath: ['missing'] }),
+		).rejects.toMatchObject({
 			code: 'part_not_found',
 		})
 	})
 
 	it('finds all public owners of a shared schema and Part', async () => {
 		const { root } = await fixture()
-		await using project = await openProject({ root })
-		const schemaResult = await project.file('plugins/mail/src/schema.ts')
+		const context = { root }
+		const schemaResult = await inspectFile('plugins/mail/src/schema.ts', context)
 		const schema = available(schemaResult.data)
 		expect(schema.scope).toBe('workspace-plugin-declarations')
 		expect(schema.items.map((item) => item.definition.exportName).sort()).toEqual([
@@ -136,7 +148,7 @@ describe('project inspection public API', () => {
 			['backup'],
 			['primary'],
 		])
-		const partResult = await project.file('plugins/mail/src/shared.ts')
+		const partResult = await inspectFile('plugins/mail/src/shared.ts', context)
 		const part = available(partResult.data)
 		expect(part.items.map((item) => item.definition.exportName).sort()).toEqual([
 			'MailPlugin',
@@ -149,12 +161,13 @@ describe('project inspection public API', () => {
 
 	it('rereads changed schemas and rejects pagination over changed inputs', async () => {
 		const { root, packageRoot } = await fixture()
-		await using project = await openProject({ root })
-		const before = await project.plugin(mailReference, { include: ['config'] })
-		const firstResult = await project.plugins({ packageName: '@fixture/mail', limit: 1 })
+		const context = { root }
+		const before = await inspectPlugin(mailReference, { ...context, include: ['config'] })
+		const firstResult = await listPlugins({ ...context, packageName: '@fixture/mail', limit: 1 })
 		const first = available(firstResult.data)
 		expect(first.nextCursor).not.toBeNull()
-		const nextResult = await project.plugins({
+		const nextResult = await listPlugins({
+			...context,
 			packageName: '@fixture/mail',
 			limit: 1,
 			cursor: first.nextCursor!,
@@ -162,7 +175,7 @@ describe('project inspection public API', () => {
 		const next = available(nextResult.data)
 		expect(next.items[0]!.reference).not.toBe(first.items[0]!.reference)
 		await writeFile(join(packageRoot, 'src/schema.ts'), `\n\nexport const SharedSchema = {}\n`)
-		const after = await project.plugin(mailReference, { include: ['config'] })
+		const after = await inspectPlugin(mailReference, { ...context, include: ['config'] })
 		expect(after.revision).not.toBe(before.revision)
 		expect(
 			available(after.data.sections.config).declarations[0]!.schema.declaration?.start.line,
@@ -172,37 +185,42 @@ describe('project inspection public API', () => {
 			`import { BasePlugin, Plugin } from '@pluxel/core'\n@Plugin() export class RenamedPlugin extends BasePlugin {}`,
 		)
 		await expect(
-			project.plugins({ packageName: '@fixture/mail', limit: 1, cursor: first.nextCursor! }),
+			listPlugins({
+				...context,
+				packageName: '@fixture/mail',
+				limit: 1,
+				cursor: first.nextCursor!,
+			}),
 		).rejects.toMatchObject({ code: 'cursor_stale' })
-		const renamed = await project.plugins({ packageName: '@fixture/mail' })
+		const renamed = await listPlugins({ ...context, packageName: '@fixture/mail' })
 		expect(available(renamed.data).items.map((item) => item.exportName)).toEqual(['RenamedPlugin'])
 		expect(before.data.summary.exportName).toBe('MailPlugin')
 	})
 
-	it('has stable failure codes for cancellation, disposal and invalid inputs', async () => {
+	it('has stable failure codes for cancellation and invalid inputs', async () => {
 		const { root } = await fixture()
-		await expect(openProject({ root, signal: AbortSignal.abort() })).rejects.toMatchObject({
+		await expect(inspectProject({ root, signal: AbortSignal.abort() })).rejects.toMatchObject({
 			code: 'aborted',
 		})
-		const project = await openProject({ root })
-		await expect(project.overview({ signal: AbortSignal.abort() })).rejects.toMatchObject({
-			code: 'aborted',
+		const context = { root }
+		await expect(listPlugins({ ...context, limit: 0 })).rejects.toMatchObject({
+			code: 'invalid_input',
 		})
-		await expect(project.plugins({ limit: 0 })).rejects.toMatchObject({ code: 'invalid_input' })
-		await expect(project.plugin('not-a-plugin')).rejects.toMatchObject({ code: 'invalid_input' })
-		await expect(project.plugin('package:@fixture/mail::MissingPlugin')).rejects.toMatchObject({
+		await expect(inspectPlugin('not-a-plugin', context)).rejects.toMatchObject({
+			code: 'invalid_input',
+		})
+		await expect(
+			inspectPlugin('package:@fixture/mail::MissingPlugin', context),
+		).rejects.toMatchObject({
 			code: 'plugin_not_found',
 		})
-		await project[Symbol.asyncDispose]()
-		await project[Symbol.asyncDispose]()
-		await expect(project.plugins()).rejects.toMatchObject({ code: 'project_closed' })
 	})
 
-	it('captures query inputs before admission so later caller edits cannot alter validation or scope', async () => {
+	it('captures query inputs before file IO so later caller edits cannot alter validation or scope', async () => {
 		const { root } = await fixture()
-		await using project = await openProject({ root })
+		const context = { root }
 		const options = { packageName: '@fixture/mail', limit: 1 }
-		const pending = project.plugins(options)
+		const pending = listPlugins({ ...context, ...options })
 		options.packageName = '@fixture/missing'
 		options.limit = 201
 		const result = await pending
@@ -210,7 +228,7 @@ describe('project inspection public API', () => {
 
 		const include: ('config' | 'parts')[] = ['config']
 		const partPath = ['backup']
-		const pendingPlugin = project.plugin(mailReference, { include, partPath })
+		const pendingPlugin = inspectPlugin(mailReference, { ...context, include, partPath })
 		include[0] = 'parts'
 		partPath[0] = 'missing'
 		const plugin = await pendingPlugin
@@ -222,12 +240,12 @@ describe('project inspection public API', () => {
 
 	it('rejects sparse section and Part path arrays as invalid query inputs', async () => {
 		const { root } = await fixture()
-		await using project = await openProject({ root })
+		const context = { root }
 		await expect(
-			project.plugin(mailReference, { partPath: Array<string>(1) }),
+			inspectPlugin(mailReference, { ...context, partPath: Array<string>(1) }),
 		).rejects.toMatchObject({ code: 'invalid_input' })
 		await expect(
-			project.plugin(mailReference, { include: Array<'config'>(1) }),
+			inspectPlugin(mailReference, { ...context, include: Array<'config'>(1) }),
 		).rejects.toMatchObject({ code: 'invalid_input' })
 	})
 })

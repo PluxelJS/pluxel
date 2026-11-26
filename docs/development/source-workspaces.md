@@ -12,7 +12,7 @@ description: 在保持 Git 仓库、工作区和 lockfile 独立的前提下联�
 1. 分别克隆消费应用仓库与 Pluxel 框架源码仓库。
 2. 在 Pluxel 仓库根目录下构建 CLI：
    ```sh
-   vp run @pluxel/cli#build
+   vp run @pluxel/cli#compile
    ```
 3. 将构建生成的 `packages/cli/bin/pluxel.mjs` 通过符号链接加入系统 PATH 或作为全局指令调用。
 
@@ -31,27 +31,31 @@ description: 在保持 Git 仓库、工作区和 lockfile 独立的前提下联�
 - `sources`：声明需本地联调的上游 Git 仓库远程 URL。
 - `singletons`：指定跨子包必须保证物理单例的依赖库（例如 ORM 核心驱动），防止多个包加载不同实例引发类型或原型链冲突。
 
+React 等 peer dependency 也可以列入 `singletons`。工具只检查本次选中的源码包；多个包声明同一依赖或 peer 时，必须已经解析到同一物理安装。先安装各源码 checkout 的依赖，再接入消费仓库。存在不同副本时会列出声明方与路径并拒绝接线，需先统一源码侧安装。
+
 ## 注册与关联本地目录
 
 将本地检出的物理路径注册到当前工作区：
 
 ```sh
 # 注册本地代码路径
-pluxel source register /path/to/local/pluxel
-pluxel source register /path/to/local/chatbot
+vp exec pluxel source register /path/to/local/pluxel
+vp exec pluxel source register /path/to/local/chatbot
 
 # 查看已注册的源码仓库列表
-pluxel source list
+vp exec pluxel source list
 
 # 生成本地模块 Overlay 映射并安装依赖
-pluxel source install
+vp exec pluxel source install
 
 # 检查跨仓联调环境配置
-pluxel source doctor
+vp exec pluxel source doctor
 ```
 
 - `source install` 会在消费工程中生成专用的 `.pnpmfile.cjs` 与 `.pluxel/` 覆盖目录，将外部依赖自动指向本地源码的构建输出。
 - 该覆盖文件属于本地调试资产，需加入 `.gitignore`。
+
+`source doctor` 检查已声明的源码接线与开发资源；构建产物更新由 `source build` 完成。定位插件声明使用[源码查询](./inspection.md)，地址与查询结果中的工作区共同确定源码来源。
 
 <span id="何时重新安装或构建"></span>
 
@@ -69,7 +73,7 @@ pluxel source doctor
 
 ```sh
 # 针对源码联调工程
-pluxel source install
+vp exec pluxel source install
 
 # 针对普通 npm 安装工程
 vp exec pluxel workspace setup
@@ -86,16 +90,16 @@ Pluxel 推荐使用 pnpm Catalog 统一约束第三方依赖版本，避免多�
 
 ```sh
 # 自动迁移 package.json 中的第三方裸版本至 catalog
-pluxel pncat migrate --yes --no-install
+vp exec pluxel pncat migrate --yes --no-install
 
 # 将工作区 catalog 版本与官方政策对齐
-pluxel workspace sync
+vp exec pluxel workspace sync
 
 # 安装依赖并生成锁文件
 vp install
 
 # 检查当前依赖是否符合规范
-pluxel workspace sync --check
+vp exec pluxel workspace sync --check
 ```
 
 - `pncat.config.ts`：定义依赖的分组（如 `runtime`、`test`、`tooling`）与归类规则。

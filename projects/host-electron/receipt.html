@@ -1,0 +1,35 @@
+<!doctype html>
+<html lang="zh-CN">
+	<head>
+		<meta charset="utf-8" />
+		<meta
+			http-equiv="Content-Security-Policy"
+			content="default-src 'none'; script-src 'self'; style-src 'unsafe-inline'"
+		/>
+		<title>Pluxel · Electron</title>
+		<style>
+			:root {
+				color-scheme: light dark;
+				font-family: system-ui, sans-serif;
+			}
+			body {
+				max-width: 52rem;
+				margin: 2rem auto;
+				padding: 0 2rem;
+			}
+			h1 {
+				font-size: 1.5rem;
+			}
+			pre {
+				font: 0.9rem/1.55 monospace;
+				overflow-wrap: anywhere;
+				white-space: pre-wrap;
+			}
+		</style>
+		<script defer src="receipt.js"></script>
+	</head>
+	<body>
+		<h1>Electron 宿主验收回执</h1>
+		<pre id="receipt"></pre>
+	</body>
+</html>

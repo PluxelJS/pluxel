@@ -15,7 +15,10 @@ function change(source: string, attrs: Record<string, unknown>) {
 	const document = structuredClone(projection.document)
 	const node = document.content!.find((value) => value.type === 'typstImport')!
 	Object.assign(node.attrs!, attrs)
-	return { project, result: project.edit({ projection, document }) }
+	return {
+		project,
+		result: project.edit({ path: projection.path, baseRevision: projection.revision, document }),
+	}
 }
 
 describe('native static import declarations', () => {
@@ -43,9 +46,13 @@ describe('native static import declarations', () => {
 		expect(
 			projection.document.content!.find((node) => node.type === 'typstSource')?.attrs?.source,
 		).toBe('#import path')
-		expect(project.edit({ projection, document: structuredClone(projection.document) }).ok).toBe(
-			true,
-		)
+		expect(
+			project.edit({
+				path: projection.path,
+				baseRevision: projection.revision,
+				document: structuredClone(projection.document),
+			}).ok,
+		).toBe(true)
 		expect(project.snapshot().files['body.typ']).toBe(source)
 	})
 
@@ -136,7 +143,9 @@ describe('native static import declarations', () => {
 		]) {
 			const document = structuredClone(projection.document)
 			changeDocument(document)
-			expect(project.edit({ projection, document }).ok).toBe(false)
+			expect(
+				project.edit({ path: projection.path, baseRevision: projection.revision, document }).ok,
+			).toBe(false)
 			expect(project.snapshot().files).toEqual(files)
 		}
 	})

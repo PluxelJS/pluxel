@@ -6,8 +6,12 @@ import {
 	type SharedRuntimePackage,
 } from '@pluxel/host/internal/shared-runtime'
 
-// Static compilation consumes the same pure panel admission as author definitions.
-export { panel, WORKBENCH_ICONS, type WorkbenchPanelPlacement } from './definition.ts'
+// Static compilation validates placements and source paths using the same rules as definitions.
+export {
+	parseWorkbenchPlacement,
+	parseWorkbenchSourcePath,
+	type WorkbenchPlacement,
+} from './entry-options.ts'
 export { nearestPackageManifest, readPackageManifest } from '@pluxel/host/internal/shared-runtime'
 
 export type WorkbenchCapnwebPackage = SharedRuntimePackage

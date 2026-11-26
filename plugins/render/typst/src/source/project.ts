@@ -2,6 +2,7 @@ import type { AstExpr, AstFuncCall, AstContentBlock, AstArg } from '@r4ai/typst-
 import type { JSONContent } from '@tiptap/core'
 import { typstSourceLibrary } from './library.js'
 import { parseTypstSource, sourceSlice } from './parse.js'
+import { moduleBindingName, resolveModulePath, resolveSourcePath } from './paths.js'
 import type {
 	TypstSourceProjectionInput,
 	TypstParsedProjection,
@@ -31,6 +32,21 @@ const callName = (call: AstFuncCall): string | undefined =>
 const same = (a: unknown, b: unknown) => JSON.stringify(a) === JSON.stringify(b)
 const plainText = (node: JSONContent): string =>
 	node.text ?? node.content?.map(plainText).join('') ?? ''
+
+function componentLiteral(value: AstExpr): string | boolean | number | undefined {
+	if (value.kind === 'str' || value.kind === 'bool') return value.value
+	if (value.kind === 'int' && Number.isSafeInteger(value.value)) return value.value
+	if (value.kind === 'float' && Number.isFinite(value.value)) return value.value
+	if (
+		value.kind === 'unary' &&
+		value.op !== 'not' &&
+		(value.expr.kind === 'int' || value.expr.kind === 'float')
+	) {
+		const operand = componentLiteral(value.expr)
+		if (typeof operand === 'number') return value.op === 'neg' ? -operand : operand
+	}
+	return undefined
+}
 
 /** One source file is one rebuildable editor projection; include/import remain ordinary source. */
 export function projectTypstSource(input: TypstSourceProjectionInput): TypstParsedProjection {
@@ -189,18 +205,6 @@ export function projectTypstSource(input: TypstSourceProjectionInput): TypstPars
 				)
 	}
 	collect(parsed.ast, false, true)
-	const resolvePath = (path: string): string | undefined => {
-		if (path.startsWith('/') || path.includes('\\')) return undefined
-		const parts = input.path.split('/').slice(0, -1)
-		for (const part of path.split('/')) {
-			if (!part || part === '.') continue
-			if (part === '..') {
-				if (parts.length === 0) return undefined
-				parts.pop()
-			} else parts.push(part)
-		}
-		return parts.join('/')
-	}
 	const imported = (
 		name: string,
 		scope: Set<string>,
@@ -240,7 +244,7 @@ export function projectTypstSource(input: TypstSourceProjectionInput): TypstPars
 		const [local, field] = callee.split('.')
 		const binding = imported(local!, scope)
 		const name = field ?? binding?.name
-		if (!binding || !name) return undefined
+		if (!binding || !name || (field && binding.name)) return undefined
 		return { name, module: binding.module, callee, library: isLibrary(binding.module) }
 	}
 	const shadowNames = (expr: AstExpr, scope: Set<string>) => {
@@ -269,38 +273,20 @@ export function projectTypstSource(input: TypstSourceProjectionInput): TypstPars
 			if (expr.imports?.kind === 'wildcard') {
 				scope.add('*')
 				for (const value of scope) if (value.startsWith('$import\0')) scope.delete(value)
-			} else if (expr.imports?.kind === 'items')
-				for (const item of expr.imports.items)
-					scope.add(item.kind === 'renamed' ? item.newName : item.name)
-			else if (expr.newName) scope.add(expr.newName)
-			else if (expr.source.kind === 'str')
-				scope.add(
-					expr.source.value
-						.split('/')
-						.at(-1)!
-						.replace(/\.typ$/, ''),
-				)
-			if (expr.source.kind === 'str') {
-				const module = resolvePath(expr.source.value)
-				if (module && expr.imports?.kind === 'items')
-					for (const item of expr.imports.items)
-						bind(
-							scope,
-							item.kind === 'renamed' ? item.newName : item.name,
-							module,
-							item.path.join('.'),
-						)
-				else if (module && !expr.imports)
-					bind(
-						scope,
-						expr.newName ??
-							expr.source.value
-								.split('/')
-								.at(-1)!
-								.replace(/\.typ$/, ''),
-						module,
-					)
+				return
 			}
+			const module =
+				expr.source.kind === 'str' ? resolveModulePath(input.path, expr.source.value) : undefined
+			const declare = (local: string, member?: string) => {
+				scope.add(local)
+				if (module) bind(scope, local, module, member)
+				else clearImport(local, scope)
+			}
+			if (expr.imports?.kind === 'items') {
+				for (const item of expr.imports.items)
+					declare(item.kind === 'renamed' ? item.newName : item.name, item.path.join('.'))
+			} else if (expr.newName) declare(expr.newName)
+			else if (expr.source.kind === 'str') declare(moduleBindingName(expr.source.value))
 		}
 	}
 	const builtin = (call: AstFuncCall, scope: Set<string>) => {
@@ -594,7 +580,7 @@ export function projectTypstSource(input: TypstSourceProjectionInput): TypstPars
 											(key) => key.kind === 'pos' && ['str', 'int'].includes(key.expr.kind),
 										)
 									) {
-										const path = resolvePath(file.value)
+										const path = resolveSourcePath(input.path, file.value)
 										if (path)
 											return [
 												make(
@@ -1011,14 +997,23 @@ export function projectTypstSource(input: TypstSourceProjectionInput): TypstPars
 		if (component) {
 			const props: Record<string, unknown> = {},
 				ranges: Record<string, TypstSourceRange> = {}
+			const readonlyParameters: string[] = []
+			const argumentsByName = new Map<string, AstExpr | null>()
+			const spread = expr.args.some((arg) => arg.kind === 'spread')
+			for (const arg of expr.args) {
+				if (arg.kind === 'named')
+					argumentsByName.set(arg.name, argumentsByName.has(arg.name) ? null : arg.expr)
+			}
 			for (const [parameterName, definition] of Object.entries(component.parameters)) {
-				const value = named(expr, parameterName)
-				if (value?.range) ranges[parameterName] = rangeOf(value, false)
-				if (!value || !['str', 'bool', 'int', 'float'].includes(value.kind)) continue
-				const literal = (value as { value: unknown }).value
-				if (typeof literal === definition.type) {
+				const value = argumentsByName.get(parameterName)
+				if (!spread && value === undefined) continue
+				const literal = value && componentLiteral(value)
+				const range = value?.range && rangeOf(value, false)
+				if (!spread && typeof literal === definition.type && range && !hasComments(range)) {
 					props[parameterName] = literal
-					ranges[parameterName] = rangeOf(value, false)
+					ranges[parameterName] = range
+				} else {
+					readonlyParameters.push(parameterName)
 				}
 			}
 			let binding: { file: string; source: string } | undefined
@@ -1026,7 +1021,7 @@ export function projectTypstSource(input: TypstSourceProjectionInput): TypstPars
 			if (data && data.kind === 'funcCall' && builtin(data, scope) === 'json') {
 				const path = positional(data)[0]
 				if (path?.kind === 'str') {
-					const file = resolvePath(path.value)
+					const file = resolveSourcePath(input.path, path.value)
 					if (file) binding = { file, source: path.value }
 				}
 			}
@@ -1038,6 +1033,7 @@ export function projectTypstSource(input: TypstSourceProjectionInput): TypstPars
 						name: component.name,
 						label: component.label,
 						parameters: component.parameters,
+						readonlyParameters,
 						props,
 						binding: binding ?? null,
 						source: slice(rangeOf(expr)),

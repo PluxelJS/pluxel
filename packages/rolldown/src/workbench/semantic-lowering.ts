@@ -11,9 +11,9 @@ import {
 import { pluginDefinitionIndexKey, type PluginDefinitionAddress } from '@pluxel/core'
 import type { WorkbenchContentSet } from '@pluxel/core/internal'
 import {
-	panel,
-	WORKBENCH_ICONS,
-	type WorkbenchPanelPlacement,
+	parseWorkbenchPlacement,
+	parseWorkbenchSourcePath,
+	type WorkbenchPlacement,
 } from '@pluxel/workbench/internal/transport'
 import type { Program } from 'oxc-parser'
 import { dirname, extname, isAbsolute, relative, resolve } from 'pathe'
@@ -44,6 +44,7 @@ type ImportBinding = Readonly<{
 }>
 
 type ExportBinding =
+	| Readonly<{ kind: 'namespace' }>
 	| Readonly<{ kind: 'local'; local: string }>
 	| Readonly<{ kind: 'reexport'; source: string; resolved?: string; imported: string }>
 
@@ -70,11 +71,6 @@ type BindingRef = Readonly<{
 	localName: string
 }>
 
-type Renderer = Readonly<{
-	moduleId: string
-	entryPath: string
-}>
-
 type RendererGraphImport = Readonly<{
 	specifier: string
 	kind: 'static' | 'dynamic'
@@ -91,23 +87,29 @@ type RendererGraphModule = Readonly<{
 	imports: readonly RendererGraphImport[]
 }>
 
-type MarkdownDocument = Readonly<{
-	kind: 'markdown-document'
-	moduleId: string
-	sourcePath: string
-	slots: ReadonlyMap<string, WorkbenchSemanticContentSlot>
+type RendererDefinitionImport = Readonly<{
+	start: number
+	localName: string
+	valueSpecifier: string
+	typeSpecifiers: readonly string[]
 }>
 
-type Placement = Readonly<{ kind: 'placement'; panel?: WorkbenchPanelPlacement }>
-
-type Descriptor =
-	| Readonly<{ kind: 'view'; renderer: Renderer; placement?: Placement }>
-	| Readonly<{ kind: 'attachment'; renderer: Renderer }>
-	| Readonly<{ kind: 'content'; document: MarkdownDocument; placement: Placement }>
-	| Readonly<{
-			kind: 'attachment-placement'
-			provider: DefinedEntry
-	  }>
+type Descriptor = Readonly<{ moduleId: string; expression: Node }> &
+	(
+		| Readonly<{ kind: 'view'; renderer: string; placement: WorkbenchPlacement }>
+		| Readonly<{ kind: 'attachment'; renderer: string }>
+		| Readonly<{
+				kind: 'content'
+				document: string
+				placement: WorkbenchPlacement
+				slots: ReadonlyMap<string, WorkbenchSemanticContentSlot>
+		  }>
+		| Readonly<{
+				kind: 'attachment-placement'
+				provider: DefinedEntry
+				placement: WorkbenchPlacement
+		  }>
+	)
 
 type Definition = Readonly<{
 	binding: BindingRef
@@ -133,28 +135,19 @@ type SemanticValue =
 	| number
 	| boolean
 	| null
-	| Renderer
 	| Descriptor
 	| Definition
 	| DefinedEntry
 	| FunctionValue
-	| MarkdownDocument
-	| Placement
 	| RecordValue
-	| WorkbenchNamespace
-
-type WorkbenchNamespace = Readonly<{ kind: 'workbench-namespace' }>
 
 type EvaluationEnvironment = ReadonlyMap<string, SemanticValue>
 
-const WORKBENCH_NAMESPACE: WorkbenchNamespace = Object.freeze({
-	kind: 'workbench-namespace',
-})
 const WORKBENCH_IMPORTS = new Set(['@pluxel/workbench'])
 const WORKBENCH_REACT_IMPORTS = new Set(['@pluxel/workbench/react'])
 const ENTRY_KEY = /^[A-Za-z][A-Za-z0-9_]*$/
 const RESERVED_ENTRY_KEYS = new Set(['__proto__', 'prototype', 'constructor', 'then'])
-const GENERATED_ABI_VERSION = 3
+const GENERATED_ABI_VERSION = 4
 const BUILD_REVISION_VERSION = 5
 const FIXED_SHARED_PACKAGES = new Set(
 	WORKBENCH_FEDERATION_SHARED_MODULES.map(packageNameFromSpecifier),
@@ -313,42 +306,14 @@ function createWorkbenchModuleStore(
 			if (declaration?.type !== 'ClassDeclaration') continue
 			const className = identifierName(declaration.id)
 			if (!className) continue
-			const calls = collectPublishCalls(declaration, facts.imports)
-			if (calls.length === 0) continue
-			const owner = owners.get(className)
-			if (!owner) {
-				throw semanticError(
-					id,
-					`${className} calls ctx.workbench.publish(), but only the owning @Plugin class may publish`,
-				)
-			}
-			if (calls.length !== 1) {
-				throw semanticError(id, `${className} must publish exactly once`)
-			}
-			const call = calls[0]!
-			if (!isUnconditionalInitPublication(declaration, call)) {
-				throw semanticError(
-					id,
-					`${className} publication must be one unconditional statement in init()`,
-				)
-			}
-			const args = nodes(call.arguments)
-			if (args.length === 0 || args.length > 2) {
-				throw semanticError(
-					id,
-					`${className} publish() must receive definition and optional bindings`,
-				)
-			}
+			const publication = readPublication(declaration, facts, className, owners.get(className))
+			if (!publication) continue
+			const owner = publication.owner
 			const key = pluginDefinitionIndexKey(owner.definition)
 			if (nextPublications.has(key)) {
 				throw semanticError(id, `${className} has duplicate Workbench publication ownership`)
 			}
-			nextPublications.set(key, {
-				owner,
-				moduleId: id,
-				definitionExpression: args[0]!,
-				hasBindings: args.length === 2,
-			})
+			nextPublications.set(key, publication)
 		}
 
 		// Commit the module and its ownership together, only after collection fully succeeds.
@@ -485,7 +450,12 @@ async function compileWorkbenchSnapshot(
 			if (definitions === undefined || definitions.has(key)) publications.set(key, publication)
 	}
 	// In-flight reads and failures belong only to this snapshot; only successful facts may commit.
-	const loadingModules = new Map<string, Promise<ModuleFacts>>()
+	const getModule = createDefinitionModuleReader(
+		modules,
+		(id) => readFile(id, 'utf8'),
+		async (source, importer) => resolveSource(importer, source),
+	)
+	const readDefinition = publishedDefinitionReader(getModule)
 
 	const finalizePlans = async (): Promise<WorkbenchSemanticCompilationSnapshot> => {
 		const producers: WorkbenchSemanticProducerCompilation[] = []
@@ -495,23 +465,7 @@ async function compileWorkbenchSnapshot(
 				pluginDefinitionIndexKey(right.owner.definition),
 			),
 		)) {
-			const definitionBinding = await resolveDefinitionBinding(
-				publication.moduleId,
-				publication.definitionExpression,
-				new Set(),
-			)
-			const definition = await evaluateDefinition(definitionBinding)
-			const requiresBindings = [...definition.entries.values()].some(
-				(descriptor) => descriptor.kind !== 'content' || descriptor.document.slots.size > 0,
-			)
-			if (publication.hasBindings !== requiresBindings) {
-				throw semanticError(
-					publication.moduleId,
-					requiresBindings
-						? 'publish() requires bindings for every View, Attachment, and interactive Content'
-						: 'static Content-only publish() must not receive bindings',
-				)
-			}
+			const definition = await readDefinition(publication)
 			const buildRoot = resolveProducerBuildRoot(sourceRoot, publication.moduleId)
 			const contentEntries = [...definition.entries]
 				.filter(
@@ -527,15 +481,15 @@ async function compileWorkbenchSnapshot(
 						root: buildRoot,
 						entries: contentEntries.map(([key, descriptor]) => ({
 							key,
-							sourcePath: descriptor.document.sourcePath,
-							slots: [...descriptor.document.slots.values()],
+							sourcePath: resolve(dirname(definition.binding.moduleId), descriptor.document),
+							slots: [...descriptor.slots.values()],
 						})),
 					}),
 				)
 			}
 			const localEntries = [...definition.entries]
 				.filter(
-					(entry): entry is [string, Extract<Descriptor, { renderer: Renderer }>] =>
+					(entry): entry is [string, Extract<Descriptor, { renderer: string }>] =>
 						entry[1].kind === 'view' || entry[1].kind === 'attachment',
 				)
 				.sort(([left], [right]) => left.localeCompare(right))
@@ -548,7 +502,7 @@ async function compileWorkbenchSnapshot(
 					owner: publication.owner.definition,
 					key,
 				}),
-				renderer: descriptor.renderer,
+				renderer: resolve(dirname(definition.binding.moduleId), descriptor.renderer),
 			}))
 			const { revision: buildRevision, sources } = await buildRevisionFor(
 				buildRoot,
@@ -586,22 +540,32 @@ async function compileWorkbenchSnapshot(
 		})
 	}
 
-	const getModule = async (id: string): Promise<ModuleFacts> => {
+	return { ...(await finalizePlans()), modules }
+}
+
+function createDefinitionModuleReader(
+	modules: Map<string, ModuleFacts>,
+	read: (id: string) => Promise<string>,
+	resolveModule: (source: string, importer: string) => Promise<string | undefined>,
+	options?: { cache?: boolean },
+) {
+	const loadingModules = new Map<string, Promise<ModuleFacts>>()
+	return async (id: string): Promise<ModuleFacts> => {
 		const canonicalId = stripQuery(resolve(id))
 		const existing = modules.get(canonicalId)
 		if (existing) return existing
 		let pending = loadingModules.get(canonicalId)
 		if (!pending) {
 			pending = (async () => {
-				const code = await readFile(canonicalId, 'utf-8').catch((cause) => {
+				const code = await read(canonicalId).catch((cause) => {
 					throw new Error(`[workbench-semantic] cannot read imported module ${canonicalId}`, {
 						cause,
 					})
 				})
-				const ast = parseStandaloneWithLang(code, canonicalId)
+				const ast = parseStandaloneWithLang(code, canonicalId, options)
 				if (!ast) throw semanticError(canonicalId, 'failed to parse imported definition module')
 				const facts = await moduleFacts(canonicalId, code, ast, async (source) =>
-					resolveSource(canonicalId, source),
+					resolveModule(source, canonicalId),
 				)
 				modules.set(canonicalId, facts)
 				return facts
@@ -609,6 +573,61 @@ async function compileWorkbenchSnapshot(
 			loadingModules.set(canonicalId, pending)
 		}
 		return pending
+	}
+}
+
+function publishedDefinitionReader(getModule: (id: string) => Promise<ModuleFacts>) {
+	// Resolve ESM binding identity before interpreting it as a definition, helper or slot map.
+	// Distinct const exports may hold the same value and still conflict through export *.
+	const findExportBinding = async (
+		moduleId: string,
+		exportName: string,
+		seen: ReadonlySet<string>,
+	): Promise<BindingRef | undefined> => {
+		const marker = `${moduleId}\0${exportName}`
+		if (seen.has(marker)) return undefined
+		const nextSeen = new Set(seen).add(marker)
+		const module = await getModule(moduleId)
+		const exported = module.exports.get(exportName)
+		if (exported) {
+			if (exported.kind === 'namespace')
+				throw semanticError(
+					moduleId,
+					`Workbench declaration cannot use namespace export ${exportName}`,
+				)
+			const imported = exported.kind === 'reexport' ? exported : module.imports.get(exported.local)
+			if (imported) {
+				if (!imported.resolved || ('namespace' in imported && imported.namespace))
+					throw semanticError(moduleId, `cannot resolve re-export ${exportName}`)
+				return findExportBinding(imported.resolved, imported.imported, nextSeen)
+			}
+			if (exported.kind === 'local') return { moduleId, localName: exported.local }
+		}
+		if (exportName === 'default') return undefined
+		let found: BindingRef | undefined
+		for (const source of module.exportAll) {
+			if (!source.resolved)
+				throw semanticError(moduleId, `cannot resolve star export from ${source.source}`)
+			const candidate = await findExportBinding(source.resolved, exportName, nextSeen)
+			if (!candidate) continue
+			if (
+				found &&
+				(found.moduleId !== candidate.moduleId || found.localName !== candidate.localName)
+			)
+				throw semanticError(moduleId, `ambiguous re-exported Workbench binding ${exportName}`)
+			found = candidate
+		}
+		return found
+	}
+
+	const resolveExportBinding = async (
+		moduleId: string,
+		exportName: string,
+	): Promise<BindingRef> => {
+		const binding = await findExportBinding(moduleId, exportName, new Set())
+		if (!binding)
+			throw semanticError(moduleId, `imported Workbench export ${exportName} is missing`)
+		return binding
 	}
 
 	const resolveDefinitionBinding = async (
@@ -632,7 +651,12 @@ async function compileWorkbenchSnapshot(
 			if (imported.namespace || !imported.resolved) {
 				throw semanticError(moduleId, `cannot resolve definition import ${value.name}`)
 			}
-			return resolveExportBinding(imported.resolved, imported.imported, seen)
+			const binding = await resolveExportBinding(imported.resolved, imported.imported)
+			return resolveDefinitionBinding(
+				binding.moduleId,
+				{ type: 'Identifier', name: binding.localName },
+				seen,
+			)
 		}
 		const initializer = module.constants.get(value.name)
 		if (!initializer) {
@@ -649,46 +673,6 @@ async function compileWorkbenchSnapshot(
 		)
 	}
 
-	const resolveExportBinding = async (
-		moduleId: string,
-		exportName: string,
-		seen: Set<string>,
-	): Promise<BindingRef> => {
-		const marker = `export:${moduleId}\0${exportName}`
-		if (seen.has(marker)) throw semanticError(moduleId, `cyclic re-export ${exportName}`)
-		seen.add(marker)
-		const module = await getModule(moduleId)
-		const exported = module.exports.get(exportName)
-		if (!exported) {
-			const candidates: BindingRef[] = []
-			for (const exportedModule of module.exportAll) {
-				if (!exportedModule.resolved) continue
-				try {
-					candidates.push(
-						await resolveExportBinding(exportedModule.resolved, exportName, new Set(seen)),
-					)
-				} catch (error) {
-					if (!isMissingExportError(error)) throw error
-				}
-			}
-			const unique = new Map(
-				candidates.map((candidate) => [`${candidate.moduleId}\0${candidate.localName}`, candidate]),
-			)
-			if (unique.size === 1) return [...unique.values()][0]!
-			if (unique.size > 1) {
-				throw semanticError(moduleId, `ambiguous re-exported Workbench definition ${exportName}`)
-			}
-			throw semanticError(moduleId, `imported Workbench definition export ${exportName} is missing`)
-		}
-		if (exported.kind === 'reexport') {
-			if (!exported.resolved) {
-				throw semanticError(moduleId, `cannot resolve re-export ${exportName}`)
-			}
-			return resolveExportBinding(exported.resolved, exported.imported, seen)
-		}
-		return resolveDefinitionBinding(moduleId, { type: 'Identifier', name: exported.local }, seen)
-	}
-
 	const evaluateDefinition = async (binding: BindingRef): Promise<Definition> => {
 		const module = await getModule(binding.moduleId)
 		const initializer = module.constants.get(binding.localName)
@@ -698,13 +682,13 @@ async function compileWorkbenchSnapshot(
 			throw semanticError(binding.moduleId, `${binding.localName} is not workbench.define(...)`)
 		}
 		const args = nodes(call.arguments)
-		if (args.length !== 1) {
+		if (args.length !== 2 || !isImportMetaUrl(args[0]!)) {
 			throw semanticError(
 				binding.moduleId,
-				'workbench.define() must receive one final entry record',
+				'workbench.define() requires import.meta.url and one final entry record',
 			)
 		}
-		const entriesValue = await evaluateExpression(binding.moduleId, args[0]!, new Map(), new Set())
+		const entriesValue = await evaluateExpression(binding.moduleId, args[1]!, new Map(), new Set())
 		if (!(entriesValue instanceof Map)) {
 			throw semanticError(binding.moduleId, 'workbench.define() entries must resolve to one record')
 		}
@@ -755,31 +739,27 @@ async function compileWorkbenchSnapshot(
 					return node.value as string | number | boolean | null
 				}
 				break
+			case 'UnaryExpression': {
+				if (node.operator !== '-') break
+				const operand = await evaluateExpression(
+					moduleId,
+					object(node.argument)!,
+					environment,
+					stack,
+				)
+				if (typeof operand === 'number') return -operand
+				break
+			}
 			case 'Identifier': {
 				const name = String(node.name)
 				if (environment.has(name)) return environment.get(name)!
 				const imported = module.imports.get(name)
 				if (imported) {
-					if (WORKBENCH_IMPORTS.has(imported.source) && imported.imported === 'workbench') {
-						return WORKBENCH_NAMESPACE
-					}
 					if (!imported.resolved || imported.namespace) {
 						throw semanticError(moduleId, `unsupported imported value ${name}`)
 					}
-					const targetModule = await getModule(imported.resolved)
-					const target = targetModule.exports.get(imported.imported)
-					if (!target) {
-						const definitionBinding = await resolveExportBinding(
-							imported.resolved,
-							imported.imported,
-							new Set(),
-						)
-						return evaluateDefinition(definitionBinding)
-					}
-					if (target.kind !== 'local') {
-						throw semanticError(moduleId, `cannot statically evaluate re-exported value ${name}`)
-					}
-					return evaluateIdentifier(imported.resolved, target.local, environment, stack)
+					const binding = await resolveExportBinding(imported.resolved, imported.imported)
+					return evaluateIdentifier(binding.moduleId, binding.localName, environment, stack)
 				}
 				return evaluateIdentifier(moduleId, name, environment, stack)
 			}
@@ -833,8 +813,6 @@ async function compileWorkbenchSnapshot(
 				const base = await evaluateExpression(moduleId, object(node.object)!, environment, stack)
 				const key = memberName(node)
 				if (!key) throw semanticError(moduleId, 'computed Workbench member is not static')
-				if (base === WORKBENCH_NAMESPACE && key === 'icons')
-					return new Map(Object.entries(WORKBENCH_ICONS))
 				if (isDefinition(base)) {
 					const descriptor = base.entries.get(key)
 					if (!descriptor) throw semanticError(moduleId, `definition has no entry ${key}`)
@@ -885,29 +863,15 @@ async function compileWorkbenchSnapshot(
 		stack: Set<string>,
 	): Promise<ReadonlyMap<string, WorkbenchSemanticContentSlot>> => {
 		if (!expression) return new Map()
-		const resolved = await resolveStaticValueNode(
+		const { moduleId: slotsModule, properties } = await staticObjectProperties(
 			moduleId,
 			expression,
-			'workbench.markdown() slots',
-			new Set(),
+			'workbench.content() slot map',
 		)
-		if (resolved.node.type !== 'ObjectExpression') {
-			throw semanticError(moduleId, 'workbench.markdown() slots must resolve to one static record')
-		}
 		const slots = new Map<string, WorkbenchSemanticContentSlot>()
-		for (const property of nodes(resolved.node.properties)) {
-			if (property.type !== 'Property' || property.computed === true) {
-				throw semanticError(moduleId, 'workbench.markdown() slots require exact static properties')
-			}
-			const key = propertyName(property.key)
-			if (!key) throw semanticError(moduleId, 'workbench.markdown() slot key must be static')
-			assertEntryKey(moduleId, key)
-			if (slots.has(key)) {
-				throw semanticError(moduleId, `workbench.markdown() slot ${key} is duplicated`)
-			}
-			const value = object(property.value)
-			if (!value) throw semanticError(moduleId, `workbench.markdown() slot ${key} has no value`)
-			slots.set(key, await parseContentSlot(resolved.moduleId, key, value, environment, stack))
+		for (const [key, value] of properties) {
+			assertEntryKey(slotsModule, key)
+			slots.set(key, await parseContentSlot(slotsModule, key, value, environment, stack))
 		}
 		return new Map([...slots].sort(([left], [right]) => left.localeCompare(right)))
 	}
@@ -944,7 +908,7 @@ async function compileWorkbenchSnapshot(
 		if (!isWorkbenchCall(call, module, 'action') || args.length !== 1) {
 			throw semanticError(moduleId, `Workbench Content slot ${key} must be workbench.data/action()`)
 		}
-		const options = await staticObjectProperties(
+		const { properties: options, moduleId: optionsModule } = await staticObjectProperties(
 			resolved.moduleId,
 			args[0]!,
 			`workbench.action() for slot ${key}`,
@@ -962,13 +926,13 @@ async function compileWorkbenchSnapshot(
 		if (!labelNode) {
 			throw semanticError(moduleId, `workbench.action() for slot ${key} requires label`)
 		}
-		const label = await evaluateExpression(resolved.moduleId, labelNode, environment, stack)
+		const label = await evaluateExpression(optionsModule, labelNode, environment, stack)
 		if (typeof label !== 'string' || label.length === 0) {
 			throw semanticError(moduleId, `workbench.action() for slot ${key} requires a static label`)
 		}
 		const confirmNode = options.get('confirm')
 		const confirm = confirmNode
-			? await evaluateExpression(resolved.moduleId, confirmNode, environment, stack)
+			? await evaluateExpression(optionsModule, confirmNode, environment, stack)
 			: undefined
 		if (confirm !== undefined && (typeof confirm !== 'string' || confirm.length === 0)) {
 			throw semanticError(
@@ -990,10 +954,10 @@ async function compileWorkbenchSnapshot(
 				...(confirm === undefined ? {} : { confirm: confirm as string }),
 			})
 		}
-		await assertSchemaBinding(resolved.moduleId, inputNode, environment)
+		await assertSchemaBinding(optionsModule, inputNode, environment)
 		let input: 'dialog' | 'embedded' = 'dialog'
 		if (formNode) {
-			const form = await evaluateExpression(resolved.moduleId, formNode, environment, stack)
+			const form = await evaluateExpression(optionsModule, formNode, environment, stack)
 			if (form !== 'embedded') {
 				throw semanticError(moduleId, `workbench.action() for slot ${key} form must be "embedded"`)
 			}
@@ -1026,11 +990,7 @@ async function compileWorkbenchSnapshot(
 		}
 	}
 
-	const staticObjectProperties = async (
-		moduleId: string,
-		expression: Node,
-		label: string,
-	): Promise<ReadonlyMap<string, Node>> => {
+	const staticObjectProperties = async (moduleId: string, expression: Node, label: string) => {
 		const resolved = await resolveStaticValueNode(moduleId, expression, label, new Set())
 		if (resolved.node.type !== 'ObjectExpression') {
 			throw semanticError(moduleId, `${label} must resolve to one static record`)
@@ -1047,7 +1007,7 @@ async function compileWorkbenchSnapshot(
 			if (!value) throw semanticError(moduleId, `${label} property ${key} has no value`)
 			result.set(key, value)
 		}
-		return result
+		return { moduleId: resolved.moduleId, properties: result }
 	}
 
 	const resolveStaticValueNode = async (
@@ -1069,35 +1029,18 @@ async function compileWorkbenchSnapshot(
 			if (imported.namespace || !imported.resolved) {
 				throw semanticError(moduleId, `${label} import ${node.name} is not statically traceable`)
 			}
-			return resolveStaticExportNode(imported.resolved, imported.imported, label, seen)
+			const binding = await resolveExportBinding(imported.resolved, imported.imported)
+			return resolveStaticValueNode(
+				binding.moduleId,
+				{ type: 'Identifier', name: binding.localName },
+				label,
+				seen,
+			)
 		}
 		const initializer = module.constants.get(node.name)
 		if (!initializer)
 			throw semanticError(moduleId, `${label} binding ${node.name} is not traceable`)
 		return resolveStaticValueNode(moduleId, initializer, label, seen)
-	}
-
-	const resolveStaticExportNode = async (
-		moduleId: string,
-		exportName: string,
-		label: string,
-		seen: Set<string>,
-	): Promise<Readonly<{ moduleId: string; node: Node }>> => {
-		const module = await getModule(moduleId)
-		const exported = module.exports.get(exportName)
-		if (!exported) throw semanticError(moduleId, `${label} export ${exportName} is missing`)
-		if (exported.kind === 'reexport') {
-			if (!exported.resolved) {
-				throw semanticError(moduleId, `${label} re-export ${exportName} is not traceable`)
-			}
-			return resolveStaticExportNode(exported.resolved, exported.imported, label, seen)
-		}
-		return resolveStaticValueNode(
-			moduleId,
-			{ type: 'Identifier', name: exported.local },
-			label,
-			seen,
-		)
 	}
 
 	const evaluateCall = async (
@@ -1114,117 +1057,64 @@ async function compileWorkbenchSnapshot(
 			const objectNode = object(callee.object)!
 			if (isWorkbenchMember(callee, module)) {
 				switch (method) {
-					case 'markdown': {
-						if ((args.length !== 2 && args.length !== 3) || !isImportMetaUrl(args[0]!)) {
-							throw semanticError(
-								moduleId,
-								'workbench.markdown() must use import.meta.url, one literal relative path, and optional static slots',
-							)
-						}
-						const path = literalString(args[1])
-						if (path === null || (!path.startsWith('./') && !path.startsWith('../'))) {
-							throw semanticError(moduleId, 'workbench.markdown() path must be a relative literal')
-						}
-						if (path.includes('\\') || path.includes('?') || path.includes('#')) {
-							throw semanticError(moduleId, 'workbench.markdown() path must be normalized')
-						}
-						if (extname(path).toLowerCase() !== '.md') {
-							throw semanticError(
-								moduleId,
-								'workbench.markdown() source must use the .md extension',
-							)
-						}
-						return Object.freeze({
-							kind: 'markdown-document',
-							moduleId,
-							sourcePath: resolve(dirname(moduleId), path),
-							slots: await parseContentSlots(moduleId, args[2], environment, stack),
-						})
-					}
-					case 'entry': {
-						if (args.length !== 2 || !isImportMetaUrl(args[0]!)) {
-							throw semanticError(
-								moduleId,
-								'workbench.entry() must use import.meta.url and one literal relative path',
-							)
-						}
-						const path = await evaluateExpression(moduleId, args[1]!, environment, stack)
-						if (typeof path !== 'string' || (!path.startsWith('./') && !path.startsWith('../'))) {
-							throw semanticError(moduleId, 'workbench.entry() path must be module-relative')
-						}
-						if (path.includes('\\') || path.includes('?') || path.includes('#')) {
-							throw semanticError(moduleId, 'workbench.entry() path must be normalized')
-						}
-						return Object.freeze({ moduleId, entryPath: resolve(dirname(moduleId), path) })
-					}
 					case 'view':
 					case 'attachment': {
-						if (args.length !== 1) {
-							throw semanticError(moduleId, `workbench.${method}() must receive one record`)
-						}
+						if (args.length !== 1)
+							throw semanticError(moduleId, `workbench.${method}() requires one options record`)
 						const options = await evaluateExpression(moduleId, args[0]!, environment, stack)
-						if (!(options instanceof Map) || !isRenderer(options.get('renderer'))) {
-							throw semanticError(moduleId, `workbench.${method}() requires a static renderer`)
-						}
-						const placement = options.get('placement')
-						return Object.freeze({
-							kind: method,
-							renderer: options.get('renderer')!,
-							...(method === 'view' && isPlacement(placement) ? { placement } : {}),
-						})
+						if (!(options instanceof Map))
+							throw semanticError(moduleId, `workbench.${method}() requires one options record`)
+						checkEntryOptions(
+							moduleId,
+							method,
+							options,
+							method === 'view' ? ['renderer', 'placement'] : ['renderer'],
+						)
+						const renderer = sourcePath(moduleId, 'renderer', options.get('renderer'))
+						return method === 'attachment'
+							? { kind: method, renderer, moduleId, expression: call }
+							: {
+									kind: method,
+									renderer,
+									moduleId,
+									expression: call,
+									placement: placement(moduleId, options.get('placement')),
+								}
 					}
 					case 'content': {
-						if (args.length !== 1) {
-							throw semanticError(moduleId, 'workbench.content() must receive one record')
-						}
-						const options = await evaluateExpression(moduleId, args[0]!, environment, stack)
-						if (!(options instanceof Map)) {
-							throw semanticError(moduleId, 'workbench.content() must receive one static record')
-						}
-						const keys = [...options.keys()].sort()
-						if (keys.length !== 2 || keys[0] !== 'document' || keys[1] !== 'placement') {
-							throw semanticError(
-								moduleId,
-								'workbench.content() requires exactly document and placement',
-							)
-						}
+						if (args.length !== 1)
+							throw semanticError(moduleId, 'workbench.content() requires one options record')
+						const { properties: options, moduleId: optionsModule } = await staticObjectProperties(
+							moduleId,
+							args[0]!,
+							'workbench.content()',
+						)
+						checkEntryOptions(moduleId, method, options, ['document', 'placement', 'slots'])
 						const document = options.get('document')
-						const placement = options.get('placement')
-						if (!isMarkdownDocument(document) || !isPlacement(placement)) {
-							throw semanticError(
+						const position = options.get('placement')
+						if (!document || !position)
+							throw semanticError(moduleId, 'workbench.content() requires document and placement')
+						return {
+							kind: 'content',
+							moduleId,
+							expression: call,
+							placement: placement(
 								moduleId,
-								'workbench.content() requires workbench.markdown() and a static placement',
-							)
-						}
-						return Object.freeze({ kind: 'content', document, placement })
-					}
-					case 'tab':
-					case 'route':
-						return Object.freeze({ kind: 'placement' })
-					case 'panel': {
-						if (args.length !== 2)
-							throw semanticError(
+								await evaluateExpression(optionsModule, position, environment, stack),
+							),
+							document: sourcePath(
 								moduleId,
-								'workbench.panel() requires a region and one static options record',
-							)
-						const region = await evaluateExpression(moduleId, args[0]!, environment, stack)
-						const options = await evaluateExpression(moduleId, args[1]!, environment, stack)
-						if (!(options instanceof Map))
-							throw semanticError(moduleId, 'workbench.panel() requires one static options record')
-						try {
-							return Object.freeze({
-								kind: 'placement',
-								panel: panel(
-									region as WorkbenchPanelPlacement['region'],
-									Object.fromEntries(options) as Parameters<typeof panel>[1],
-								),
-							})
-						} catch (cause) {
-							throw semanticError(moduleId, cause instanceof Error ? cause.message : String(cause))
+								'document',
+								await evaluateExpression(optionsModule, document, environment, stack),
+							),
+							slots: await parseContentSlots(
+								optionsModule,
+								options.get('slots'),
+								environment,
+								stack,
+							),
 						}
 					}
-					case 'icons':
-						return new Map()
 					case 'define':
 						throw semanticError(moduleId, 'nested workbench.define() is not a valid entry value')
 				}
@@ -1234,8 +1124,16 @@ async function compileWorkbenchSnapshot(
 				if (args.length !== 1) {
 					throw semanticError(moduleId, 'Attachment.place() must receive one static placement')
 				}
-				await evaluateExpression(moduleId, args[0]!, environment, stack)
-				return Object.freeze({ kind: 'attachment-placement', provider: base })
+				return Object.freeze({
+					kind: 'attachment-placement',
+					provider: base,
+					placement: placement(
+						moduleId,
+						await evaluateExpression(moduleId, args[0]!, environment, stack),
+					),
+					moduleId,
+					expression: call,
+				})
 			}
 		}
 
@@ -1279,7 +1177,119 @@ async function compileWorkbenchSnapshot(
 		return evaluateExpression(callable.moduleId, returned, childEnvironment, stack)
 	}
 
-	return { ...(await finalizePlans()), modules }
+	return async (publication: PublishFact): Promise<Definition> => {
+		const definitionBinding = await resolveDefinitionBinding(
+			publication.moduleId,
+			publication.definitionExpression,
+			new Set(),
+		)
+		const definition = await evaluateDefinition(definitionBinding)
+		const requiresBindings = [...definition.entries.values()].some(
+			(descriptor) => descriptor.kind !== 'content' || descriptor.slots.size > 0,
+		)
+		if (publication.hasBindings !== requiresBindings) {
+			throw semanticError(
+				publication.moduleId,
+				requiresBindings
+					? 'publish() requires bindings for every View, Attachment, and interactive Content'
+					: 'static Content-only publish() must not receive bindings',
+			)
+		}
+		return definition
+	}
+}
+
+type SourceRange = { file: string; start: number; end: number }
+
+function sourceRange(file: string, node: Node): SourceRange {
+	return { file, start: Number(node.start), end: Number(node.end) }
+}
+
+/** Reads the same owner publication and static definition as the build, without preparing artifacts. */
+export async function inspectWorkbenchPublication(options: {
+	owner: PluginOwner & { moduleId: string }
+	read: (file: string) => Promise<string>
+	resolve: (source: string, importer: string) => Promise<string | undefined>
+}) {
+	const getModule = createDefinitionModuleReader(new Map(), options.read, options.resolve, {
+		cache: false,
+	})
+	const owner = options.owner
+	const module = await getModule(owner.moduleId)
+	const classDeclaration = (module.ast.body as unknown as Node[])
+		.map(unwrapDeclaration)
+		.find(
+			(node) => node?.type === 'ClassDeclaration' && identifierName(node.id) === owner.className,
+		)
+	if (!classDeclaration)
+		throw semanticError(owner.moduleId, `cannot locate owning class ${owner.className}`)
+	const published = readPublication(classDeclaration, module, owner.className, owner)
+	if (!published) return null
+	const definition = await publishedDefinitionReader(getModule)(published)
+	const { moduleId, localName } = definition.binding
+	const definitionModule = await getModule(moduleId)
+	const entries = []
+	for (const [key, descriptor] of definition.entries) {
+		const declaration = sourceRange(descriptor.moduleId, descriptor.expression)
+		if (descriptor.kind === 'attachment') {
+			const consumerApi = await attachmentConsumerApi(descriptor, getModule)
+			entries.push({ kind: descriptor.kind, key, declaration, consumerApi })
+		} else {
+			entries.push({ kind: descriptor.kind, key, declaration, placement: descriptor.placement })
+		}
+	}
+	return {
+		localName,
+		exportName: definition.exportName,
+		declaration: sourceRange(moduleId, definitionModule.constants.get(localName)!),
+		entries,
+	}
+}
+
+/** Only claim a role that follows from the authored types. Helpers, aliases and erased types
+ * that need TS instantiation still have a useful entry location. */
+async function attachmentConsumerApi(
+	descriptor: Extract<Descriptor, { kind: 'attachment' }>,
+	getModule: (file: string) => Promise<ModuleFacts>,
+): Promise<'none' | 'required' | 'unknown'> {
+	const args = nodes(object(descriptor.expression.typeArguments)?.params)
+	if (args.length === 1 || args[1]?.type === 'TSNeverKeyword') return 'none'
+	const name = identifierName(args[1]?.typeName)
+	if (!name) return 'unknown'
+	let module = await getModule(descriptor.moduleId)
+	// A generic helper can shadow a module-level type with the same name.
+	let shadowed = false
+	walk(module.ast, (node) => {
+		if (
+			Number(node.start) <= Number(descriptor.expression.start) &&
+			Number(node.end) >= Number(descriptor.expression.end) &&
+			nodes(object(node.typeParameters)?.params).some(
+				(parameter) => identifierName(parameter.name) === name,
+			)
+		)
+			shadowed = true
+	})
+	if (shadowed) return 'unknown'
+	let local = name
+	const imported = module.imports.get(name)
+	if (imported) {
+		if (!imported.resolved || imported.namespace) return 'unknown'
+		module = await getModule(imported.resolved)
+		const exported = module.exports.get(imported.imported)
+		if (exported?.kind !== 'local') return 'unknown'
+		local = exported.local
+	}
+	const declaration = (module.ast.body as unknown as Node[])
+		.map(unwrapDeclaration)
+		.find((node) => node && identifierName(node.id) === local)
+	if (declaration?.type === 'TSInterfaceDeclaration' || declaration?.type === 'ClassDeclaration')
+		return 'required'
+	if (
+		declaration?.type === 'TSTypeAliasDeclaration' &&
+		object(declaration.typeAnnotation)?.type === 'TSNeverKeyword'
+	)
+		return 'none'
+	return 'unknown'
 }
 
 function resolveProducerBuildRoot(sourceRoot: string, publicationModuleId: string): string {
@@ -1348,6 +1358,7 @@ async function moduleFacts(
 				? await resolveSpecifier(source).then((value) => value && stripQuery(resolve(value)))
 				: undefined
 			for (const specifier of nodes(statement.specifiers)) {
+				if (statement.exportKind === 'type' || specifier.exportKind === 'type') continue
 				const exported = propertyName(specifier.exported)
 				const local = propertyName(specifier.local)
 				if (!exported || !local) continue
@@ -1362,12 +1373,17 @@ async function moduleFacts(
 			if (declaredName) exports.set(declaredName, { kind: 'local', local: declaredName })
 		}
 		if (statement.type === 'ExportDefaultDeclaration') {
-			const declaredName = declarationName(statement)
+			const declaredName = identifierName(statement.declaration) ?? declarationName(statement)
 			if (declaredName) exports.set('default', { kind: 'local', local: declaredName })
 		}
-		if (statement.type === 'ExportAllDeclaration') {
+		if (statement.type === 'ExportAllDeclaration' && statement.exportKind !== 'type') {
 			const source = literalString(statement.source)
 			if (!source) continue
+			const namespace = propertyName(statement.exported)
+			if (namespace) {
+				exports.set(namespace, { kind: 'namespace' })
+				continue
+			}
 			const resolved = await resolveSpecifier(source).then(
 				(value) => value && stripQuery(resolve(value)),
 			)
@@ -1386,37 +1402,103 @@ async function moduleFacts(
 	})
 }
 
-function collectPublishCalls(classNode: Node, imports: ReadonlyMap<string, ImportBinding>): Node[] {
+function readPublication(
+	declaration: Node,
+	facts: ModuleFacts,
+	className: string,
+	owner?: PluginOwner,
+): PublishFact | undefined {
+	const id = facts.id
+	const calls = collectPublishCalls(declaration, facts)
+	if (calls.length === 0) return undefined
+	if (!owner) {
+		throw semanticError(
+			id,
+			`${className} calls ctx.service(Workbench).publish(), but only the owning @Plugin class may publish`,
+		)
+	}
+	if (calls.length !== 1) {
+		throw semanticError(id, `${className} must publish exactly once`)
+	}
+	const call = calls[0]!
+	if (!isUnconditionalInitPublication(declaration, call)) {
+		throw semanticError(
+			id,
+			`${className} publication must be one unconditional statement in init(): call publish() directly or assign its result to a local variable`,
+		)
+	}
+	const args = nodes(call.arguments)
+	if (args.length === 0 || args.length > 2) {
+		throw semanticError(id, `${className} publish() must receive definition and optional bindings`)
+	}
+	return { owner, moduleId: id, definitionExpression: args[0]!, hasBindings: args.length === 2 }
+}
+
+function collectPublishCalls(classNode: Node, module: ModuleFacts): Node[] {
 	const calls: Node[] = []
 	walk(classNode.body, (node) => {
-		if (node.type === 'CallExpression' && isPublishCallee(node.callee, imports)) calls.push(node)
+		if (node.type === 'CallExpression' && isPublishCallee(node.callee, module)) calls.push(node)
 	})
 	return calls
 }
 
-function isPublishCallee(input: unknown, imports: ReadonlyMap<string, ImportBinding>): boolean {
+/** Recognize declared Workbench provenance, including an optional imported-type reference. */
+function isWorkbenchService(input: Node, module: ModuleFacts, seen = new Set<string>()): boolean {
+	const value = unwrapExpression(input)
+	if (value.type === 'MemberExpression' && memberName(value) === 'Workbench') {
+		const binding = module.imports.get(identifierName(value.object) ?? '')
+		return Boolean(binding?.namespace && WORKBENCH_IMPORTS.has(binding.source))
+	}
+	const name = identifierName(value)
+	if (!name || seen.has(name)) return false
+	seen.add(name)
+	const binding = module.imports.get(name)
+	if (binding?.imported === 'Workbench' && WORKBENCH_IMPORTS.has(binding.source)) return true
+	const initializer = module.constants.get(name)
+	if (!initializer) return false
+	const reference = unwrapExpression(initializer)
+	if (reference.type === 'Identifier') return isWorkbenchService(reference, module, seen)
+	if (reference.type !== 'CallExpression') return false
+	const callee = unwrapExpression(object(reference.callee) ?? {})
+	const helper = module.imports.get(
+		identifierName(callee.type === 'MemberExpression' ? callee.object : callee) ?? '',
+	)
+	const isRef =
+		helper?.source === '@pluxel/core' &&
+		(helper.namespace
+			? memberName(callee) === 'defineServiceRef'
+			: helper.imported === 'defineServiceRef')
+	const args = nodes(object(reference.typeArguments)?.params)
+	const type = args.length === 1 ? args[0] : undefined
+	const imported =
+		type?.type === 'TSTypeReference'
+			? module.imports.get(identifierName(type.typeName) ?? '')
+			: undefined
+	return Boolean(
+		isRef && imported?.imported === 'Workbench' && WORKBENCH_IMPORTS.has(imported.source),
+	)
+}
+
+function isPublishCallee(input: unknown, module: ModuleFacts): boolean {
 	const publish = unwrapExpression(object(input) ?? {})
 	if (publish.type !== 'MemberExpression' || memberName(publish) !== 'publish') return false
 	const workbench = unwrapExpression(object(publish.object) ?? {})
-	let ctx: Node
-	if (workbench.type === 'CallExpression') {
-		const require = unwrapExpression(object(workbench.callee) ?? {})
-		const args = nodes(workbench.arguments)
-		const token = args.length === 1 ? imports.get(identifierName(args[0]) ?? '') : undefined
-		if (
-			require.type !== 'MemberExpression' ||
-			memberName(require) !== 'require' ||
-			token?.imported !== 'Workbench' ||
-			!['@pluxel/workbench', '@pluxel/workbench/service'].includes(token.source)
-		)
-			return false
-		ctx = unwrapExpression(object(require.object) ?? {})
-	} else {
-		if (workbench.type !== 'MemberExpression' || memberName(workbench) !== 'workbench') return false
-		ctx = unwrapExpression(object(workbench.object) ?? {})
-	}
-	if (ctx.type !== 'MemberExpression' || memberName(ctx) !== 'ctx') return false
-	return unwrapExpression(object(ctx.object) ?? {}).type === 'ThisExpression'
+	if (workbench.type !== 'CallExpression') return false
+	const service = unwrapExpression(object(workbench.callee) ?? {})
+	const args = nodes(workbench.arguments)
+	if (
+		service.type !== 'MemberExpression' ||
+		memberName(service) !== 'service' ||
+		args.length !== 1 ||
+		!isWorkbenchService(args[0]!, module)
+	)
+		return false
+	const ctx = unwrapExpression(object(service.object) ?? {})
+	return (
+		ctx.type === 'MemberExpression' &&
+		memberName(ctx) === 'ctx' &&
+		unwrapExpression(object(ctx.object) ?? {}).type === 'ThisExpression'
+	)
 }
 
 function isUnconditionalInitPublication(classNode: Node, call: Node): boolean {
@@ -1424,11 +1506,17 @@ function isUnconditionalInitPublication(classNode: Node, call: Node): boolean {
 		if (element.type !== 'MethodDefinition' || propertyName(element.key) !== 'init') continue
 		const body = object(object(element.value)?.body)
 		if (body?.type !== 'BlockStatement') return false
-		return nodes(body.body).some(
-			(statement) =>
+		return nodes(body.body).some((statement) => {
+			if (statement.type === 'VariableDeclaration') {
+				return nodes(statement.declarations).some(
+					(local) => unwrapExpression(object(local.init) ?? {}) === call,
+				)
+			}
+			return (
 				statement.type === 'ExpressionStatement' &&
-				unwrapExpression(object(statement.expression) ?? {}) === call,
-		)
+				unwrapExpression(object(statement.expression) ?? {}) === call
+			)
+		})
 	}
 	return false
 }
@@ -1465,7 +1553,7 @@ async function writeBridgeEntry(input: {
 	buildRevision: string
 	identity: WorkbenchFederationDescriptorIdentity
 	definition: Definition
-	renderer: Renderer
+	renderer: string
 }): Promise<string> {
 	// An accepted plan must keep pointing to its own generated files while a newer
 	// candidate compiles or builds in the background.
@@ -1496,18 +1584,18 @@ async function writeProjectedRenderer(input: {
 	generatedDir: string
 	identity: WorkbenchFederationDescriptorIdentity
 	definition: Definition
-	renderer: Renderer
+	renderer: string
 }): Promise<string> {
-	const extension = extname(input.renderer.entryPath) || '.tsx'
+	const extension = extname(input.renderer) || '.tsx'
 	const rendererPath = resolve(input.generatedDir, `${input.identity.key}.renderer${extension}`)
 	const projectionPath = resolve(input.generatedDir, `${input.identity.key}.definition.ts`)
 	const projectionGraph = await collectRendererProjectionGraph(
-		input.renderer.entryPath,
+		input.renderer,
 		input.definition.binding.moduleId,
 		input.definition,
 		input.identity,
 	)
-	if (!projectionGraph) return input.renderer.entryPath
+	if (!projectionGraph) return input.renderer
 	const clonedPaths = new Map<string, string>()
 	const clonedModules = [...projectionGraph.modules]
 		.filter(([path]) => projectionGraph.clonePaths.has(path))
@@ -1544,6 +1632,20 @@ async function writeProjectedRenderer(input: {
 					`[workbench-semantic] renderer import has no source range: ${module.path}`,
 				)
 			}
+			if (
+				replacementTarget === projectionPath &&
+				projectionGraph.definitionImport.typeSpecifiers.length > 0
+			) {
+				// Preserve the author's types through declaration emit. Only the value import
+				// enters the browser graph, even with verbatimModuleSyntax.
+				const { start, typeSpecifiers, valueSpecifier } = projectionGraph.definitionImport
+				const typesFrom = declarationImport(clonePath, item.target)
+				replacements.push({
+					start,
+					end: item.start,
+					value: `import type { ${typeSpecifiers.join(', ')} } from ${JSON.stringify(typesFrom)}\nimport { ${valueSpecifier} } from `,
+				})
+			}
 			replacements.push({
 				start: item.start,
 				end: item.end,
@@ -1557,38 +1659,29 @@ async function writeProjectedRenderer(input: {
 		const previous = await readFile(clonePath, 'utf-8').catch((): undefined => undefined)
 		if (previous !== projected) await writeFile(clonePath, projected, 'utf-8')
 	}
-	const rendererDeclaration = `workbench.entry(import.meta.url, ${JSON.stringify(`./${input.identity.key}.renderer${extension}`)})`
+	const renderer = JSON.stringify(`./${input.identity.key}.renderer${extension}`)
 	// Keep the runtime graph browser-only while deriving the invariant API brands from the author's
 	// exact descriptor. `typeof import(...)` exists only in TypeScript's type graph, so Vite never
 	// executes the server definition module. Indexing the final definition also works when the entry
 	// was produced through helper composition and preserves both Attachment API parameters without
 	// trying to recover their source-level generic syntax.
-	const sourceDefinitionImport = relativeImport(projectionPath, input.definition.binding.moduleId)
-		.replace(/\.(?:tsx?|jsx)$/i, '.js')
-		.replace(/\.mts$/i, '.mjs')
-		.replace(/\.cts$/i, '.cjs')
-	const sourceDescriptor = `(typeof import(${JSON.stringify(sourceDefinitionImport)}))[${JSON.stringify(input.definition.exportName)}][${JSON.stringify(input.identity.key)}]`
+	const sourceDefinitionImport = declarationImport(
+		projectionPath,
+		input.definition.binding.moduleId,
+	)
+	const sourceDefinition = `(typeof import(${JSON.stringify(sourceDefinitionImport)}))[${JSON.stringify(input.definition.exportName)}]`
 	const sourceEntry = input.definition.entries.get(input.identity.key)
-	const panelPlacement = sourceEntry?.kind === 'view' ? sourceEntry.placement?.panel : undefined
-	const projectedPlacement = panelPlacement
-		? `workbench.panel(${JSON.stringify(panelPlacement.region)}, ${JSON.stringify({
-				label: panelPlacement.label,
-				...(panelPlacement.icon === undefined ? {} : { icon: panelPlacement.icon }),
-				order: panelPlacement.order,
-			})})`
-		: `workbench.tab({ label: ${JSON.stringify(input.identity.key)} })`
 	const descriptor =
-		input.identity.kind === 'view'
-			? `workbench.view({ renderer: ProjectedRenderer, placement: ${projectedPlacement} }) as unknown as SourceDescriptor`
-			: 'workbench.attachment({ renderer: ProjectedRenderer }) as unknown as SourceDescriptor'
+		sourceEntry?.kind === 'view'
+			? `workbench.view({ renderer: ${renderer}, placement: ${JSON.stringify(sourceEntry.placement)} })`
+			: `workbench.attachment({ renderer: ${renderer} })`
 	const projection = [
 		'// Generated browser-only Workbench descriptor projection. Do not edit.',
 		`import { workbench } from '@pluxel/workbench'`,
-		`type SourceDescriptor = ${sourceDescriptor}`,
-		`const ProjectedRenderer = ${rendererDeclaration}`,
-		`export const ${input.definition.exportName} = workbench.define({`,
+		`type ProjectedDefinition = Pick<${sourceDefinition}, ${JSON.stringify(input.identity.key)}>`,
+		`export const ${input.definition.exportName}: ProjectedDefinition = workbench.define(import.meta.url, {`,
 		`\t${JSON.stringify(input.identity.key)}: ${descriptor},`,
-		'})',
+		'}) as unknown as ProjectedDefinition',
 		'',
 	].join('\n')
 	const previousProjection = await readFile(projectionPath, 'utf-8').catch(
@@ -1609,6 +1702,7 @@ async function collectRendererProjectionGraph(
 			clonePaths: ReadonlySet<string>
 			rendererPath: string
 			definitionPath: string
+			definitionImport: RendererDefinitionImport
 	  }>
 	| undefined
 > {
@@ -1706,40 +1800,23 @@ async function collectRendererProjectionGraph(
 			`[workbench-semantic] cannot locate the direct server definition import: ${boundary.module.path}`,
 		)
 	}
-	assertProjectionImport(statement, definitionObject, boundary.module.path)
-	if (rendererCalls.length === 0) {
-		if (boundary.module.path !== renderer) {
-			throw rendererScopeError({
-				rendererPath,
-				definition: definitionObject,
-				identity,
-				message:
-					'renderer may reference its server definition only through a direct static import; ' +
-					`the import in ${boundary.module.path} via ${JSON.stringify(boundary.item.specifier)} does not bind a renderer scope`,
-			})
-		}
-	} else {
-		if (
-			rendererCalls.length !== 1 ||
-			rendererCalls[0]!.module.path !== boundary.module.path ||
-			!isModuleConstInitializer(rendererCalls[0]!.module.ast, rendererCalls[0]!.call) ||
-			!isExactWorkbenchRendererCall(
-				rendererCalls[0]!.call,
-				statement,
-				definitionObject,
-				identity.key,
-			)
-		) {
-			throw rendererScopeError({
-				rendererPath,
-				definition: definitionObject,
-				identity,
-				message:
-					'renderer graph must contain one createWorkbenchRenderer() bound to ' +
-					`${definitionObject.exportName}.${identity.key}; ` +
-					`scope call/import boundary is ${boundary.module.path} via ${JSON.stringify(boundary.item.specifier)}`,
-			})
-		}
+	const definitionImport = readProjectionImport(statement, definitionObject, boundary.module)
+	const scope = rendererCalls[0]
+	if (
+		rendererCalls.length !== 1 ||
+		!scope ||
+		scope.module.path !== boundary.module.path ||
+		!isModuleConstInitializer(scope.module.ast, scope.call) ||
+		!isExactWorkbenchRendererCall(scope.call, definitionImport.localName, identity.key)
+	) {
+		throw rendererScopeError({
+			rendererPath,
+			definition: definitionObject,
+			identity,
+			message:
+				`the import in ${boundary.module.path} via ${JSON.stringify(boundary.item.specifier)} ` +
+				`requires one createWorkbenchRenderer() bound to ${definitionObject.exportName}.${identity.key}`,
+		})
 	}
 
 	const importers = new Map<string, Set<string>>()
@@ -1776,6 +1853,7 @@ async function collectRendererProjectionGraph(
 		clonePaths,
 		rendererPath: renderer,
 		definitionPath: definitionFile,
+		definitionImport,
 	})
 }
 
@@ -1794,9 +1872,8 @@ function rendererScopeError(
 	const descriptor = `${input.definition.exportName}.${input.identity.key}`
 	return new Error(
 		`[workbench-semantic] ${input.rendererPath}: renderer scope for ${descriptor}: ${input.message}. ` +
-			`For the standard scope form, use one reachable boundary with createWorkbenchRenderer(${descriptor}); ` +
-			'other renderer modules must import that scope or its resources instead of the server definition. ' +
-			`A low-level useWorkbench(${descriptor}) boundary must remain directly in the renderer entry.`,
+			`Bind a module-level const with createWorkbenchRenderer(${descriptor}). ` +
+			'Other renderer modules can import that scope or its resources.',
 	)
 }
 
@@ -1891,8 +1968,7 @@ function rendererImportStatement(
 
 function isExactWorkbenchRendererCall(
 	call: Node,
-	definitionImport: Node,
-	definition: Definition,
+	definitionLocalName: string,
 	entryKey: string,
 ): boolean {
 	const args = nodes(call.arguments)
@@ -1900,36 +1976,51 @@ function isExactWorkbenchRendererCall(
 	const descriptor = unwrapExpression(args[0]!)
 	if (descriptor.type !== 'MemberExpression' || memberName(descriptor) !== entryKey) return false
 	const owner = unwrapExpression(object(descriptor.object) ?? {})
-	if (owner.type !== 'Identifier' || typeof owner.name !== 'string') return false
-	const specifier = nodes(definitionImport.specifiers)[0]
-	return (
-		specifier?.type === 'ImportSpecifier' &&
-		propertyName(specifier.imported) === definition.exportName &&
-		identifierName(specifier.local) === owner.name
-	)
+	return identifierName(owner) === definitionLocalName
 }
 
-function assertProjectionImport(
+function readProjectionImport(
 	statement: Node,
 	definition: Definition,
-	rendererPath: string,
-): void {
+	module: RendererGraphModule,
+): RendererDefinitionImport {
 	if (statement.type !== 'ImportDeclaration') {
 		throw new Error(
-			`[workbench-semantic] renderer must import ${definition.exportName} directly instead of re-exporting its server definition: ${rendererPath}`,
+			`[workbench-semantic] renderer must import ${definition.exportName} directly instead of re-exporting its server definition: ${module.path}`,
 		)
 	}
 	const specifiers = nodes(statement.specifiers)
+	const values = specifiers.filter((specifier) => specifier.importKind !== 'type')
+	const value = values[0]
+	const localName = identifierName(value?.local)
 	if (
 		statement.importKind === 'type' ||
-		specifiers.length !== 1 ||
-		specifiers[0]?.type !== 'ImportSpecifier' ||
-		specifiers[0]?.importKind === 'type' ||
-		propertyName(specifiers[0]!.imported) !== definition.exportName
+		values.length !== 1 ||
+		value?.type !== 'ImportSpecifier' ||
+		!localName ||
+		propertyName(value.imported) !== definition.exportName
 	) {
 		throw new Error(
-			`[workbench-semantic] renderer import from its server definition must contain only ${definition.exportName}: ${rendererPath}`,
+			`[workbench-semantic] renderer import from its server definition must contain only ${definition.exportName} as a runtime value: ${module.path}`,
 		)
+	}
+	const namedSpecifier = (specifier: Node): string => {
+		const start = object(specifier.imported)?.start
+		if (typeof start !== 'number' || typeof specifier.end !== 'number')
+			throw new Error(
+				`[workbench-semantic] named renderer import has no source range: ${module.path}`,
+			)
+		return module.source.slice(start, specifier.end)
+	}
+	if (typeof statement.start !== 'number')
+		throw new Error(`[workbench-semantic] renderer import has no source range: ${module.path}`)
+	return {
+		start: statement.start,
+		localName,
+		valueSpecifier: namedSpecifier(value),
+		typeSpecifiers: specifiers
+			.filter((specifier) => specifier.importKind === 'type')
+			.map(namedSpecifier),
 	}
 }
 
@@ -1940,7 +2031,7 @@ async function buildRevisionFor(
 	definition: Definition,
 	entries: readonly Readonly<{
 		descriptor: WorkbenchFederationDescriptorIdentity
-		renderer: Renderer
+		renderer: string
 	}>[],
 ): Promise<Readonly<{ revision: string; sources: readonly string[] }>> {
 	const hash = createHash('sha256')
@@ -1952,12 +2043,10 @@ async function buildRevisionFor(
 		`definition:${relative(root, definition.binding.moduleId)}#${definition.exportName}\n`,
 	)
 	for (const entry of entries) {
-		hash.update(
-			`entry:${JSON.stringify(entry.descriptor)}:${relative(root, entry.renderer.entryPath)}\n`,
-		)
+		hash.update(`entry:${JSON.stringify(entry.descriptor)}:${relative(root, entry.renderer)}\n`)
 	}
 	const roots = [
-		...new Set([definition.binding.moduleId, ...entries.map((entry) => entry.renderer.entryPath)]),
+		...new Set([definition.binding.moduleId, ...entries.map((entry) => entry.renderer)]),
 	].sort()
 	const sources = await hashSourceGraph(hash, root, roots)
 	return Object.freeze({ revision: hash.digest('hex').slice(0, 24), sources })
@@ -2240,20 +2329,31 @@ function canonicalPackageMetadata(manifest: Record<string, unknown>): string {
 				.map((field) => [
 					field,
 					field === 'exports'
-						? canonicalPackageExports(manifest[field])
+						? canonicalPackageExports(
+								manifest[field],
+								Boolean(
+									manifest.pluxel &&
+									typeof manifest.pluxel === 'object' &&
+									typeof (manifest.pluxel as Record<string, unknown>).control === 'string',
+								),
+							)
 						: canonicalJsonValue(manifest[field]),
 				]),
 		),
 	)
 }
 
-function canonicalPackageExports(value: unknown): unknown {
+function canonicalPackageExports(value: unknown, controlMaterial = false): unknown {
 	if (!value || typeof value !== 'object' || Array.isArray(value)) {
 		return canonicalJsonValue(value)
 	}
 	return canonicalJsonValue(
 		Object.fromEntries(
-			Object.entries(value as Record<string, unknown>).filter(([key]) => key !== './package.json'),
+			// The generated control entry is separately content-addressed. A renderer importing it
+			// contributes its actual file through the normal dependency walk.
+			Object.entries(value as Record<string, unknown>).filter(
+				([key]) => key !== './package.json' && (!controlMaterial || key !== './control'),
+			),
 		),
 	)
 }
@@ -2311,6 +2411,13 @@ function relativeImport(importer: string, target: string): string {
 	return path
 }
 
+function declarationImport(importer: string, target: string): string {
+	return relativeImport(importer, target)
+		.replace(/\.(?:tsx?|jsx)$/i, '.js')
+		.replace(/\.mts$/i, '.mjs')
+		.replace(/\.cts$/i, '.cjs')
+}
+
 function normalizeRelativePath(input: string, label: string): string {
 	const value = input.replaceAll('\\', '/')
 	if (isAbsolute(value) || !value || value.split('/').some((part) => part === '..')) {
@@ -2362,32 +2469,41 @@ function isDescriptor(value: SemanticValue): value is Descriptor {
 	)
 }
 
-function isRenderer(value: SemanticValue | undefined): value is Renderer {
-	return Boolean(
-		value &&
-		typeof value === 'object' &&
-		'moduleId' in value &&
-		'entryPath' in value &&
-		typeof value.moduleId === 'string' &&
-		typeof value.entryPath === 'string',
-	)
+function checkEntryOptions(
+	moduleId: string,
+	kind: string,
+	options: ReadonlyMap<string, unknown>,
+	allowed: readonly string[],
+): void {
+	for (const key of options.keys()) {
+		if (!allowed.includes(key))
+			throw semanticError(moduleId, `workbench.${kind}(): unsupported option "${key}"`)
+	}
 }
 
-function isMarkdownDocument(value: SemanticValue | undefined): value is MarkdownDocument {
-	return Boolean(
-		value &&
-		typeof value === 'object' &&
-		'kind' in value &&
-		value.kind === 'markdown-document' &&
-		'sourcePath' in value &&
-		typeof value.sourcePath === 'string',
-	)
+function sourcePath(
+	moduleId: string,
+	field: 'renderer' | 'document',
+	value: SemanticValue | undefined,
+): string {
+	try {
+		return parseWorkbenchSourcePath(field, value)
+	} catch (cause) {
+		throw semanticError(moduleId, cause instanceof Error ? cause.message : String(cause))
+	}
 }
 
-function isPlacement(value: SemanticValue | undefined): value is Placement {
-	return Boolean(
-		value && typeof value === 'object' && 'kind' in value && value.kind === 'placement',
-	)
+function plainStaticValue(value: SemanticValue | undefined): unknown {
+	if (!(value instanceof Map)) return value
+	return Object.fromEntries([...value].map(([key, child]) => [key, plainStaticValue(child)]))
+}
+
+function placement(moduleId: string, value: SemanticValue | undefined): WorkbenchPlacement {
+	try {
+		return parseWorkbenchPlacement(plainStaticValue(value))
+	} catch (cause) {
+		throw semanticError(moduleId, cause instanceof Error ? cause.message : String(cause))
+	}
 }
 
 function isDefinition(value: SemanticValue): value is Definition {
@@ -2512,12 +2628,4 @@ function stripQuery(id: string): string {
 
 function semanticError(id: string, message: string): Error {
 	return new Error(`[workbench-semantic] ${id}: ${message}`)
-}
-
-function isMissingExportError(error: unknown): boolean {
-	return (
-		error instanceof Error &&
-		error.message.includes('definition export') &&
-		error.message.includes('is missing')
-	)
 }

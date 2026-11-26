@@ -1,60 +1,16 @@
-# Elysia 外部承载：尚待验证的边界
+# Elysia 外部承载的剩余边界
 
-本文只记录尚未完成的上游能力与验证工作，不定义当前作者 API。已经落地的架构以
-[Host](../HOST.md)、[Plugin 系统](../PLUGIN_SYSTEM.md) 和
-[HTTP 使用文档](../../docs/plugin-development/http.md) 为准。
+Node 生产与 Vite 开发共用按 Plugin generation 发布路由的机制。已有的网络回归覆盖 Node listener 关闭、客户端断开、stream 与 WebSocket 回收，以及 Vite 替换 generation 时旧连接的归属。[Host HTTP](../HOST.md#http-与管理页面)、[Node listener 回归](../../packages/services/tests/http-listener.test.ts)、[Vite 真实连接回归](../../packages/services/tests/vite/runtime-runner.mts)
 
-目前已验证 Node carrier 与 Vite 开发接入。Elysia singleton identity、generation 所有权、HTTP/stream/WebSocket
-回收和精确声明冲突已有实现与回归；它们并不意味着以下问题已经解决。
+## 发布 Plugin 的版本准入
 
-## 未决工作与完成标准
+先确定哪些发布包需要声明 `elysia` peer，特别是只通过 `ElysiaApp` 注册路由的 Plugin 是否纳入。再确定接受精确版本还是 semver 范围，以及宿主实际加载预发布版时如何匹配。静态构建已经固定 Elysia 的模块身份，现有 Cap’n Web、TinyBase 准入要求精确版本。[静态 Elysia 解析](../../packages/rolldown/src/cli/elysia-singleton.ts)、[Host 共享运行时准入](../../packages/host/src/shared-runtime.ts)
 
-| 缺口                       | 当前边界                                                                                      | 完成标准                                                                                             |
-| -------------------------- | --------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------- |
-| 等价路由冲突               | 能拒绝跨 owner 的相同 kind、method、declared path；不能证明 matcher-equivalent pattern 无冲突 | Elysia 提供公开的 compiled matcher signature，并通过参数改名、可选片段、trailing slash 等冲突测试    |
-| Plugin 包版本准入          | singleton identity 不等于 `elysia` peer range 兼容                                            | 封存包的兼容声明，Native/Vite 使用同一 admission contract，缺失、不可解析、不兼容 range 均有明确诊断 |
-| 外部 application lifecycle | 缺少公开 attach/detach epoch；直接使用 `setup()` / `cleanup()` fail-fast                      | 上游公开 epoch 可支持成功、失败回滚、请求排空与 exactly-once detach，且不访问私有 callback           |
-| 更广插件兼容性与性能       | 当前覆盖不能代表所有官方插件、server-specific capability 或平台组合                           | 建立明确的兼容矩阵，用相同 workload 测量真实场景，再决定是否优化 dispatcher                          |
+拟由构建或加载计划从发布包自己的清单读取兼容声明，Native 与 Vite 在开始 Plugin 生命周期前按同一规则校验。制品可以在模块求值前检查，直接传入的 constructor 可能已经求值。应用内源码继续由应用 lockfile 管理。验收覆盖缺声明、非法声明、兼容与不兼容版本、同版本多份实例，并核对两种 Host 对同一包的诊断。
 
-## Carrier 验证约束
+## 依赖上游公开接口的能力
 
-生产接入固定 Elysia 2 + srvx；不把增加 Bun/Deno adapter 作为待完成工作。Node production 与 Vite 接线复用同一 directory 与生命周期实现。
-验证至少包括：
+- **等价路由冲突。** 当前拒绝不同 owner 下 kind、method 和声明路径都相同的路由。Elysia `2.0.0-rc.5` 中，`/people/:id` 和 `/people/:slug` 联合注册后由后登者响应，而 `/people` 和 `/people/` 可以分别处理各自的拼法。扩大冲突检查需要能区分两种情况的依据，并保留静态路径与通配路径的合法重叠。被拒候选应指出两个 owner 和冲突路由。[现行匹配与发布](../HOST.md#http-与管理页面)
+- **外部挂载与卸载。** Plugin 实例直接调用 `app.onStart()`、`app.onStop()` 会因缺少外部挂载协议而失败。`app.listen()`、`app.stop()` 操作物理 listener，由宿主拥有。待上游提供公开挂载协议，验证正常挂载、失败回滚、延迟登记的清理、在途请求排空及每次挂载只卸载一次，并明确 `.use()` 间接带入的回调怎样处理。[当前生命周期保护](../../packages/services/src/elysia/ElysiaApplicationDirectory.ts)
 
-- HTTP 请求、错误与响应语义，以及请求中止和客户端断开。
-- streaming response 在正常结束、取消、owner 停止和 HMR 时的排空或终止。
-- WebSocket upgrade、消息、连接关闭，以及旧 generation 退出后的连接所有权。
-- init 失败、贡献撤回、宿主关闭与在途请求之间的时序。
-
-Fetch 类型兼容不能代替真实网络验证。内部 carrier 接线不是公开的替换扩展点。
-生产 Node 与 Vite upgrade 都应保留实际 socket 回归。
-
-## 路由与上游 lifecycle
-
-Pluxel 不复制 Elysia route grammar，不读取私有 matcher 或 `~ext` callback。
-上游尚未提供 public seam 时，继续明确报告当前限制，不通过推测制造兼容性承诺。
-
-matcher signature 到位后，应同时验证冲突诊断的 owner、route 和候选更新信息，以及拒绝候选时的旧发布保留。
-外部 lifecycle epoch 到位后，必须覆盖 setup success/failure、late cleanup registration、rollback、drain
-与 exactly-once detach。通过 `.use()` 间接带入的 application lifecycle 也需要明确检测与支持边界。
-
-## 包版本准入
-
-包构建或加载计划应读取 owning package 的 `elysia` peer range，将规范化声明封存到可信 metadata；
-Native 与 Vite 随后使用同一公开准入规则，在 lifecycle 与 publication 之前与宿主 contract 比对。
-Core 不扫描文件系统，也不依赖 package manager 布局。
-
-构建/freezer 可以在模块求值之前验证包 metadata；任意 constructor source 可能已经求值，不能承诺通用的
-pre-evaluation rejection。应用内源码由应用 lockfile 控制，与发布 Plugin 包的 peer contract 区分。
-
-验证必须覆盖缺失 peer、非法 range、不兼容 range、兼容 range、多份 Elysia identity 以及 Native/Vite 诊断一致性。
-只有这一整条链路落实后，才能声称完成包版本准入。
-
-## 兼容矩阵与性能证据
-
-记录已验证的 Elysia 版本、插件版本、carrier 与具体 capability。对依赖 server-specific 行为的插件，验证真实
-carrier 行为；对未覆盖组合保持未知状态。
-
-基准应比较相同路由、payload、hook、stream/WebSocket workload，并记录延迟、吞吐、资源消耗和 generation
-切换成本。只有证据显示 dispatch 成为瓶颈，且上游存在稳定公开 seam 时，才考虑调整路由发布路径；不得牺牲
-owner 隔离和撤回语义换取未经验证的优化。
+新增兼容声明应指明实际使用的 Elysia 插件、版本、carrier 和所需能力，并在对应入口验证。只有实际工作负载显示 dispatch 是瓶颈时，再用相同路由、hook、stream 和 WebSocket 流量比较优化前后的延迟、吞吐与资源占用。

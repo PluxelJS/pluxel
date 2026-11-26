@@ -1,4 +1,4 @@
-import { ContextCapabilityMissingError, type Context } from '@pluxel/core'
+import type { Context } from '@pluxel/core'
 import {
 	readProductDescriptor,
 	type HostApplicationMeta,
@@ -9,7 +9,7 @@ import type {
 	WorkbenchPublishBindings,
 	WorkbenchPrincipal,
 } from '../workbench/definition.ts'
-import type { WorkbenchSessionApi, WorkbenchShortcut } from '../workbench/client-protocol.ts'
+import type { WorkbenchSessionApi, WorkbenchEntryLink } from '../workbench/client-protocol.ts'
 import {
 	WorkbenchArtifactService,
 	type WorkbenchArtifactLookup,
@@ -26,8 +26,6 @@ import {
 	WorkbenchSessionTarget,
 	workbenchSessionSignal,
 } from './workbench/WorkbenchSessionTarget.ts'
-import { resolveContextCapability } from '@pluxel/core/host'
-import { WorkbenchHost } from '../token'
 import { loadPackagedWorkbenchDeployment } from './workbench/packaged-artifact.ts'
 
 export type WorkbenchServerSession = Readonly<{
@@ -89,8 +87,8 @@ export class WorkbenchBackend {
 		owner: Context,
 		definition: Definition,
 		...bindings: WorkbenchPublishBindings<Definition>
-	): void {
-		this.registry.publish(owner, definition, ...bindings)
+	) {
+		return this.registry.publish(owner, definition, ...bindings)
 	}
 
 	createSession(
@@ -141,25 +139,8 @@ export type WorkbenchInstallOptions = Readonly<{
 	product?: ProductDescriptor | null
 	artifacts?: Readonly<{ root?: string }>
 	/** Used once when the browser workspace has no sidebar preference. Users may remove every shortcut. */
-	initialShortcuts?: readonly WorkbenchShortcut[]
+	initialShortcuts?: readonly WorkbenchEntryLink[]
 }>
-
-/** @internal */
-export function requireWorkbench(ctx: Context): WorkbenchBackend {
-	if (ctx !== ctx.root) throw new TypeError('[workbench] backend requires root Context')
-	return resolveContextCapability(ctx, WorkbenchHost)
-}
-
-/** Optional host detection preserves backend construction failures. */
-export function optionalWorkbench(ctx: Context): WorkbenchBackend | undefined {
-	try {
-		return requireWorkbench(ctx)
-	} catch (error) {
-		if (error instanceof ContextCapabilityMissingError && error.capability === 'workbench.host')
-			return undefined
-		throw error
-	}
-}
 
 function parsePrincipal(input: WorkbenchPrincipal): WorkbenchPrincipal {
 	if (!input || typeof input !== 'object' || Array.isArray(input)) {

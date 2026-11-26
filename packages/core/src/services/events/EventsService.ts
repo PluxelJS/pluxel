@@ -13,7 +13,7 @@ import {
 	type Unsubscribe,
 } from 'eventure'
 import { pinOwnerContext } from '../../context/owner-view'
-import { deferEventCleanup, withEventLogger } from './event-support'
+import { deferEventCleanup, ownEventWaiter, withEventLogger } from './event-support'
 
 /**
  * Ambient event vocabulary shared by a Core host.
@@ -39,7 +39,6 @@ export interface EventsWhenGuard<D extends EventDescriptor> {
 	many(times: number, listener: EventListener<D>): Unsubscribe
 	manyFront(times: number, listener: EventListener<D>): Unsubscribe
 }
-
 export interface EventsService {
 	readonly ctx: PluxelContext
 	on<K extends keyof Events>(
@@ -223,9 +222,7 @@ class EventsServiceView implements EventsService {
 		event: K,
 		options?: EventureWaitForOptions<Events, K>,
 	): EventureWaitForPromise<Events, K> {
-		const pending = this.#backend.waitFor(event, options)
-		this.ownCleanup(pending.cancel)
-		return pending
+		return ownEventWaiter(this.ctx.caller ?? this.ctx, this.#backend.waitFor(event, options))
 	}
 
 	emit<K extends keyof Events>(event: K, ...args: EventArgs<Events[K]>): number {
@@ -247,12 +244,8 @@ class EventsServiceView implements EventsService {
 	}
 
 	private ownSubscription(unsubscribe: Unsubscribe): Unsubscribe {
-		this.ownCleanup(unsubscribe)
+		deferEventCleanup(this.ctx.caller ?? this.ctx, unsubscribe)
 		return unsubscribe
-	}
-
-	private ownCleanup(cleanup: () => void): void {
-		deferEventCleanup(this.ctx.caller ?? this.ctx, cleanup)
 	}
 }
 

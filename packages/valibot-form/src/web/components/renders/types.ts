@@ -1,3 +1,4 @@
+import type { ComponentType, KeyboardEventHandler } from 'react'
 import type { FieldNode } from '../../../core/fields'
 import type { FieldPath } from '../internal/fieldPath'
 
@@ -11,16 +12,18 @@ export interface InputProps {
 	name: string
 	id?: string
 	errorId?: string
+	descriptionId?: string
 	'aria-invalid'?: boolean
 	'aria-describedby'?: string | undefined
 	onBlur?: () => void
+	onKeyDown?: KeyboardEventHandler<HTMLElement>
 	onChange?: (value: unknown) => void
 	disabled?: boolean
 	readOnly?: boolean
 }
 
-export interface RendererProps {
-	node: FieldNode
+export interface RendererProps<TNode extends FieldNode = FieldNode> {
+	node: TNode
 	path: FieldPath
 	/** Arrays and unions that can replace their value with an array. */
 	arrayActions?: {
@@ -29,8 +32,19 @@ export interface RendererProps {
 		move: (from: number, to: number) => void
 	}
 	value?: unknown
-	errors?: FieldError[]
+	errors?: readonly FieldError[]
 	inputProps: InputProps
+}
+
+type ScalarKind = 'string' | 'number' | 'boolean' | 'picklist'
+
+export type ScalarRendererProps<K extends ScalarKind> = Omit<
+	RendererProps<Extract<FieldNode, { kind: K }>>,
+	'arrayActions'
+>
+
+export type ScalarRenderers = {
+	readonly [K in ScalarKind]?: ComponentType<ScalarRendererProps<K>>
 }
 
 export interface TriggerOptions {
@@ -69,7 +83,7 @@ export function triggerFormBlur(props: InputProps) {
 	onBlur?.()
 }
 
-export function normalizeErrorMessages(errors?: FieldError[]): string[] {
+export function normalizeErrorMessages(errors?: readonly FieldError[]): string[] {
 	if (!errors?.length) return []
 	return errors
 		.map((err) => (typeof err === 'string' ? err : err?.message))
@@ -77,7 +91,7 @@ export function normalizeErrorMessages(errors?: FieldError[]): string[] {
 		.filter(Boolean) as string[]
 }
 
-export function joinErrorMessages(errors?: FieldError[]): string | null {
+export function joinErrorMessages(errors?: readonly FieldError[]): string | null {
 	const list = normalizeErrorMessages(errors)
 	if (list.length === 0) return null
 	return list.join('\n')

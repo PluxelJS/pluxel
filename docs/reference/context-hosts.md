@@ -1,122 +1,106 @@
 ---
 title: 组合 Context host
-description: 使用 @pluxel/context 为 standalone host 组合固定、严格惰性的能力投影。
+description: 使用 @pluxel/context 组合固定、严格惰性的服务与作用域。
 ---
 
-`@pluxel/context` 是一个纯同步、宿主中立的 Context 状态管理内核。它适用于需要共享根级服务、按作用域隔离状态并精确追踪持有者身份（Owner Identity）的应用与框架底层。
-
-对于编写常规 Pluxel 业务插件的开发者，无需直接接触此包，因为宿主已经将标准的 `ctx` 上下文组合就绪。
+`@pluxel/context` 是同步、宿主中立的 Context 内核，负责固定服务集合、访问权限与作用域缓存。Core 在它之上提供 `ctx.logger`、`ctx.effects` 等内建属性，普通 Pluxel 插件直接使用宿主提供的 Context；应用安装服务见 [Host 服务](../host/services.md)。
 
 ## 安装与引入
 
-```sh package-install
-npx nypm add @pluxel/context
+```sh
+vp add @pluxel/context
 ```
 
-## 作用域（Scope）类型
+## 声明与组合
 
-| 作用域模式     | 实例化与生命周期                                               | 适用场景                                           |
-| :------------- | :------------------------------------------------------------- | :------------------------------------------------- |
-| **root**       | 每个 Root 实例仅构建一次，属性仅挂载在根 Context 上            | 进程级连接池、全局时钟、注册表                     |
-| **scope**      | 每次调用 `createScope()` 时构建一次，并在所有子 Context 间共享 | 请求上下文、会话 Session、生命周期代际             |
-| **owner-view** | 根级共享单个 Backing 存储，但每个子 Context 各自持有专属视图   | 需要自动绑定调用方身份的日志、事件发射器或注册句柄 |
-
-## 组合与创建 Context Host
-
-通过声明能力描述符（Capability Descriptor）并安装到宿主中：
+服务使用普通 class 或 abstract class 作为声明。声明本身表达类型，安装器决定实现及缓存范围；不需要继承框架基类，也不需要手写字符串标识。
 
 ```ts
 import {
 	createContextHost,
-	defineContextCapability,
-	installOwnerViewCapability,
-	installRootCapability,
-	installScopeCapability,
+	installOwnerViewService,
+	installRootService,
+	installScopeService,
 	type Context,
-	type ContextOf,
-	type RootContextOf,
 } from '@pluxel/context'
 
-type Clock = { now(): number }
-type ApplicationResources = { prepare(): Promise<void>; close(): Promise<void> }
-type OwnerActions = { readonly owner: Context; publish(name: string): void }
-
-class ActionCatalog {
-	forOwner(owner: Context): OwnerActions {
-		return {
-			owner,
-			publish: (name) => console.log(owner.name, name),
-		}
+class Clock {
+	now() {
+		return Date.now()
 	}
 }
 
-// 1. 声明能力 Token
-const clockCapability = defineContextCapability<Clock>('example.clock')
-const resourcesCapability = defineContextCapability<ApplicationResources>('example.resources')
-const cacheCapability = defineContextCapability<Map<string, unknown>>('example.cache')
-const actionsCapability = defineContextCapability<OwnerActions>('example.actions')
+abstract class Cache {}
+interface Cache extends Map<string, unknown> {}
 
-// 2. 安装能力实现
-const capabilities = [
-	installRootCapability(clockCapability, {
-		property: 'clock',
-		create: () => ({ now: () => Date.now() }),
-	}),
-	installRootCapability(resourcesCapability, {
-		property: 'resources',
-		create: () => ({ prepare: async () => {}, close: async () => {} }),
-	}),
-	installScopeCapability(cacheCapability, {
-		property: 'cache',
-		create: () => new Map(),
-	}),
-	installOwnerViewCapability(actionsCapability, {
-		property: 'actions',
-		createRoot: () => new ActionCatalog(),
-		createView: (catalog, owner) => catalog.forOwner(owner),
+abstract class OwnerActions {
+	abstract readonly owner: Context
+	abstract publish(name: string): void
+}
+
+const services = [
+	installRootService(Clock, { create: () => new Clock() }),
+	installScopeService(Cache, { create: () => new Map<string, unknown>() }),
+	installOwnerViewService(OwnerActions, {
+		createRoot: () => new Set<string>(),
+		createView: (catalog, owner) => ({
+			owner,
+			publish(name) {
+				catalog.add(`${owner.name}:${name}`)
+			},
+		}),
 	}),
 ] as const
 
-// 3. 构建宿主工厂
-const appContextHost = createContextHost({
-	name: 'example',
-	capabilities,
-})
-
-type AppContext = ContextOf<typeof appContextHost>
-type AppRootContext = RootContextOf<typeof appContextHost>
-
-// 4. 派生上下文
-const root: AppRootContext = appContextHost.createRoot('app')
-const request: AppContext = appContextHost.createScope(root, 'request:42')
+const appContextHost = createContextHost({ name: 'example', services })
+const root = appContextHost.createRoot('app')
+const request = appContextHost.createScope(root, 'request:42')
 const handler = appContextHost.createChild(request, 'handler')
 
-console.log(root.clock.now())
-console.assert(request.cache === handler.cache)
-console.assert(handler.actions.owner === handler)
+console.log(root.service(Clock).now())
+console.assert(request.service(Cache) === handler.service(Cache))
+console.assert(handler.service(OwnerActions).owner === handler)
 ```
 
-## 严格惰性初始化（Strict Lazy）
+`ctx.service(Declaration)` 返回服务本身。服务缺失、访问被拒绝或工厂构造失败都会抛出错误。Context 不增加服务属性，服务集合在创建 host 时固定。
 
-- `createContextHost()` 仅编译类型拓扑，`createRoot()` 与 `createScope()` 仅分配上下文句柄，不会提前触发能力的工厂函数。
-- 只有在第一次访问 Context 上的具体属性或显式调用 `require(capability)` 时，对应的初始化工厂才会被执行，初始化结果会在所属作用域内自动缓存。
-- 涉及建立外部数据库连接或异步初始化的场景，应在根上下文上显式定义并调用相应的生命周期方法（如 `root.resources.prepare()`）。
+## 缓存范围与访问权限
 
-## 测试中的实现覆盖（Overrides）
+| 安装器                    | 缓存与归属                                         |
+| ------------------------- | -------------------------------------------------- |
+| `installRootService`      | 每个 root 一份，只能由真实 root 直接读取           |
+| `installScopeService`     | 每个 scope 一份，同 scope 的 child 共享            |
+| `installOwnerViewService` | 每个 root 一份 backing，每个 Context 各自缓存 view |
 
-在编写测试宿主时，可在创建时传入 `overrides` 替换特定能力的实现（如使用固定时间的 Mock 时钟）：
+`root` 安装始终要求真实根 Context；子 Context 可显式使用 `ctx.root.service(...)`。需要让所有持有者直接读取同一 backing 时，使用 `owner-view` 并返回共享值。其他安装的访问权限通过声明与安装器约束。声明可设置 `static readonly access = 'root' as const` 或 `'owner' as const`；省略时为 `'all'`。安装器的 `access` 校验实际访问权限。`owner` 适用于非根 Context，在 Core 中对应 Plugin 与 Part；`root` 只允许真实根 Context。
+
+在 Pluxel 中，Plugin generation 对应 scope，PluginPart 对应 child，caller facade 保留 provider generation 的 backing 并绑定独立的调用方。服务不会因此生成插件节点，也没有 fork、独立启停或依赖图状态。
+
+## 严格惰性初始化
+
+创建 host、root、scope 或 child 都不会调用服务工厂。首次调用 `ctx.service()` 时才同步构造，成功值按安装范围缓存；工厂不得返回 `undefined`，构造失败不会伪装成缺失。内核不接管 IO prepare/dispose，上层宿主负责资源获取与释放。
+
+测试可在创建 host 时用 `overrides` 替换已经声明的服务实现：
 
 ```ts
 const testContextHost = createContextHost({
 	name: 'example-test',
-	capabilities,
-	overrides: [
-		installRootCapability(clockCapability, {
-			property: 'clock',
-			create: () => ({ now: () => 1700000000000 }),
-		}),
-	],
+	services,
+	overrides: [installRootService(Clock, { create: () => ({ now: () => 1700000000000 }) })],
 })
 ```
 
-所有的重写必须匹配已有能力的 Descriptor 标识与作用域规则。
+override 必须匹配已有服务的声明、安装范围与访问权限。编译后的集合不可扩展。
+
+## Pluxel 中的可选引用
+
+Pluxel 源码工具链提供 `defineServiceRef<T>()`，从导入的服务声明生成可选引用：
+
+```ts
+import { defineServiceRef } from '@pluxel/core'
+import type { Workbench } from '@pluxel/workbench'
+
+const WorkbenchRef = defineServiceRef<Workbench>()
+```
+
+`ctx.service(WorkbenchRef)` 返回 `Workbench | undefined`，只有未安装时返回 `undefined`。访问拒绝、工厂失败及声明契约错误仍然抛出。可选引用与直接导入的声明使用同一服务身份，不创建另一份定义。编译与远端脚本的生成材料见 [Agent SDK](../development/agent-sdk.md)。

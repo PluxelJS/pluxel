@@ -1,12 +1,14 @@
-import {
-	type ManagementAccessPrincipal,
-	type ManagementAccessProvider,
-	type ManagementAccessProviderStatus,
-	type ManagementAccessRequestContext,
-	type ManagementAuthenticationProviderSession,
-	type ManagementAuthenticationProviderStep,
+import type { Workbench } from '@pluxel/workbench'
+import type {
+	ManagementAccess,
+	ManagementAccessPrincipal,
+	ManagementAccessProvider,
+	ManagementAccessProviderStatus,
+	ManagementAccessRequestContext,
+	ManagementAuthenticationProviderSession,
+	ManagementAuthenticationProviderStep,
 } from '@pluxel/services/management/access'
-import { BasePlugin, Plugin } from '@pluxel/core'
+import { BasePlugin, Plugin, defineServiceRef } from '@pluxel/core'
 import {
 	authenticatedSession,
 	FixedAuthenticationSession,
@@ -24,6 +26,8 @@ import { SessionStore } from './sessions.ts'
 import { verifyTotp } from './totp.ts'
 import { AuthWorkbench, type AuthCredentialSetupMode, type AuthSetupSnapshot } from './workbench.ts'
 
+const WorkbenchRef = defineServiceRef<Workbench>()
+const ManagementAccessRef = defineServiceRef<ManagementAccess>()
 export { AuthConfig } from './config.ts'
 export type { AuthPluginConfig, AuthMode, OidcAuthMode } from './config.ts'
 
@@ -49,6 +53,7 @@ function redirect(path: string, cookies: readonly string[]): Response {
 export class AuthPlugin extends BasePlugin {
 	private readonly config = this.configs.use(AuthConfig)
 	private readonly sessions = new SessionStore()
+	private authorization = new AbortController()
 	private readonly loginFailures = new LoginFailureLimiter()
 	private active = false
 	private account?: LocalAccountRecord
@@ -96,7 +101,7 @@ export class AuthPlugin extends BasePlugin {
 		this.ctx.effects.defer(
 			() => {
 				this.active = false
-				this.sessions.clear()
+				this.revokeSessions()
 				this.loginFailures.clear()
 				this.oidc?.clear()
 				this.account = undefined
@@ -122,7 +127,7 @@ export class AuthPlugin extends BasePlugin {
 					identity(this.account) !== identity(account.account) ||
 					this.oidcSecret !== oidc.secret
 				) {
-					this.sessions.clear()
+					this.revokeSessions()
 					this.loginFailures.clear()
 					this.oidc?.clear()
 				}
@@ -133,8 +138,8 @@ export class AuthPlugin extends BasePlugin {
 			}),
 			{ tag: 'auth-vault-observation' },
 		)
-		this.ctx.managementAccess?.provide(this.provider)
-		this.ctx.workbench?.publish(AuthWorkbench, {
+		this.ctx.service(ManagementAccessRef)?.provide(this.provider)
+		this.ctx.service(WorkbenchRef)?.publish(AuthWorkbench, {
 			setup: ({ principal, signal }) =>
 				this.createSetupTarget(principal.provider, principal.subject, signal),
 		})
@@ -159,6 +164,12 @@ export class AuthPlugin extends BasePlugin {
 		return mode.type === 'password' || Boolean(this.account.totp)
 	}
 
+	private revokeSessions(): void {
+		this.sessions.clear()
+		this.authorization.abort(new Error('Authentication credentials were revoked'))
+		this.authorization = new AbortController()
+	}
+
 	private setupSnapshot(): AuthSetupSnapshot {
 		if (!this.active) throw new Error('AuthPlugin is not running')
 		const mode = this.config.mode
@@ -167,13 +178,6 @@ export class AuthPlugin extends BasePlugin {
 		}
 		const setupMode: AuthCredentialSetupMode =
 			mode.type === 'oidc' ? 'oidc-confidential' : mode.type
-		if (!this.store?.available) {
-			return Object.freeze({
-				mode: setupMode,
-				state: 'unavailable',
-				reason: 'vault-unavailable',
-			})
-		}
 		const invalid = mode.type === 'oidc' ? this.oidcSecretInvalid : this.accountInvalid
 		if (invalid) {
 			return Object.freeze({ mode: setupMode, state: 'setup-required', reason: 'invalid' })
@@ -200,12 +204,12 @@ export class AuthPlugin extends BasePlugin {
 			(account) => {
 				this.account = account
 				this.accountInvalid = false
-				this.sessions.clear()
+				this.revokeSessions()
 			},
 			(secret) => {
 				this.oidcSecret = secret
 				this.oidcSecretInvalid = false
-				this.sessions.clear()
+				this.revokeSessions()
 			},
 		)
 		return new AuthSetupTarget({
@@ -234,7 +238,11 @@ export class AuthPlugin extends BasePlugin {
 		const mode = this.config.mode
 		const existing = this.sessions.read(request, mode.type, context.local)
 		if (existing) {
-			return authenticatedSession(existing, () => this.sessions.issueLogout(request, context.local))
+			return authenticatedSession(
+				existing,
+				() => this.sessions.issueLogout(request, context.local),
+				this.authorization.signal,
+			)
 		}
 		if (mode.type === 'oidc') {
 			return new FixedAuthenticationSession(
@@ -256,6 +264,7 @@ export class AuthPlugin extends BasePlugin {
 			  }>
 			| undefined
 		return new PasswordAuthenticationSession({
+			authorizationSignal: this.authorization.signal,
 			label: account.username,
 			requireTotp: mode.type === 'password-totp',
 			verifyPassword: async (password) => {

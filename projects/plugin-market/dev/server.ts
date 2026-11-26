@@ -1,8 +1,8 @@
 import { mkdir, readFile, readdir, writeFile } from 'node:fs/promises'
 import { resolve } from 'node:path'
-import { build } from 'esbuild'
 import { Miniflare } from 'miniflare'
 import { marketAssets } from './assets.ts'
+import { workerModule, workerPath } from './build-worker.ts'
 import { localRoot, projectRoot, sessionPath, type Session } from './session.ts'
 
 const registryUrl = new URL(process.env.MARKET_TEST_REGISTRY ?? 'http://127.0.0.1:7677/npm/')
@@ -54,13 +54,7 @@ if (!loginResponse.ok) throw new Error(`PNPR login failed: HTTP ${loginResponse.
 const login = (await loginResponse.json()) as { token?: string }
 if (!login.token) throw new Error('PNPR login did not return a token')
 const registry = registryUrl.href.replace(/\/$/, '')
-const output = await build({
-	entryPoints: [resolve(projectRoot, 'src/worker.ts')],
-	bundle: true,
-	write: false,
-	format: 'esm',
-	platform: 'browser',
-})
+const script = await readFile(workerPath, 'utf8')
 const runtime = new Miniflare({
 	host: '127.0.0.1',
 	port: Number(process.env.PORT ?? 8787),
@@ -70,10 +64,11 @@ const runtime = new Miniflare({
 			config: {
 				name: 'plugin-market-sandbox',
 				compatibilityDate: '2026-11-03',
+				compatibilityFlags: ['enable_request_signal', 'no_nodejs_compat', 'no_nodejs_compat_v2'],
 				assets: marketAssets,
 				manifest: {
-					mainModule: 'worker.mjs',
-					modules: { 'worker.mjs': { type: 'esm', contents: output.outputFiles[0].text } },
+					mainModule: workerModule,
+					modules: { [workerModule]: { type: 'esm', contents: script } },
 				},
 				env: {
 					DB: { type: 'd1', id: 'plugin-market-sandbox' },
@@ -81,8 +76,18 @@ const runtime = new Miniflare({
 					REGISTRIES: {
 						type: 'text',
 						value: JSON.stringify([
-							{ registry: 'https://registry.npmjs.org', access: 'public' },
-							{ registry, access: 'admin', token: login.token, notificationToken },
+							{
+								registry: 'https://registry.npmjs.org',
+								access: 'public',
+								mirror: process.env.MARKET_NPM_MIRROR,
+							},
+							{
+								registry,
+								access: 'admin',
+								token: login.token,
+								notificationToken,
+								notificationIndexing: 'unsigned',
+							},
 						]),
 					},
 				},
@@ -114,6 +119,9 @@ try {
 	}
 	const columns = await db.prepare('PRAGMA table_info(packages)').all<{ name: string }>()
 	const releaseColumns = await db.prepare('PRAGMA table_info(releases)').all<{ name: string }>()
+	const notificationColumns = await db
+		.prepare('PRAGMA table_info(notifications)')
+		.all<{ name: string }>()
 	const search = await db
 		.prepare("SELECT name FROM sqlite_master WHERE name = 'package_search'")
 		.first()
@@ -126,10 +134,13 @@ try {
 			'repository',
 			'repository_stars',
 			'repository_observed_at',
+			'repository_owner',
+			'repository_avatar_url',
 		].every((name) => columns.results.some((column) => column.name === name)) ||
 		!['readme', 'license'].every((name) =>
 			releaseColumns.results.some((column) => column.name === name),
 		) ||
+		!notificationColumns.results.some((column) => column.name === 'github_publisher') ||
 		!search
 	)
 		throw new Error(
@@ -148,7 +159,7 @@ try {
 	console.info(`Market sandbox ready: ${session.publicUrl}/v1`)
 	console.info(`Private PNPR source: ${registry}; public npm remains a separate source.`)
 	console.info(
-		'Automatic provenance verification remains unavailable. Use sandbox:admin for manual indexing.',
+		'This sandbox can automatically index unsigned releases from its private PNPR source.',
 	)
 	await new Promise<void>((accept) => {
 		process.once('SIGINT', accept)

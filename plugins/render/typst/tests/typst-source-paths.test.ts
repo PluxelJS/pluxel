@@ -1,5 +1,6 @@
 import { expect, it } from 'vitest'
-import { completeSourcePaths, relativePath, resolveSourcePath } from '../src/tiptap/source-paths.js'
+import { relativePath, resolveModulePath, resolveSourcePath } from '../src/source/paths.js'
+import { completeSourcePaths } from '../src/tiptap/source-paths.js'
 
 const from = 'sections/body.typ'
 const files = [
@@ -41,6 +42,14 @@ it('keeps explicit relative spelling while resolving parent and workspace-root p
 	expect(resolveSourcePath(from, '../../outside.typ')).toBeUndefined()
 	expect(completeSourcePaths(files, from, '../../')).toEqual([])
 	expect(relativePath(from, 'components/blocks.typ')).toBe('../components/blocks.typ')
+})
+
+it('keeps literal filename characters and reserves package syntax only in module operands', () => {
+	expect(resolveSourcePath(from, '/assets/收益#1?%25.svg')).toBe('assets/收益#1?%25.svg')
+	expect(resolveSourcePath(from, '@logo.svg')).toBe('sections/@logo.svg')
+	expect(resolveModulePath(from, '@preview/example:1.0.0')).toBeUndefined()
+	expect(resolveModulePath(from, './@local.typ')).toBe('sections/@local.typ')
+	expect(relativePath(from, 'sections/@local.typ')).toBe('./@local.typ')
 })
 
 it('bounds visible choices while allowing a specific filename past that bound to be completed', () => {

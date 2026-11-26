@@ -2,7 +2,8 @@ import type { Context as PluxelContext } from '../../context/Context'
 import type { StandardSchemaV1 } from '@standard-schema/spec'
 import { pluginNodeIndexKey, type PluginNodeAddress } from '../../plugins/runtime/identity'
 import { safeParseStandardSchema } from './standardSchema'
-import { ConfigValidationError, type ConfigValidationErrors } from './types'
+import { ConfigValidationError } from './types'
+import { groupConfigIssues } from './ops'
 import { immutableConfigRecord } from './immutable'
 import { pinOwnerContext } from '../../context/owner-view'
 
@@ -171,7 +172,7 @@ export class ConfigService {
 				: raw
 		const result = await safeParseStandardSchema(authority.schema, validationInput)
 		if (result.success === false) {
-			const errors = toValidationErrors(result.issues)
+			const errors = groupConfigIssues(result.issues)
 			throw new ConfigValidationError('Plugin config validation failed.', errors)
 		}
 		if (!result.output || typeof result.output !== 'object' || Array.isArray(result.output)) {
@@ -326,18 +327,6 @@ export class ConfigService {
 		this.validated.delete(key)
 		this.staged.delete(key)
 	}
-}
-
-function toValidationErrors(
-	issues: readonly { message: string; path: readonly (string | number)[] }[],
-): ConfigValidationErrors {
-	const fields: Record<string, Array<{ message: string; path: string[] }>> = Object.create(null)
-	for (const issue of issues) {
-		const path = issue.path.map(String)
-		const key = path[0] ?? '_root'
-		;(fields[key] ??= []).push({ message: issue.message, path })
-	}
-	return { _root: fields }
 }
 
 function shallowEqual(left: Readonly<ConfigRecord>, right: Readonly<ConfigRecord>): boolean {

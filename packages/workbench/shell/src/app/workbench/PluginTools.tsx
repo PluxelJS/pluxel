@@ -93,7 +93,7 @@ function PluginToolContent({ pluginRoute }: { pluginRoute: string }) {
 						{detail.label}
 					</Text>
 				</Group>
-				<Stack gap="sm" p="var(--plx-panel-padding)" className="plx-plugin-tool__scroll">
+				<Stack gap="xs" p="var(--plx-panel-padding)" className="plx-plugin-tool__scroll">
 					<PluginRuntimeSummaryCard status={statusEntry} description={detail.desc} />
 					<PluginDependencyDetailCard />
 					<PluginPanelDirectory />

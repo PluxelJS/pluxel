@@ -21,6 +21,7 @@ import { DockLocation } from 'flexlayout-react'
 import { TypstDocumentEditor } from '@pluxel/plugin-typst/tiptap/document/react'
 import { DocumentClient, type DocumentClientState } from './document-client'
 import { DocumentPreview as Preview } from './document-preview'
+import type { DocumentSource } from './document-contract'
 import type { TypstDocumentSelection } from '@pluxel/plugin-typst/document'
 import { rootRoute } from './workspace-route'
 
@@ -29,7 +30,7 @@ interface DocumentWorkspaceValue {
 	state: DocumentClientState
 	workbench: WorkbenchInstance<AnyRouter>
 	active: string
-	focus?: { chapterId: string; position?: number; serial: number }
+	focus?: { chapterId: string; position: number; revision: number; serial: number }
 	selection?: TypstDocumentSelection
 	locate(chapterId: string, position: number, explicit?: boolean): void
 	openChapter(
@@ -173,10 +174,14 @@ function ChapterPane({ chapterId }: { chapterId: string }) {
 	const chapter = state.view!.documents.find(({ id }) => id === chapterId)
 	const document = state.drafts[chapterId] ?? chapter?.document
 	const editor = useRef<Editor | null>(null)
+	const sourceInput = useRef<HTMLTextAreaElement>(null)
 	const panel = useRef<HTMLElement>(null)
 	const initial = useRef(JSON.stringify(chapter?.document))
 	const changed = JSON.stringify(document) !== initial.current
 	const [title, setTitle] = useState(chapter?.title ?? '')
+	const [source, setSource] = useState<DocumentSource>()
+	const [sourceDraft, setSourceDraft] = useState('')
+	const sourceDirty = source !== undefined && source.source !== sourceDraft
 	function hasPendingInput() {
 		if (panel.current?.querySelector('[data-typst-unapplied]')) return true
 		return [...(panel.current?.querySelectorAll('[aria-controls]') ?? [])].some((anchor) =>
@@ -207,7 +212,10 @@ function ChapterPane({ chapterId }: { chapterId: string }) {
 				return { decision: 'allow', token: `${client.leaveToken}:${inputVersion.current}` }
 			},
 		},
-		focus: () => editor.current?.commands.focus(),
+		focus: () => {
+			if (source && sourceInput.current) sourceInput.current.focus()
+			else editor.current?.commands.focus()
+		},
 		save: () => client.perform({ action: 'save' }),
 	})
 	useEffect(() => {
@@ -217,14 +225,55 @@ function ChapterPane({ chapterId }: { chapterId: string }) {
 		}
 		setTitle(chapter.title)
 	}, [chapter?.title, content.id])
-	const focus = workspace.focus?.chapterId === chapterId ? workspace.focus : undefined
+	const focus =
+		workspace.focus?.chapterId === chapterId && workspace.focus.revision === state.view?.revision
+			? workspace.focus
+			: undefined
 	useEffect(() => {
-		if (focus?.position !== undefined) editor.current?.commands.focus(focus.position || 'start')
+		const instance = editor.current
+		if (
+			chapter &&
+			!state.drafts[chapterId] &&
+			instance?.isFocused &&
+			instance.state.doc.eq(instance.schema.nodeFromJSON(chapter.document))
+		) {
+			// Re-read the caret only after the host has accepted the editor's actual content.
+			workspace.locate(chapterId, instance.state.selection.from)
+		}
+	}, [state.view?.revision, chapter?.document, state.drafts[chapterId]])
+	useEffect(() => {
+		if (focus?.position === undefined) return
+		if (source && !sourceDirty) setSource(undefined)
+		else editor.current?.commands.focus(focus.position || 'start')
 	}, [focus?.serial])
 	if (!chapter || !document) return <p>章节已移除。</p>
 	function rename() {
 		if (title.trim() === chapter!.title) return
 		void client.perform({ action: 'rename', chapterId, title: title.trim() }).catch(ignore)
+	}
+	async function toggleSource() {
+		if (source) {
+			if (sourceDirty && !window.confirm('放弃尚未应用的源码修改？')) return
+			setSource(undefined)
+			return
+		}
+		try {
+			const current = await client.readSource(chapterId)
+			setSource(current)
+			setSourceDraft(current.source)
+		} catch {
+			// The client reports request failures in its state.
+		}
+	}
+	function applySource() {
+		if (!source) return
+		void client
+			.applySource(chapterId, { revision: source.revision, source: sourceDraft })
+			.then(() => {
+				setSource(undefined)
+				return workbench.keepOpen(content.id)
+			})
+			.catch(ignore)
 	}
 	return (
 		<section
@@ -257,43 +306,68 @@ function ChapterPane({ chapterId }: { chapterId: string }) {
 						}
 					}}
 				/>
+				<button type="button" disabled={state.busy} onClick={toggleSource}>
+					{source ? '返回富文本' : 'Typst 源码'}
+				</button>
 			</div>
-			<div className="editor-panel">
-				<TypstDocumentEditor
-					content={document}
-					editable={chapter.editable}
-					onChange={(next) => {
-						void workbench.keepOpen(content.id)
-						client.edit(chapterId, next)
-					}}
-					fontFamilies={['Noto Serif CJK SC', 'Liberation Serif']}
-					references={state.view!.references}
-					history={{
-						canUndo: state.view!.canUndo || Object.keys(state.drafts).length > 0,
-						canRedo: state.view!.canRedo,
-						undo: () => {
-							void client.perform({ action: 'undo' }).catch(ignore)
-						},
-						redo: () => {
-							void client.perform({ action: 'redo' }).catch(ignore)
-						},
-					}}
-					onEditor={(instance) => {
-						editor.current = instance
-						if (instance && focus?.position !== undefined)
-							instance.commands.focus(focus.position || 'start')
-					}}
-					onSelection={(position) => {
-						if (editor.current?.isFocused) workspace.locate(chapterId, position)
-					}}
-					onReference={(id, position) => {
-						void workspace.openChapter(id, position, undefined, content)
-					}}
-					onReveal={(position) => {
-						workspace.locate(chapterId, position, true)
-					}}
-				/>
-			</div>
+			{source ? (
+				<div className="input-panel">
+					<label htmlFor={`document-source-${content.id}`}>Typst 正文</label>
+					<textarea
+						ref={sourceInput}
+						id={`document-source-${content.id}`}
+						data-typst-unapplied={sourceDirty || undefined}
+						value={sourceDraft}
+						spellCheck={false}
+						readOnly={!chapter.editable || state.busy}
+						onChange={(event) => setSourceDraft(event.currentTarget.value)}
+					/>
+					<button
+						type="button"
+						disabled={!chapter.editable || !sourceDirty || state.busy}
+						onClick={applySource}
+					>
+						应用源码
+					</button>
+				</div>
+			) : (
+				<div className="editor-panel">
+					<TypstDocumentEditor
+						content={document}
+						editable={chapter.editable}
+						onChange={(next) => {
+							void workbench.keepOpen(content.id)
+							client.edit(chapterId, next)
+						}}
+						fontFamilies={['Noto Serif CJK SC', 'Liberation Serif']}
+						references={state.view!.references}
+						history={{
+							canUndo: state.view!.canUndo || Object.keys(state.drafts).length > 0,
+							canRedo: state.view!.canRedo,
+							undo: () => {
+								void client.perform({ action: 'undo' }).catch(ignore)
+							},
+							redo: () => {
+								void client.perform({ action: 'redo' }).catch(ignore)
+							},
+						}}
+						onEditor={(instance) => {
+							editor.current = instance
+							if (instance && focus?.position !== undefined)
+								instance.commands.focus(focus.position || 'start')
+						}}
+						onSelection={(position) => {
+							if (editor.current?.isFocused) workspace.locate(chapterId, position)
+						}}
+						onReference={(id, position) => {
+							void workspace.openChapter(id, position, state.view?.revision, content)
+						}}
+						onReveal={(position) => {
+							workspace.locate(chapterId, position, true)
+						}}
+					/>
+				</div>
+			)}
 		</section>
 	)
 }
@@ -306,8 +380,8 @@ function DocumentPreview() {
 			state={state}
 			client={client}
 			selection={selection}
-			onSelect={({ documentId, position }) => {
-				void openChapter(documentId, position, state.view!.revision, source)
+			onSelect={({ documentId, position, revision }) => {
+				void openChapter(documentId, position, revision, source)
 			}}
 		/>
 	)
@@ -365,7 +439,9 @@ export function DocumentWorkspaceProvider({
 		)
 	}
 	function locate(chapterId: string, position: number, explicit = false) {
-		setSelection({ documentId: chapterId, position, explicit })
+		const revision = client.getSnapshot().view?.revision
+		if (revision === undefined) return
+		setSelection({ documentId: chapterId, position, revision, explicit })
 		if (explicit) void showPreview(true, workbench.getActiveDocument()?.handle)
 	}
 	async function openChapter(
@@ -407,8 +483,11 @@ export function DocumentWorkspaceProvider({
 		if (result.status !== 'applied' || !current()) return
 		setActive(id)
 		locate(id, position ?? 0)
+		const revision = client.getSnapshot().view?.revision
 		setFocus(
-			position === undefined ? undefined : { chapterId: id, position, serial: ++serial.current },
+			position !== undefined && revision !== undefined
+				? { chapterId: id, position, revision, serial: ++serial.current }
+				: undefined,
 		)
 		if (result.value.document.id === previousId) {
 			void workbench.activate('chapters', { presentation: 'reveal' })
@@ -493,7 +572,7 @@ export function DocumentStatus() {
 	return (
 		<div className="source-status">
 			<p role={state.error ? 'alert' : 'status'}>{state.message}</p>
-			{state.error && (
+			{state.error && (!state.view || Object.keys(state.drafts).length > 0) && (
 				<button
 					type="button"
 					onClick={() => {

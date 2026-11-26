@@ -4,7 +4,10 @@ const CLI_PACKAGES: (string | RegExp)[] = ['commander', 'inquirer', 'node-plop',
 const BUILD_PACKAGES: (string | RegExp)[] = [
 	'@hono/vite-dev-server',
 	'@rolldown/pluginutils',
+	'@wxt-dev/auto-icons',
+	'@wxt-dev/module-react',
 	'vite-plus',
+	'wxt',
 ]
 const FRONTEND_PACKAGES: (string | RegExp)[] = [
 	/^@mantine\//,

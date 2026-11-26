@@ -1,6 +1,6 @@
 import { lstat, readdir, realpath, stat } from 'node:fs/promises'
 import { isAbsolute, relative, resolve } from 'node:path'
-import { pluginSource, pluginSourceCovers, type PluginSource } from './source-contract'
+import { pluginSourceMatcher, snapshotPluginSource, type PluginSource } from './source-contract'
 
 function symlinkFailure(path: string): TypeError & { code: string; file: string } {
 	return Object.assign(
@@ -15,11 +15,8 @@ function isMissingPath(error: unknown): boolean {
 	return Boolean(error && typeof error === 'object' && 'code' in error && error.code === 'ENOENT')
 }
 
-/** @internal Validate the declaration's leaf and return its physical path; missing directories remain absent. */
-export function resolvePluginSourcePath(
-	source: Extract<PluginSource, { kind: 'file' }>,
-	root: string,
-): Promise<string>
+/** @internal Resolve a validated declaration's leaf. Missing directories remain absent. */
+export function resolvePluginSourcePath(source: { file: string }, root: string): Promise<string>
 export function resolvePluginSourcePath(
 	source: PluginSource,
 	root: string,
@@ -29,20 +26,20 @@ export async function resolvePluginSourcePath(
 	root: string,
 ): Promise<string | undefined> {
 	if (!isAbsolute(root)) throw new TypeError('[host/sources] root must be absolute')
-	const path = resolve(root, pluginSource(source).path)
+	const path = resolve(root, source.file ?? source.directory)
+	const kind = source.file === undefined ? 'directory' : 'file'
 	let status
 	try {
 		status = await lstat(path)
 	} catch (error) {
-		if (source.kind === 'directory' && isMissingPath(error)) return undefined
+		if (kind === 'directory' && isMissingPath(error)) return undefined
 		throw error
 	}
 	if (status.isSymbolicLink()) throw symlinkFailure(path)
-	if (source.kind === 'file' ? !status.isFile() : !status.isDirectory())
-		throw Object.assign(
-			new TypeError(`[host/sources] ${source.kind} source is not a ${source.kind}: ${path}`),
-			{ file: path },
-		)
+	if (kind === 'file' ? !status.isFile() : !status.isDirectory())
+		throw Object.assign(new TypeError(`[host/sources] ${kind} source is not a ${kind}: ${path}`), {
+			file: path,
+		})
 	return realpath(path)
 }
 
@@ -53,15 +50,15 @@ export async function discoverPluginSources(options: {
 }): Promise<readonly string[]> {
 	if (!isAbsolute(options.root)) throw new TypeError('[host/sources] root must be absolute')
 	const entries = new Set<string>()
-	for (const input of options.sources) {
-		const source = pluginSource(input)
+	const sources = options.sources.map(snapshotPluginSource)
+	for (const source of sources) {
 		const path = await resolvePluginSourcePath(source, options.root)
 		if (path === undefined) continue
-		if (source.kind === 'file') {
+		if (source.file !== undefined) {
 			entries.add(path)
 			continue
 		}
-		const resolvedSource = pluginSource({ ...source, path })
+		const matches = pluginSourceMatcher({ directory: path, include: source.include }, options.root)
 		const visit = async (directory: string): Promise<void> => {
 			const children = await readdir(directory, { withFileTypes: true }).catch(
 				(error: unknown): [] => {
@@ -72,14 +69,7 @@ export async function discoverPluginSources(options: {
 			for (const entry of children) {
 				const file = resolve(directory, entry.name)
 				if (entry.isDirectory()) await visit(file)
-				else if (
-					(entry.isFile() || entry.isSymbolicLink()) &&
-					pluginSourceCovers({
-						source: resolvedSource,
-						root: options.root,
-						requirement: { kind: 'file', path: file },
-					})
-				) {
+				else if ((entry.isFile() || entry.isSymbolicLink()) && matches(file)) {
 					if (entry.isSymbolicLink()) {
 						const target = await stat(file).catch((error: NodeJS.ErrnoException): undefined => {
 							if (error.code !== 'ENOENT') throw error
@@ -90,7 +80,7 @@ export async function discoverPluginSources(options: {
 					}
 					let canonical: string
 					try {
-						canonical = await resolvePluginSourcePath({ kind: 'file', path: file }, options.root)
+						canonical = await resolvePluginSourcePath({ file }, options.root)
 					} catch (error) {
 						if (isMissingPath(error)) continue
 						throw error

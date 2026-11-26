@@ -25,8 +25,8 @@ import type {
 } from './client-protocol.ts'
 import { parseWorkbenchContentPresentation } from './client-validation.ts'
 import { readWorkbenchShortcuts } from './shortcuts.ts'
-export { readWorkbenchShortcuts } from './shortcuts.ts'
-import { readWorkbenchIcon, readWorkbenchRoutePath, type WorkbenchPlacement } from './definition.ts'
+export { readWorkbenchEntryLink, readWorkbenchShortcuts } from './shortcuts.ts'
+import { parseWorkbenchPlacement, type WorkbenchPlacement } from './entry-options.ts'
 import {
 	createWorkbenchOpenedContentHandle,
 	createWorkbenchOpenedViewHandle,
@@ -162,122 +162,6 @@ export async function openWorkbenchEntry(
 	} finally {
 		if (!adopted) disposeValue(result)
 	}
-}
-
-export type RemoteValueSnapshot<Value> =
-	| Readonly<{ state: 'loading' }>
-	| Readonly<{ state: 'ready'; value: Value }>
-	| Readonly<{ state: 'error'; error: unknown }>
-
-export type RemoteValueOptions<Value> = Readonly<{
-	/** Return an owned local snapshot; consume RPC data with consumeWorkbenchValue before returning. */
-	read(): Value | PromiseLike<Value>
-	subscribe?(invalidate: () => void): Disposable | PromiseLike<Disposable>
-}>
-
-export interface RemoteValue<Value> extends Disposable {
-	getSnapshot(): RemoteValueSnapshot<Value>
-	subscribe(listener: () => void): () => void
-	refresh(): void
-}
-
-/**
- * Small client-side snapshot owner for Plugin-declared `read`/`watch` methods.
- * It is not a cache, query registry, reconnect layer, or wire protocol.
- */
-export function createRemoteValue<Value>(options: RemoteValueOptions<Value>): RemoteValue<Value> {
-	if (!options || typeof options.read !== 'function') {
-		throw new TypeError('[workbench/client] createRemoteValue() requires read()')
-	}
-	const listeners = new Set<() => void>()
-	let snapshot: RemoteValueSnapshot<Value> = Object.freeze({ state: 'loading' })
-	let active = true
-	let reading = false
-	let invalidated = false
-	let sequence = 0
-	let subscription: Disposable | undefined
-	let subscriptionPending: Disposable | undefined
-
-	const publish = (next: RemoteValueSnapshot<Value>) => {
-		if (!active) return
-		snapshot = next
-		const currentListeners = [...listeners]
-		for (const listener of currentListeners) listener()
-	}
-
-	const readLatest = async () => {
-		if (!active) return
-		if (reading) {
-			invalidated = true
-			return
-		}
-		reading = true
-		const current = ++sequence
-		try {
-			do {
-				invalidated = false
-				const value = await options.read()
-				if (active && current === sequence && !invalidated) {
-					publish(Object.freeze({ state: 'ready' as const, value }))
-				}
-			} while (active && invalidated && current === sequence)
-		} catch (error) {
-			if (active && current === sequence) {
-				publish(Object.freeze({ state: 'error' as const, error }))
-			}
-		} finally {
-			reading = false
-		}
-	}
-
-	const invalidate = () => {
-		if (!active) return
-		if (reading) invalidated = true
-		else void readLatest()
-	}
-
-	const start = async () => {
-		try {
-			if (options.subscribe) {
-				const pending = options.subscribe(invalidate)
-				subscriptionPending = isDisposable(pending) ? pending : undefined
-				const settled = await pending
-				if (!active) {
-					if (subscriptionPending !== settled) disposeValue(settled)
-					subscriptionPending = undefined
-					return
-				}
-				if (!isDisposable(settled)) {
-					throw new TypeError('[workbench/client] subscribe() must return a disposable')
-				}
-				subscription = settled
-				subscriptionPending = undefined
-			}
-			await readLatest()
-		} catch (error) {
-			if (active) publish(Object.freeze({ state: 'error' as const, error }))
-		}
-	}
-
-	void start()
-	return Object.freeze({
-		getSnapshot: () => snapshot,
-		subscribe(listener: () => void) {
-			if (!active) return () => {}
-			listeners.add(listener)
-			return () => listeners.delete(listener)
-		},
-		refresh: invalidate,
-		[Symbol.dispose]() {
-			if (!active) return
-			active = false
-			sequence += 1
-			listeners.clear()
-			disposeValue(subscription)
-			if (subscriptionPending !== subscription) disposeValue(subscriptionPending)
-			subscription = undefined
-		},
-	})
 }
 
 function parseWorkbenchLayout(input: unknown): WorkbenchLayout {
@@ -598,74 +482,17 @@ function parseLayoutTarget(input: unknown, label: string) {
 
 function parsePlacement(input: unknown, label: string): WorkbenchPlacement {
 	const record = readRecord(input, label)
-	if (record.kind === 'panel') {
-		assertExactKeys(record, label, ['kind', 'region', 'label', 'icon', 'order'])
-		if (record.region !== 'left' && record.region !== 'right' && record.region !== 'bottom') {
-			malformed(`${label}.region is invalid`)
-		}
-		return Object.freeze({
-			kind: 'panel',
-			region: record.region,
-			label: readBoundedText(record.label, `${label}.label`, 256),
-			...(record.icon === undefined ? {} : { icon: readWorkbenchIcon(record.icon) }),
-			order: readFiniteNumber(record.order, `${label}.order`),
-		})
+	// A published placement must already carry all author defaults.
+	if (record.order === undefined) malformed(`${label}.order is missing`)
+	if (record.kind === 'route' && record.frame === undefined) malformed(`${label}.frame is missing`)
+	try {
+		return parseWorkbenchPlacement(record)
+	} catch (cause) {
+		throw new TypeError(
+			`[workbench/client] ${label}: ${cause instanceof Error ? cause.message : String(cause)}`,
+			{ cause },
+		)
 	}
-	if (record.kind === 'tab') {
-		assertExactKeys(record, label, ['kind', 'label', 'icon', 'group', 'order'])
-		return Object.freeze({
-			kind: 'tab',
-			...(record.label === undefined
-				? {}
-				: { label: readBoundedText(record.label, `${label}.label`, 256) }),
-			...(record.icon === undefined ? {} : { icon: readWorkbenchIcon(record.icon) }),
-			...(record.group === undefined ? {} : { group: parseGroup(record.group, `${label}.group`) }),
-			order: readFiniteNumber(record.order, `${label}.order`),
-		})
-	}
-	if (record.kind === 'route') {
-		assertExactKeys(record, label, [
-			'kind',
-			'path',
-			'title',
-			'icon',
-			'navigation',
-			'frame',
-			'order',
-		])
-		if (record.frame !== 'shell' && record.frame !== 'standalone') {
-			malformed(`${label}.frame is invalid`)
-		}
-		return Object.freeze({
-			kind: 'route',
-			path: readWorkbenchRoutePath(record.path),
-			title: readBoundedText(record.title, `${label}.title`, 256),
-			...(record.icon === undefined ? {} : { icon: readWorkbenchIcon(record.icon) }),
-			...(record.navigation === undefined
-				? {}
-				: { navigation: parseNavigation(record.navigation, `${label}.navigation`) }),
-			frame: record.frame,
-			order: readFiniteNumber(record.order, `${label}.order`),
-		})
-	}
-	malformed(`${label}.kind is unsupported`)
-}
-
-function parseNavigation(input: unknown, label: string) {
-	const record = readExactRecord(input, label, ['label', 'group'])
-	return Object.freeze({
-		label: readBoundedText(record.label, `${label}.label`, 256),
-		...(record.group === undefined ? {} : { group: parseGroup(record.group, `${label}.group`) }),
-	})
-}
-
-function parseGroup(input: unknown, label: string) {
-	const record = readExactRecord(input, label, ['id', 'label', 'icon'])
-	return Object.freeze({
-		id: readPatternText(record.id, `${label}.id`, /^[A-Za-z][A-Za-z0-9._-]{0,63}$/),
-		label: readBoundedText(record.label, `${label}.label`, 256),
-		...(record.icon === undefined ? {} : { icon: readWorkbenchIcon(record.icon) }),
-	})
 }
 
 function parseParams(input: unknown): Readonly<Record<string, string>> {
@@ -724,11 +551,6 @@ function readRevision(input: unknown, label: string): number {
 	return input as number
 }
 
-function readFiniteNumber(input: unknown, label: string): number {
-	if (typeof input !== 'number' || !Number.isFinite(input)) malformed(`${label} is invalid`)
-	return input
-}
-
 function readBoundedText(input: unknown, label: string, max: number): string {
 	if (typeof input !== 'string' || input.length === 0 || input.length > max) {
 		malformed(`${label} is invalid`)
@@ -784,7 +606,7 @@ export type {
 	WorkbenchReadyFederatedLayoutEntry,
 	WorkbenchUnavailableFederatedLayoutEntry,
 	WorkbenchLayout,
-	WorkbenchShortcut,
+	WorkbenchEntryLink,
 	WorkbenchLayoutEntry,
 	WorkbenchLayoutInput,
 	WorkbenchLayoutTarget,

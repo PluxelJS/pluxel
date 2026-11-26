@@ -38,11 +38,9 @@ description: 按构建、依赖图、配置、生命周期和宿主边界定位 
 
 ## Cap’n Web 声明报 `TS2574`
 
-在开启严格类型检查（`skipLibCheck: false`）的 TypeScript 6/7 环境中，`capnweb@0.12.0` 的某些泛型解包可能触发：
-`A rest element type must be an array type (TS2574)`。
+单独导入 `capnweb@0.13.1` 时，TypeScript 7.0.2 在 `strict: true`、`skipLibCheck: false` 下会报告两处 `TS2574`。它们都来自 `capnweb/dist/index.d.ts` 第 72 行（第 333 和 469 列）的元组展开，提示 `A rest element type must be an array type`。
 
-- **说明**：这是上游类型声明的问题，并不影响运行时 RPC 的正常执行。
-- **处理建议**：在工程的 `tsconfig.json` 中设置 `"skipLibCheck": true`，或者在依赖补丁中对该声明打上类型修补。
+排查时先核对锁定版本、文件路径和行列。需要完整检查库声明的项目可以单独修补该依赖的元组类型，保留对应用代码和其他依赖的诊断。
 
 ## Plugin 看起来是普通 class
 
@@ -76,6 +74,6 @@ description: 按构建、依赖图、配置、生命周期和宿主边界定位 
 
 ## HTTP 返回 404
 
-1. **路由声明时机**：插件的路由必须在构造函数或 `init()` 生命周期阶段声明在 `this.ctx.require(ElysiaApp)` 上。在服务完成初始化并开始对外监听后动态追加的路由将无法被生效识别。
+1. **路由声明时机**：插件的路由必须在构造函数或 `init()` 生命周期阶段声明在 `this.ctx.service(ElysiaApp)` 上。在服务完成初始化并开始对外监听后动态追加的路由将无法被生效识别。
 2. **路由路径**：Elysia 中声明的路径即为最终请求路径，框架不会自动拼接插件名作为前缀。
 3. **保留路径冲突**：`/__pluxel` 为系统控制台与管理端点预留命名空间，业务路由请勿以此为前缀。

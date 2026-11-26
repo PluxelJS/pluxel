@@ -27,8 +27,8 @@ it must not replace a root Vault schema when record key constraints need validat
 Run from the repository root:
 
 ```sh
-pnpm exec tsc -p engineering/experiments/tsgo-plugin-inputs/tsconfig.explicit.json
-pnpm exec tsc -p engineering/experiments/tsgo-plugin-inputs/tsconfig.explicit-consumer.json
+vp exec tsc -p engineering/experiments/tsgo-plugin-inputs/tsconfig.explicit.json
+vp exec tsc -p engineering/experiments/tsgo-plugin-inputs/tsconfig.explicit-consumer.json
 node engineering/experiments/tsgo-plugin-inputs/check-completion.mjs
 ```
 
@@ -51,8 +51,8 @@ indexing on an instance type parameter. Emitted declarations retain the protecte
 No-declaration plugins and fields with an annotation that erases the brand reject bindings.
 
 ```sh
-pnpm exec tsc -p engineering/experiments/tsgo-plugin-inputs/tsconfig.protected.json
-pnpm exec tsc -p engineering/experiments/tsgo-plugin-inputs/tsconfig.protected-consumer.json
+vp exec tsc -p engineering/experiments/tsgo-plugin-inputs/tsconfig.protected.json
+vp exec tsc -p engineering/experiments/tsgo-plugin-inputs/tsconfig.protected-consumer.json
 node node_modules/.pnpm/typescript@5.9.3/node_modules/typescript/bin/tsc -p engineering/experiments/tsgo-plugin-inputs/tsconfig.protected.json
 node node_modules/.pnpm/typescript@5.9.3/node_modules/typescript/bin/tsc -p engineering/experiments/tsgo-plugin-inputs/tsconfig.protected-consumer.json
 ```

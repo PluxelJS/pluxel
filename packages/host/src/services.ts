@@ -1,32 +1,38 @@
-import type { EffectsScope, RootContext, PluginNodeAddress, PluginConstructor } from '@pluxel/core'
 import {
-	getContextInstallationCapability,
-	resolveContextCapability,
-	type CorePluginLifecycleHooks,
-	type CoreGenerationRejection,
-	type ContextCapability,
-	type ContextCapabilityAccess,
-	type ContextCapabilityInstallation,
+	getServiceDefinitionKey,
+	getServiceDefinitionAccess,
+	getServiceInstallationDefinition,
+	resolveContextService,
+} from '@pluxel/core/internal'
+import {
+	type EffectsScope,
+	type RootContext,
+	type PluginNodeAddress,
+	type PluginConstructor,
+} from '@pluxel/core'
+import type {
+	CorePluginLifecycleHooks,
+	CoreGenerationRejection,
+	ServiceDefinition,
+	ServiceAccess,
+	ServiceInstallation,
 } from '@pluxel/core/host'
 
 export type HostServiceDependencies = Readonly<
-	Record<string, ContextCapability<any, 'all' | 'root'>>
+	Record<string, ServiceDefinition<any, 'all' | 'root'>>
 >
 type DependencyValues<T extends HostServiceDependencies> = {
-	readonly [K in keyof T]: T[K] extends ContextCapability<infer V, ContextCapabilityAccess>
-		? V
-		: never
+	readonly [K in keyof T]: T[K] extends ServiceDefinition<infer V, ServiceAccess> ? V : never
 }
 
 /** A fixed, reusable declaration. Resource acquisition belongs in prepare, never declaration evaluation. */
 export interface HostService<
-	TCapabilities extends readonly ContextCapabilityInstallation[] =
-		readonly ContextCapabilityInstallation[],
+	TProvides extends readonly ServiceInstallation[] = readonly ServiceInstallation[],
 	TDependencies extends HostServiceDependencies = HostServiceDependencies,
 > {
-	/** Diagnostic source, not capability identity. */
+	/** Diagnostic source, not definition identity. */
 	readonly name: string
-	readonly capabilities: TCapabilities
+	readonly provides: TProvides
 	/** Explicit host preparation dependencies; omitted means none. Providers are never auto-installed. */
 	readonly requires?: TDependencies
 	/** Fixed Core publication stages, bound once per root. No IO or registration belongs in this factory. */
@@ -39,21 +45,23 @@ export interface HostService<
 			ctx: RootContext
 			/** Complete initial definitions, already admitted before service resource acquisition. */
 			plugins: readonly PluginConstructor[]
+			/** Absolute application module path when a Node or Vite loader owns the entry. */
+			applicationEntry?: string
 			dependencies: DependencyValues<TDependencies>
 			effects: EffectsScope
 		}>,
 	): void | Promise<void>
 }
 
-/** Preserve descriptor projection and infer dependency values from the single requires declaration. */
+/** Capture fixed service installations and infer dependency values from the single requires declaration. */
 export function defineHostService<
-	const TCapabilities extends readonly ContextCapabilityInstallation[],
+	const TProvides extends readonly ServiceInstallation[],
 	const TDependencies extends HostServiceDependencies = Record<never, never>,
->(service: HostService<TCapabilities, TDependencies>): HostService<TCapabilities, TDependencies> {
+>(service: HostService<TProvides, TDependencies>): HostService<TProvides, TDependencies> {
 	if (!service || typeof service.name !== 'string' || !service.name.trim())
 		throw new TypeError('[host] service declarations require a non-empty name')
-	if (!Array.isArray(service.capabilities))
-		throw new TypeError(`[host] service ${service.name} must provide capabilities`)
+	if (!Array.isArray(service.provides))
+		throw new TypeError(`[host] service ${service.name} must provide a services installation list`)
 	if (service.removeNodeMetadata !== undefined && typeof service.removeNodeMetadata !== 'function')
 		throw new TypeError(`[host] service ${service.name} has an invalid metadata cleanup`)
 	if (service.lifecycle !== undefined && typeof service.lifecycle !== 'function')
@@ -62,7 +70,7 @@ export function defineHostService<
 		throw new TypeError(`[host] service ${service.name} has an invalid prepare callback`)
 	return Object.freeze({
 		...service,
-		capabilities: Object.freeze([...service.capabilities]) as unknown as TCapabilities,
+		provides: Object.freeze([...service.provides]) as unknown as TProvides,
 		...(service.requires ? { requires: Object.freeze({ ...service.requires }) } : {}),
 	})
 }
@@ -70,7 +78,7 @@ export function defineHostService<
 export class HostServicePlanError extends Error {
 	constructor(
 		public readonly code:
-			| 'DUPLICATE_CAPABILITY'
+			| 'DUPLICATE_SERVICE'
 			| 'MISSING_DEPENDENCY'
 			| 'DEPENDENCY_CYCLE'
 			| 'INVALID_DEPENDENCY_SCOPE',
@@ -84,33 +92,34 @@ export class HostServicePlanError extends Error {
 /** Snapshot and sort the complete declarations without creating Contexts or invoking factories. */
 export function planHostServices(services: readonly HostService[]): readonly HostService[] {
 	const fixed = services.map(defineHostService)
-	const providers = new Map<ContextCapability<any, ContextCapabilityAccess>, HostService>()
+	const providers = new Map<ReturnType<typeof getServiceDefinitionKey>, HostService>()
 	for (const service of fixed) {
-		for (const installation of service.capabilities) {
-			const capability = getContextInstallationCapability(installation)
-			const previous = providers.get(capability)
+		for (const installation of service.provides) {
+			const definition = getServiceInstallationDefinition(installation)
+			const key = getServiceDefinitionKey(definition)
+			const previous = providers.get(key)
 			if (previous)
 				throw new HostServicePlanError(
-					'DUPLICATE_CAPABILITY',
-					`[host] capability ${capability.description} is provided by both ${previous.name} and ${service.name}`,
+					'DUPLICATE_SERVICE',
+					`[host] definition ${typeof definition === 'function' ? definition.name : String(getServiceDefinitionKey(definition))} is provided by both ${previous.name} and ${service.name}`,
 				)
-			providers.set(capability, service)
+			providers.set(key, service)
 		}
 	}
 	const dependencies = new Map<HostService, Set<HostService>>()
 	for (const service of fixed) {
 		const required = new Set<HostService>()
-		for (const [name, capability] of Object.entries(service.requires ?? {})) {
-			if ((capability as ContextCapability<any, ContextCapabilityAccess>).access === 'owner')
+		for (const [name, definition] of Object.entries(service.requires ?? {})) {
+			if (getServiceDefinitionAccess(definition) === 'owner')
 				throw new HostServicePlanError(
 					'INVALID_DEPENDENCY_SCOPE',
-					`[host] service ${service.name} requires owner-only capability ${capability.description} during root preparation`,
+					`[host] service ${service.name} requires owner-only definition ${typeof definition === 'function' ? definition.name : String(getServiceDefinitionKey(definition))} during root preparation`,
 				)
-			const provider = providers.get(capability)
+			const provider = providers.get(getServiceDefinitionKey(definition))
 			if (!provider)
 				throw new HostServicePlanError(
 					'MISSING_DEPENDENCY',
-					`[host] service ${service.name} requires unprovided capability ${capability?.description ?? name} (${name})`,
+					`[host] service ${service.name} requires unprovided definition ${typeof definition === 'function' ? definition.name : name} (${name})`,
 				)
 			required.add(provider)
 		}
@@ -140,6 +149,7 @@ export async function prepareHostServices(
 	ctx: RootContext,
 	services: readonly HostService[],
 	plugins: readonly PluginConstructor[],
+	applicationEntry?: string,
 ): Promise<void> {
 	if (nodeMetadataServices.has(ctx))
 		throw new Error('[host] services are already prepared for this root')
@@ -152,10 +162,16 @@ export async function prepareHostServices(
 	)
 	for (const service of services) {
 		const dependencies = Object.create(null) as Record<string, unknown>
-		for (const [name, capability] of Object.entries(service.requires ?? {}))
-			dependencies[name] = resolveContextCapability(ctx, capability)
+		for (const [name, definition] of Object.entries(service.requires ?? {}))
+			dependencies[name] = resolveContextService(ctx, definition)
 		const effects = ctx.effects.scope({ tag: service.name })
-		await service.prepare?.({ ctx, effects, plugins, dependencies: Object.freeze(dependencies) })
+		await service.prepare?.({
+			ctx,
+			effects,
+			plugins,
+			...(applicationEntry !== undefined ? { applicationEntry } : {}),
+			dependencies: Object.freeze(dependencies),
+		})
 	}
 }
 

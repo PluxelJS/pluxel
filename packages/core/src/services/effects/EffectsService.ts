@@ -54,6 +54,7 @@ const DEFAULT_PHASE: Phase = 'runtime'
 // Stack stores a "handle" = token * HANDLE_STRIDE + id, so id reuse is safe.
 const HANDLE_ID_BITS = 20
 const HANDLE_STRIDE = 2 ** HANDLE_ID_BITS
+const HANDLE_COMPACTION_SLACK = 64
 
 function isPromiseLike(x: unknown): x is PromiseLike<unknown> {
 	return (
@@ -184,6 +185,7 @@ class EffectsImpl implements Effects, EffectGuardHost {
 	private state: ServiceState = ServiceState.LIVE
 	private disposePromise: Promise<void> | null = null
 	private readonly resolved: Promise<void> = Promise.resolve()
+	private parentRegistration?: EffectGuard
 
 	private activeTransaction: TransactionState | undefined
 	private drainPhaseIndex: number | null = null
@@ -208,7 +210,7 @@ class EffectsImpl implements Effects, EffectGuardHost {
 		opts?: { parent?: EffectsImpl; meta?: EffectsMeta; registerOpts?: RegisterOpts },
 	) {
 		if (opts?.parent) {
-			opts.parent.own(this as unknown as DisposableLike, opts.meta, opts.registerOpts)
+			this.parentRegistration = opts.parent.own(this, opts.meta, opts.registerOpts)
 		}
 	}
 
@@ -292,7 +294,7 @@ class EffectsImpl implements Effects, EffectGuardHost {
 	scope(meta?: EffectsMeta, opts?: RegisterOpts, ownerCtx: PluxelContext = this.ctx): EffectsScope {
 		this.assertRegisterAllowed(opts)
 		// Child scopes are owned by default so parent disposal propagates.
-		return new EffectsScopeImpl(ownerCtx, { parent: this, meta, registerOpts: opts })
+		return new EffectsService(ownerCtx, { parent: this, meta, registerOpts: opts })
 	}
 
 	async transaction<R>(fn: (tx: Effects) => R | Promise<R>, parent?: TransactionState): Promise<R> {
@@ -357,28 +359,18 @@ class EffectsImpl implements Effects, EffectGuardHost {
 
 	private async rollback(tx: TransactionState): Promise<void> {
 		const errors: unknown[] = []
-		const retired = new Set(tx.handles.flat())
 		for (const stack of tx.handles) {
 			while (stack.length > 0) {
 				const handle = stack.pop() as number
+				const { id, token } = decodeHandle(handle)
+				if (!this.isPending(id, token)) continue
 				try {
-					const { id, token } = decodeHandle(handle)
 					await this.runAsync(id, token)
 				} catch (e) {
 					errors.push(e)
 				}
 			}
 		}
-		// Retire stack references only after cleanup: concurrent parent disposal must still await them.
-		const retire = (stacks: readonly number[][]) => {
-			for (const stack of stacks) {
-				let write = 0
-				for (const handle of stack) if (!retired.has(handle)) stack[write++] = handle
-				stack.length = write
-			}
-		}
-		retire(this.stacks)
-		for (let ancestor = tx.parent; ancestor; ancestor = ancestor.parent) retire(ancestor.handles)
 		if (errors.length > 0) throw new AggregateError(errors, 'Effects transaction rollback errors')
 	}
 
@@ -497,6 +489,28 @@ class EffectsImpl implements Effects, EffectGuardHost {
 		this.rejectById[id] = null
 		this.metaById[id] = null
 		this.freeIds.push(id)
+		const maxHandles = HANDLE_COMPACTION_SLACK + 2 * (this.nextId - this.freeIds.length)
+		this.compactHandles(this.stacks, maxHandles)
+		for (let tx = this.activeTransaction; tx; tx = tx.parent) {
+			this.compactHandles(tx.handles, maxHandles)
+		}
+	}
+
+	private isPending(id: number, token: number): boolean {
+		return this.tokenById[id] === token && this.stateById[id] !== EntryState.DONE
+	}
+
+	private compactHandles(stacks: readonly number[][], maxHandles: number): void {
+		for (const stack of stacks) {
+			if (stack.length <= maxHandles) continue
+			let write = 0
+			for (const handle of stack) {
+				const { id, token } = decodeHandle(handle)
+				// Keep running cleanup visible to concurrent drains and preserve LIFO order.
+				if (this.isPending(id, token)) stack[write++] = handle
+			}
+			stack.length = write
+		}
 	}
 
 	dispose(): Promise<void> {
@@ -506,7 +520,21 @@ class EffectsImpl implements Effects, EffectGuardHost {
 		this.state = ServiceState.DISPOSING
 		for (let tx = this.activeTransaction; tx; tx = tx.parent) tx.active = false
 		this.activeTransaction = undefined
-		this.disposePromise = (async () => {
+		const parentRegistration = this.parentRegistration
+		this.parentRegistration = undefined
+		if (this.nextId === 0) {
+			this.state = ServiceState.DISPOSED
+			parentRegistration?.cancel()
+			return this.resolved
+		}
+		let complete!: () => void
+		let fail!: (error: unknown) => void
+		this.disposePromise = new Promise<void>((resolve, reject) => {
+			complete = resolve
+			fail = reject
+		})
+		// Cleanup can synchronously ask a second owner to drain this same scope.
+		void (async () => {
 			const errors: unknown[] = []
 			try {
 				for (let pIdx = 0; pIdx < PHASES.length; pIdx++) {
@@ -515,7 +543,8 @@ class EffectsImpl implements Effects, EffectGuardHost {
 					while (stack.length > 0) {
 						const handle = stack.pop() as number
 						const { id, token } = decodeHandle(handle)
-						const meta = this.tokenById[id] === token ? this.metaById[id] : null
+						if (!this.isPending(id, token)) continue
+						const meta = this.metaById[id]
 						try {
 							await this.runAsync(id, token)
 						} catch (error) {
@@ -541,13 +570,15 @@ class EffectsImpl implements Effects, EffectGuardHost {
 				this.state = ServiceState.DISPOSED
 			}
 			if (errors.length > 0) throw new AggregateError(errors, 'Effects dispose errors')
-		})()
+			// A rejected child stays owned so parent shutdown can report that failure as well.
+			parentRegistration?.cancel()
+		})().then(complete, fail)
 
 		return this.disposePromise
 	}
 }
 
-class EffectsScopeImpl implements EffectsScope {
+export class EffectsService implements EffectsScope {
 	protected readonly impl: EffectsImpl
 	constructor(
 		public readonly ctx: PluxelContext,
@@ -583,11 +614,5 @@ class EffectsScopeImpl implements EffectsScope {
 
 	[Symbol.asyncDispose](): Promise<void> {
 		return this.dispose()
-	}
-}
-
-export class EffectsService extends EffectsScopeImpl {
-	constructor(ctx: PluxelContext, _cfg: unknown) {
-		super(ctx)
 	}
 }

@@ -1,6 +1,6 @@
 import { PGlite } from '@electric-sql/pglite'
-import { pglite } from '@pluxel/services/database/pglite'
-import { postgres } from '@pluxel/services/database/postgres'
+import { createPgliteDatabaseAdapter } from '../src/database/pg/adapters/pglite'
+import { createPostgresDatabaseAdapter } from '../src/database/pg/adapters/postgres'
 import { Pool } from 'pg'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
@@ -40,7 +40,7 @@ describe('database backend acquisition failure', { timeout: 30_000 }, () => {
 			throw failure
 		})
 		const end = vi.spyOn(Pool.prototype, 'end')
-		await expect(postgres()(vi.fn())).rejects.toBe(failure)
+		await expect(createPostgresDatabaseAdapter({}, vi.fn())).rejects.toBe(failure)
 		expect(end).toHaveBeenCalledOnce()
 		const pool = end.mock.instances[0] as Pool
 		expect(pool.ended).toBe(true)
@@ -57,7 +57,7 @@ describe('database backend acquisition failure', { timeout: 30_000 }, () => {
 			.spyOn(Pool.prototype, 'end')
 			.mockImplementationOnce(() => Promise.reject(cleanupError))
 		try {
-			await expect(postgres()(vi.fn())).rejects.toMatchObject({
+			await expect(createPostgresDatabaseAdapter({}, vi.fn())).rejects.toMatchObject({
 				cause: failure,
 				errors: [failure, cleanupError],
 			})
@@ -78,7 +78,7 @@ describe('database backend acquisition failure', { timeout: 30_000 }, () => {
 			throw failure
 		})
 		try {
-			await expect(postgres(pool)(vi.fn())).rejects.toBe(failure)
+			await expect(createPostgresDatabaseAdapter(pool, vi.fn())).rejects.toBe(failure)
 			expect(pool.ending).toBe(false)
 			expect(pool.listeners('error')).toEqual([applicationError])
 		} finally {
@@ -89,7 +89,7 @@ describe('database backend acquisition failure', { timeout: 30_000 }, () => {
 	it('attempts owned PGlite cleanup after a real native initialization rejection', async () => {
 		const failure = new Error('native extension initialization failed')
 		const close = vi.spyOn(PGlite.prototype, 'close')
-		const backend = pglite({
+		const config = {
 			extensions: {
 				failure: {
 					name: 'failing-extension',
@@ -98,8 +98,8 @@ describe('database backend acquisition failure', { timeout: 30_000 }, () => {
 					},
 				},
 			},
-		})
-		await expect(backend(vi.fn())).rejects.toMatchObject({
+		}
+		await expect(createPgliteDatabaseAdapter(config)).rejects.toMatchObject({
 			cause: failure,
 			errors: [expect.objectContaining({ cause: failure }), failure],
 		})
@@ -115,7 +115,7 @@ describe('database backend acquisition failure', { timeout: 30_000 }, () => {
 			throw failure
 		})
 		const close = vi.spyOn(PGlite.prototype, 'close')
-		await expect(pglite()(vi.fn())).rejects.toMatchObject({ cause: failure })
+		await expect(createPgliteDatabaseAdapter({})).rejects.toMatchObject({ cause: failure })
 		expect(close.mock.contexts.filter((context) => context === client)).toHaveLength(1)
 		expect(client?.closed).toBe(true)
 	})
@@ -128,7 +128,7 @@ describe('database backend acquisition failure', { timeout: 30_000 }, () => {
 			throw failure
 		})
 		try {
-			await expect(pglite(client)(vi.fn())).rejects.toMatchObject({ cause: failure })
+			await expect(createPgliteDatabaseAdapter(client)).rejects.toMatchObject({ cause: failure })
 			expect(close).not.toHaveBeenCalled()
 			expect(await client.query('select 1 as answer')).toMatchObject({ rows: [{ answer: 1 }] })
 		} finally {

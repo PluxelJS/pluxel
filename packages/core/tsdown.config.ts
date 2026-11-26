@@ -55,24 +55,28 @@ export default defineConfig({
 		devExports: '@pluxel/source',
 	},
 	entry: {
-		config: 'src/config.ts',
 		logging: 'src/logging.ts',
 		'logging/internal': 'src/logging/internal.ts',
 		'logging/protocol': 'src/logging/protocol.ts',
 		'logging/pretty': 'src/logging/pretty.ts',
 		federation: 'src/federation.ts',
 		internal: 'src/internal.ts',
+		'internal/plugin-address-evidence': 'src/internal/plugin-address-evidence.ts',
+		'internal/control-manifest': 'src/internal/control-manifest.ts',
 		'internal/test': 'src/internal-test.ts',
+		'internal/zenfs': 'src/internal/zenfs.ts',
 		index: 'src/index.ts',
 		host: 'src/host.ts',
 		services: 'src/services/index.ts',
 		logger: 'src/logger/index.ts',
 		'better-result': 'src/better-result.ts',
 		toolchain: 'src/toolchain.ts',
+		vault: 'src/vault.ts',
 		fs: 'src/fs.ts',
 		'fs/browser': 'src/fs/browser.ts',
 	},
 	dts: {
+		tsconfig: './tsconfig.build.json',
 		// Context declarations are bundled from workspace source outside Core's tsconfig root.
 		eager: true,
 		sourcemap: true,
@@ -81,7 +85,11 @@ export default defineConfig({
 	copy: ({ outDir }) => [
 		{ from: 'third-party/README.md', to: join(outDir, 'third-party') },
 		{
-			from: ['../../patches/@zenfs__core@2.8.3.patch', '../../patches/@zenfs__dom@1.2.14.patch'],
+			from: [
+				'../../patches/@zenfs__core@2.8.3.patch',
+				'../../patches/@zenfs__dom@1.2.14.patch',
+				'../../patches/@zenfs__streams@1.0.2.patch',
+			],
 			to: join(outDir, 'third-party/patches'),
 		},
 		...bundledSources.map(([name, root, notices]) => ({

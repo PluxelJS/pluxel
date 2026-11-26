@@ -1,12 +1,11 @@
 import { FontsWorkbench } from '@pluxel/plugin-fonts/workbench'
 import { workbench } from '@pluxel/workbench'
 
-export const EChartsWorkbench = workbench.define({
-	fonts: FontsWorkbench.selection.place(
-		workbench.tab({
-			label: 'Fonts',
-			icon: workbench.icons.Typography,
-			order: 30,
-		}),
-	),
+export const EChartsWorkbench = workbench.define(import.meta.url, {
+	fonts: FontsWorkbench.selection.place({
+		kind: 'tab',
+		label: 'Fonts',
+		icon: 'typography',
+		order: 30,
+	}),
 })

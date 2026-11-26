@@ -1,13 +1,38 @@
 export type PackageMarket = Readonly<{ id: string; url: string }>
 
-export type MarketPackageQuery = Readonly<{
+export const publicRegistry = 'https://registry.npmjs.org'
+export const marketFilterLimit = 20
+
+/** Any selected value within a dimension can match. All active dimensions must match. */
+export type MarketCatalogFilters = Readonly<{
 	query?: string
-	registry?: string
+	registries?: readonly string[]
 	official?: boolean
-	category?: string
-	tag?: string
-	cursor?: string
-	limit?: number
+	categories?: readonly string[]
+	tags?: readonly string[]
+	authors?: readonly string[]
+}>
+export type MarketPackageQuery = MarketCatalogFilters &
+	Readonly<{
+		cursor?: string
+		limit?: number
+	}>
+export type MarketAuthor = Readonly<{
+	/** Canonical repository namespace, e.g. github:owner/pluxeljs. */
+	id: string
+	name: string
+	kind: 'github'
+	avatarUrl: string | null
+}>
+export type MarketFacetValue = Readonly<{ value: string; count: number }>
+export type MarketCatalogFacets = Readonly<{
+	/** All visible packages that match every active filter, before pagination. */
+	total: number
+	/** Each option's count applies the search and filters from the other dimensions. */
+	registries: readonly MarketFacetValue[]
+	categories: readonly MarketFacetValue[]
+	tags: readonly MarketFacetValue[]
+	authors: readonly (MarketAuthor & Readonly<{ count: number }>)[]
 }>
 export type MarketReleaseQuery = Readonly<{ registry?: string; cursor?: string; limit?: number }>
 export type MarketPackageSummary = Readonly<{
@@ -20,6 +45,8 @@ export type MarketPackageSummary = Readonly<{
 	/** Last observed source-repository stars; null means no observation is available. */
 	repositoryStars: number | null
 	repositoryObservedAt: number | null
+	/** Owner of the declared GitHub repository. Release provenance describes publishing identity. */
+	author: MarketAuthor | null
 	indexedVersions: number
 	observedAt: number
 	/** Market-administered marks, independent of the release's build provenance. */
@@ -36,6 +63,8 @@ export type MarketPackageDetail = MarketPackageSummary &
 	Readonly<{
 		distTags: Readonly<Record<string, string>>
 		metadataVersion: string | null
+		/** Dependency declarations from the checked archive matching metadataVersion, when available. */
+		checkedRequirements?: Pick<MarketRelease, 'version' | 'peerDependencies' | 'pluginPackages'>
 		/** Package-level README reported by the registry, not checked archive contents. */
 		readme: Readonly<{ text: string; truncated: boolean }> | null
 		license: string | null
@@ -67,7 +96,12 @@ export type MarketReadResult<T> =
 	| Readonly<{
 			ok: false
 			error: Readonly<{
-				code: 'UNKNOWN_MARKET' | 'INVALID_QUERY' | 'MARKET_UNAVAILABLE' | 'INVALID_RESPONSE'
+				code:
+					| 'UNKNOWN_MARKET'
+					| 'INVALID_QUERY'
+					| 'NOT_INDEXED'
+					| 'MARKET_UNAVAILABLE'
+					| 'INVALID_RESPONSE'
 				message: string
 			}>
 	  }>

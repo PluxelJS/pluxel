@@ -25,7 +25,7 @@ const byteLength = 8 * 1024 * 1024
 class WorkerTaskBenchmark extends BasePlugin {
 	run(bytes: Uint8Array, transfer = false): Promise<TransferOutput> {
 		return this.ctx
-			.require(Workers)
+			.service(Workers)
 			.run(
 				declaration,
 				{ bytes },
@@ -45,7 +45,7 @@ let worker!: WorkerTaskBenchmark
 
 beforeAll(async () => {
 	lowerTestPlugin(WorkerTaskBenchmark)
-	worker = await host.start(WorkerTaskBenchmark)
+	worker = await host.start(WorkerTaskBenchmark.nodeAddress())
 	await worker.run(new Uint8Array(1))
 })
 

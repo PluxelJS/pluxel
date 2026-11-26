@@ -1,60 +1,53 @@
+import { resolveContextService } from '@pluxel/core/internal'
 import { ElysiaRuntime, HostElysiaRuntime } from './elysia/runtime'
 import type { Elysia } from 'elysia'
+import type { PluginHost } from '@pluxel/host'
 import {
-	defineContextCapability,
-	installRootCapability,
-	installScopeCapability,
-	resolveContextCapability,
-} from '@pluxel/core/host'
-import { defineHostService, type PluginHost, type HostService } from '@pluxel/host'
+	defineHostService,
+	installRootService,
+	installScopeService,
+	type HostService,
+} from '@pluxel/host/application'
 import { ElysiaApplicationDirectory } from './elysia/ElysiaApplicationDirectory'
 
 /** Native Elysia application owned by one Plugin generation and shared with its Parts. */
-export const ElysiaApp = defineContextCapability<Elysia>('services.elysia', {
-	access: 'owner',
-	property: 'elysia',
-})
-
-declare module '@pluxel/core' {
-	interface ContextServices {
-		readonly elysia?: Elysia
-	}
+export abstract class ElysiaApp {
+	static readonly access = 'owner' as const
 }
-
-const ElysiaDirectory = defineContextCapability<ElysiaApplicationDirectory>(
-	'services.elysia.directory',
-	{ access: 'root' },
-)
+export interface ElysiaApp extends Elysia {}
+export abstract class ElysiaDirectory {
+	static readonly access = 'root' as const
+}
+export interface ElysiaDirectory extends ElysiaApplicationDirectory {}
 
 /** Install owner Elysia applications. Management, Workbench and the srvx listener are installed separately. */
 export function elysia(): HostService {
 	return defineHostService({
 		name: 'Elysia',
-		capabilities: [
-			installRootCapability(ElysiaDirectory, { create: () => new ElysiaApplicationDirectory() }),
-			installScopeCapability(ElysiaApp, {
-				property: 'elysia',
-				create: (ctx) => resolveContextCapability(ctx.root, ElysiaDirectory).applicationFor(ctx),
+		provides: [
+			installRootService(ElysiaDirectory, { create: () => new ElysiaApplicationDirectory() }),
+			installScopeService(ElysiaApp, {
+				create: (ctx) => resolveContextService(ctx.root, ElysiaDirectory).applicationFor(ctx),
 			}),
-			installRootCapability(ElysiaRuntime, {
-				create: (ctx) => new HostElysiaRuntime(ctx, resolveContextCapability(ctx, ElysiaDirectory)),
+			installRootService(ElysiaRuntime, {
+				create: (ctx) => new HostElysiaRuntime(ctx, resolveContextService(ctx, ElysiaDirectory)),
 			}),
 		],
 		prepare: ({ ctx, effects }) => {
 			effects.defer(
-				() => (resolveContextCapability(ctx, ElysiaRuntime) as HostElysiaRuntime).close(),
+				() => (resolveContextService(ctx, ElysiaRuntime) as HostElysiaRuntime).close(),
 				{
 					tag: 'ElysiaEndpoints',
 					phase: 'shutdown',
 				},
 			)
 		},
-		lifecycle: (ctx) => resolveContextCapability(ctx, ElysiaDirectory).lifecycleHooks,
+		lifecycle: (ctx) => resolveContextService(ctx, ElysiaDirectory).lifecycleHooks,
 	})
 }
 
 /** Fetch handler for a Host with elysia() installed; the caller owns the transport and Host cleanup. */
 export function createElysiaHandler(host: PluginHost): (request: Request) => Promise<Response> {
-	const server = resolveContextCapability(host.ctx, ElysiaRuntime)
+	const server = resolveContextService(host.ctx, ElysiaRuntime)
 	return server.fetch.bind(server)
 }

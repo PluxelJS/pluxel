@@ -1,4 +1,4 @@
-import type { PluginConstructor, RootContext } from '@pluxel/core'
+import { type PluginConstructor, type RootContext } from '@pluxel/core'
 import type { PluginCatalogProvenance } from './catalog'
 import { clonePluginExecutionSnapshot } from './execution'
 
@@ -16,6 +16,7 @@ export function setHostCatalogProvenance(
 					plugin,
 					Object.freeze({
 						...value,
+						...(value.sourceFiles ? { sourceFiles: Object.freeze([...value.sourceFiles]) } : {}),
 						...(value.execution
 							? { execution: clonePluginExecutionSnapshot(value.execution) }
 							: {}),

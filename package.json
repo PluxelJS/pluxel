@@ -29,7 +29,7 @@
 		"check": "vp check",
 		"fix": "vp check --fix",
 		"verify": "vp run workspace:verify",
-		"hooks:install": "hk install --mise",
+		"hooks:install": "hk install",
 		"dev:status": "node packages/cli/bin/pluxel.mjs dev status",
 		"dev:logs": "pitchfork logs plugin-host --follow",
 		"dev:stop": "pitchfork stop plugin-host",
@@ -61,12 +61,12 @@
 			"docs": {
 				"root": "projects/docs",
 				"pitchfork": "docs",
-				"console": false
+				"scripts": false
 			},
 			"typst": {
 				"root": "plugins/render/typst/tests/consumer",
 				"pitchfork": "typst",
-				"console": false
+				"scripts": false
 			}
 		}
 	}

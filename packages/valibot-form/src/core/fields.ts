@@ -1,9 +1,8 @@
-import { DEFAULT_TEXTS } from './constants'
+import { readArrayMetadata, readFieldMetadata, type FieldData } from './fieldData'
 import {
 	META_TYPES,
 	type ArrayMeta,
 	type FormMeta,
-	type NumberMeta,
 	type ObjectMeta,
 	type PicklistMeta,
 	type RecordMeta,
@@ -12,8 +11,13 @@ import {
 } from './meta'
 import { readMeta, type Schema } from './schema'
 import { readStandardSchemaMetadata, type StandardSchemaMetadata } from './schemaMetadata'
-import { isDevelopmentEnvironment } from './utils/environment'
-import { collectObjectEntries } from './utils/objectEntries'
+import {
+	collectRawValidationActions,
+	isSchema,
+	pipeRoot,
+	type SchemaRecord,
+} from './schemaStructure'
+import { collectObjectEntries, type ObjectEntry } from './utils/objectEntries'
 
 export type FieldKind =
 	| 'string'
@@ -27,145 +31,153 @@ export type FieldKind =
 	| 'unsupported'
 
 export interface NormalizedSectionMeta {
-	id: string
-	title?: string
-	description?: string
-	order?: number
-	columns?: number
+	readonly id: string
+	readonly title?: string
+	readonly description?: string
+	readonly order?: number
+	readonly columns?: number
 }
 
-export type FieldMeta = Omit<FormMeta, 'title' | 'description' | 'section'> & {
-	label: string
-	description?: string
-	section?: NormalizedSectionMeta
+export type FieldMeta = Readonly<
+	Omit<FormMeta, 'title' | 'description' | 'section' | 'badge' | 'layout'>
+> & {
+	readonly badge?: string | Readonly<Exclude<FormMeta['badge'], string>>
+	readonly layout?: Readonly<FormMeta['layout']>
+	readonly label: string
+	readonly description?: string
+	readonly section?: NormalizedSectionMeta
 }
 
 export interface FieldNodeBase {
-	kind: FieldKind
-	name?: string
-	path: string
-	depth: number
-	meta: FieldMeta
-	required: boolean
+	readonly kind: FieldKind
+	readonly name?: string
+	readonly path: string
+	readonly depth: number
+	readonly meta: FieldMeta
+	readonly required: boolean
+	readonly nullable: boolean
 }
 
 export interface StringFieldNode extends FieldNodeBase {
-	kind: 'string'
-	control: NonNullable<StringMeta['control']>
-	placeholder?: string
-	rows?: number
-	minLength?: number
-	maxLength?: number
-	format?: string
+	readonly kind: 'string'
+	readonly literal?: string
+	readonly control: NonNullable<StringMeta['control']>
+	readonly placeholder?: string
+	readonly rows?: number
+	readonly minLength?: number
+	readonly maxLength?: number
+	readonly format?: string
 }
 
 export interface NumberFieldNode extends FieldNodeBase {
-	kind: 'number'
-	min?: number
-	max?: number
-	step?: number
-	integer?: boolean
-	placeholder?: string
-	format?: Intl.NumberFormatOptions
+	readonly kind: 'number'
+	readonly literal?: number
+	readonly min?: number
+	readonly max?: number
+	readonly step?: number
+	readonly integer?: boolean
+	readonly placeholder?: string
+	readonly format?: Readonly<Intl.NumberFormatOptions>
 }
 
 export interface BooleanFieldNode extends FieldNodeBase {
-	kind: 'boolean'
-	control: 'switch'
+	readonly kind: 'boolean'
+	readonly literal?: boolean
+	readonly control: 'switch'
 }
 
 export interface PicklistFieldNode extends FieldNodeBase {
-	kind: 'picklist'
-	options?: readonly (string | number)[]
-	entries?: PicklistMeta['entries']
-	labels?: PicklistMeta['labels']
-	disabled?: PicklistMeta['disabled']
-	placeholder?: string
-	searchable?: boolean
-	clearable?: boolean
-	max?: number
-	create?: boolean
-	control: NonNullable<PicklistMeta['control']>
-	emptyLabel?: string
+	readonly kind: 'picklist'
+	readonly options?: readonly (string | number)[]
+	readonly entries?: readonly Readonly<NonNullable<PicklistMeta['entries']>[number]>[]
+	readonly labels?: Readonly<PicklistMeta['labels']>
+	readonly disabled?: PicklistMeta['disabled']
+	readonly placeholder?: string
+	readonly searchable?: boolean
+	readonly clearable?: boolean
+	readonly max?: number
+	readonly create?: boolean
+	readonly control: NonNullable<PicklistMeta['control']>
+	readonly emptyLabel?: string
 }
 
 export interface ArrayFieldNode extends FieldNodeBase {
-	kind: 'array'
-	item?: FieldNode | null
-	layout?: ArrayMeta['layout']
-	columns?: number
-	disableAutoGrid?: boolean
-	min?: number
-	max?: number
-	addable?: boolean
-	removable?: boolean
-	reorderable?: boolean
-	itemLabel?: string
-	addLabel?: string
-	emptyHint?: string
-	defaultItem?: unknown
+	readonly kind: 'array'
+	readonly item?: FieldNode | null
+	readonly layout?: ArrayMeta['layout']
+	readonly columns?: number
+	readonly disableAutoGrid?: boolean
+	readonly min?: number
+	readonly max?: number
+	readonly addable?: boolean
+	readonly removable?: boolean
+	readonly reorderable?: boolean
+	readonly itemLabel?: string
+	readonly addLabel?: string
+	readonly emptyHint?: string
+	readonly defaultItem?: FieldData
 }
 
 export interface RecordFieldNode extends FieldNodeBase {
-	kind: 'record'
-	value?: FieldNode | null
-	layout?: RecordMeta['layout']
-	min?: number
-	max?: number
-	addable?: boolean
-	removable?: boolean
-	reorderable?: boolean
-	editableKey?: boolean
-	key?: RecordMeta['key']
-	valueMeta?: RecordMeta['value']
-	addLabel?: string
-	emptyHint?: string
+	readonly kind: 'record'
+	readonly value?: FieldNode | null
+	readonly layout?: RecordMeta['layout']
+	readonly min?: number
+	readonly max?: number
+	readonly addable?: boolean
+	readonly removable?: boolean
+	readonly reorderable?: boolean
+	readonly editableKey?: boolean
+	readonly key?: Readonly<RecordMeta['key']>
+	readonly valueMeta?: Readonly<RecordMeta['value']>
+	readonly addLabel?: string
+	readonly emptyHint?: string
 }
 
 export interface ObjectFieldNode extends FieldNodeBase {
-	kind: 'object'
-	fields: FieldNode[]
-	variant?: ObjectMeta['variant']
-	columns?: number
-	gap?: ObjectMeta['gap']
-	collapsible?: boolean
-	collapsed?: boolean
+	readonly kind: 'object'
+	readonly fields: readonly FieldNode[]
+	readonly variant?: ObjectMeta['variant']
+	readonly columns?: number
+	readonly gap?: ObjectMeta['gap']
+	readonly collapsible?: boolean
+	readonly collapsed?: boolean
 }
 
 export type DiscriminatorValue = string | number | boolean | null
 
 export interface UnionBranchField {
-	key: string
-	node: FieldNode
-	replaceValue?: boolean
+	readonly key: string
+	readonly node: FieldNode
+	readonly replaceValue?: boolean
 }
 
 export interface UnionBranch {
-	key: string
-	discriminatorValue?: DiscriminatorValue
-	fields: UnionBranchField[]
+	readonly key: string
+	readonly discriminatorValue?: DiscriminatorValue
+	readonly fields: readonly UnionBranchField[]
 }
 
 export interface UnionFieldNode extends FieldNodeBase {
-	kind: 'union'
-	branches: UnionBranch[]
-	sharedFields: UnionBranchField[]
-	discriminator?: string
-	discriminatorField?: UnionBranchField
-	control: NonNullable<UnionMeta['control']>
-	labels?: UnionMeta['labels']
-	descriptions?: UnionMeta['descriptions']
-	placeholder?: string
-	searchable?: boolean
-	expose?: UnionMeta['expose']
-	preserve?: boolean
-	compact?: boolean
+	readonly kind: 'union'
+	readonly branches: readonly UnionBranch[]
+	readonly sharedFields: readonly UnionBranchField[]
+	readonly discriminator?: string
+	readonly discriminatorField?: UnionBranchField
+	readonly control: NonNullable<UnionMeta['control']>
+	readonly labels?: Readonly<UnionMeta['labels']>
+	readonly descriptions?: Readonly<UnionMeta['descriptions']>
+	readonly placeholder?: string
+	readonly searchable?: boolean
+	readonly expose?: UnionMeta['expose']
+	readonly preserve?: boolean
+	readonly compact?: boolean
 }
 
 export interface UnsupportedFieldNode extends FieldNodeBase {
-	kind: 'unsupported'
-	readOnly: true
-	reason: string
+	readonly kind: 'unsupported'
+	readonly readOnly: true
+	readonly reason: string
 }
 
 export type FieldNode =
@@ -186,16 +198,12 @@ type ExtractCtx = {
 }
 
 function normalizeSection(section?: FormMeta['section']): NormalizedSectionMeta | undefined {
-	if (!section) return undefined
-	if (typeof section === 'string') {
-		return { id: section, title: section }
-	}
-	const id = section.id ?? section.title ?? section.description ?? 'section'
-	return { ...section, id }
+	if (section === undefined) return undefined
+	if (typeof section === 'string') return { id: section, title: section }
+	return { ...section, id: section.id ?? section.title ?? section.description ?? 'section' }
 }
 
 function fieldNameToLabel(fieldName: string): string {
-	if (!fieldName) return '未命名字段'
 	if (fieldName.includes('_')) {
 		return fieldName
 			.split('_')
@@ -209,624 +217,439 @@ function fieldNameToLabel(fieldName: string): string {
 }
 
 function normalizeBaseMeta(
-	meta: FormMeta | undefined,
+	meta: FormMeta,
 	standard: StandardSchemaMetadata,
 	fieldName?: string,
 ): FieldMeta {
-	const merged: FormMeta = { ...meta }
-	const section = normalizeSection(merged.section)
-	const label = standard.title ?? (fieldName ? fieldNameToLabel(fieldName) : '未命名字段')
-	const {
-		title: _omitTitle,
-		description: _omitDescription,
-		section: _omitSection,
-		...rest
-	} = merged
-
+	const { title: _title, description: _description, section, ...rest } = meta
 	return {
 		...rest,
-		label,
+		label: standard.title ?? (fieldName ? fieldNameToLabel(fieldName) : '未命名字段'),
 		...(standard.description !== undefined ? { description: standard.description } : {}),
-		...(section ? { section } : {}),
+		...(section === undefined ? {} : { section: normalizeSection(section) }),
 	}
 }
 
-function unwrapOptional(schema: Schema): { schema: Schema; required: boolean } {
-	let current = schema as any
-	let required = true
-	while (current && typeof current === 'object') {
-		if (current.type === 'optional' || current.type === 'nullable' || current.type === 'nullish') {
-			required = false
-			current = current.wrapped ?? current.schema ?? current.inner ?? current
-			if (current === schema) break
-			continue
-		}
-		break
+const optionalEntry = new Set(['optional', 'exact_optional', 'nullish'])
+const wrappers = new Set([
+	...optionalEntry,
+	'nullable',
+	'undefinedable',
+	'non_optional',
+	'non_nullable',
+	'non_nullish',
+])
+
+function inputSchema(schema: Schema): SchemaRecord {
+	const seen = new Set<Schema>()
+	let current = pipeRoot(schema)
+	while (wrappers.has(current.type) && isSchema(current.wrapped) && !seen.has(current)) {
+		seen.add(current)
+		current = pipeRoot(current.wrapped)
 	}
-	return { schema: current as Schema, required }
+	return current
 }
 
-function resolveKind(schema: Schema): FieldKind {
-	if (schema.type === 'literal') {
-		const literalValue = (schema as any).literal
-		if (typeof literalValue === 'string') return 'string'
-		if (typeof literalValue === 'number') return 'number'
-		if (typeof literalValue === 'boolean') return 'boolean'
+function acceptsNull(schema: Schema, ancestors = new Set<Schema>()): boolean {
+	if (ancestors.has(schema)) return false
+	const current = pipeRoot(schema)
+	if (
+		current.type === 'nullable' ||
+		current.type === 'nullish' ||
+		current.type === 'null' ||
+		current.type === 'unknown' ||
+		current.type === 'any'
+	) {
+		return true
 	}
-	if (schema.type === 'variant') return 'union'
-	if (schema.type === 'intersect') {
-		const entries = collectObjectEntries(schema)
-		if (entries?.length) return 'object'
-	}
-	switch (schema.type) {
-		case 'string':
-		case 'number':
-		case 'boolean':
-		case 'picklist':
-		case 'array':
-		case 'record':
-		case 'object':
-		case 'union':
-			return schema.type
-		default:
-			return 'unsupported'
+	if (current.type === 'non_nullable' || current.type === 'non_nullish') return false
+	if (current.type === 'literal') return current.literal === null
+	if (current.type === 'picklist' || current.type === 'enum')
+		return current.options?.includes(null) === true
+	ancestors.add(schema)
+	try {
+		const includesNull = (option: unknown) => isSchema(option) && acceptsNull(option, ancestors)
+		if (current.type === 'union') return current.options?.some(includesNull) ?? false
+		if (current.type === 'intersect') return current.options?.every(includesNull) ?? false
+		return isSchema(current.wrapped) && acceptsNull(current.wrapped, ancestors)
+	} finally {
+		ancestors.delete(schema)
 	}
 }
 
-type ExtractedStringMeta = StringMeta & {
-	minLength?: number
-	maxLength?: number
-	format?: string
-}
-
-function extractStringMeta(schema: Schema, metadataSource: Schema): ExtractedStringMeta {
-	const meta: ExtractedStringMeta = {
-		control: 'text',
-		...readMeta(metadataSource, META_TYPES.STRING),
-	}
-	if (!('pipe' in schema)) return meta
-	const validationMap = {
-		min_length: 'minLength',
-		max_length: 'maxLength',
-	} as const
-	const fmtMap = {
-		url: 'url',
-		email: 'email',
-		ip: 'ip',
-		ipv4: 'ipv4',
-		ipv6: 'ipv6',
-		hex_color: 'hex_color',
-	} as const
-	for (let i = schema.pipe.length - 1; i > 0; i--) {
-		const item = schema.pipe[i] as any
-		if (item.kind !== 'validation') continue
-		if (item.type in validationMap) {
-			const key = validationMap[item.type as keyof typeof validationMap]
-			if (meta[key] === undefined) meta[key] = item.requirement
-		} else if (item.type in fmtMap && !meta.format) {
-			meta.format = fmtMap[item.type as keyof typeof fmtMap]
-		}
-	}
-	return meta
-}
-
-type ExtractedNumberMeta = NumberMeta & {
-	min?: number
-	max?: number
-	integer?: boolean
-}
-
-function extractNumberMeta(schema: Schema, metadataSource: Schema): ExtractedNumberMeta {
-	const meta: ExtractedNumberMeta = { ...readMeta(metadataSource, META_TYPES.NUMBER) }
-	if (!('pipe' in schema)) return meta
-	const validationKey = {
-		min_value: 'min',
-		max_value: 'max',
-	} as const
-	for (let i = schema.pipe.length - 1; i > 0; i--) {
-		const item = schema.pipe[i] as any
-		if (item.kind !== 'validation') continue
-		if (item.type === 'integer') {
-			if (meta.integer === undefined) meta.integer = true
-			continue
-		}
-		if (item.type in validationKey) {
-			const key = validationKey[item.type as keyof typeof validationKey]
-			if (meta[key] === undefined) meta[key] = item.requirement
-		}
-	}
-	return meta
-}
-
-type ExtractedPicklistMeta = PicklistMeta & { options?: readonly (string | number)[] }
-
-function extractPicklistMeta(schema: Schema, metadataSource: Schema): ExtractedPicklistMeta {
-	const meta: ExtractedPicklistMeta = {
-		control: 'select',
-		...readMeta(metadataSource, META_TYPES.PICKLIST),
-	}
-	if (schema.type === 'picklist') {
-		const picklist = schema as Schema & { options?: readonly (string | number)[] }
-		if (picklist.options?.length) meta.options = picklist.options
-	}
-	return meta
-}
-
-type ExtractedArrayMeta = ArrayMeta & { min?: number; max?: number }
-
-function extractArrayMeta(schema: Schema, metadataSource: Schema): ExtractedArrayMeta {
-	const meta: ExtractedArrayMeta = { ...readMeta(metadataSource, META_TYPES.ARRAY) }
-	if (!('pipe' in schema)) return meta
-	for (let i = schema.pipe.length - 1; i > 0; i--) {
-		const item = schema.pipe[i] as any
-		if (item.kind !== 'validation' || typeof item.requirement !== 'number') continue
-		if (item.type === 'length') meta.min = meta.max = item.requirement
-		else if (item.type === 'min_length') meta.min = Math.max(meta.min ?? 0, item.requirement)
-		else if (item.type === 'max_length') {
-			meta.max = Math.min(meta.max ?? Number.POSITIVE_INFINITY, item.requirement)
-		}
-	}
-	return meta
-}
-
-type ExtractedRecordMeta = RecordMeta & { min?: number; max?: number }
-
-function extractRecordMeta(schema: Schema, metadataSource: Schema): ExtractedRecordMeta {
-	const meta: ExtractedRecordMeta = { ...readMeta(metadataSource, META_TYPES.RECORD) }
-	if (!('pipe' in schema)) return meta
-	for (let i = schema.pipe.length - 1; i > 0; i--) {
-		const item = schema.pipe[i] as any
-		if (item.kind !== 'validation' || typeof item.requirement !== 'number') continue
-		if (item.type === 'entries') meta.min = meta.max = item.requirement
-		else if (item.type === 'min_entries') meta.min = Math.max(meta.min ?? 0, item.requirement)
-		else if (item.type === 'max_entries') {
-			meta.max = Math.min(meta.max ?? Number.POSITIVE_INFINITY, item.requirement)
-		}
-	}
-	return meta
-}
-
-function extractObjectMeta(metadataSource: Schema): ObjectMeta {
-	return { ...readMeta(metadataSource, META_TYPES.OBJECT) }
-}
-
-function extractUnionMeta(metadataSource: Schema): UnionMeta {
+function fieldBase(schema: Schema, ctx: ExtractCtx): Omit<FieldNodeBase, 'kind'> {
+	const path = ctx.path ?? ctx.fieldName ?? ''
+	const meta = readFieldMetadata('form', readMeta(schema, META_TYPES.FORM), path)
+	const declared = schema as SchemaRecord & { fallback?: unknown }
 	return {
-		control: 'select',
-		expose: 'auto',
-		preserve: true,
-		...readMeta(metadataSource, META_TYPES.UNION),
+		...(ctx.fieldName === undefined ? {} : { name: ctx.fieldName }),
+		path,
+		depth: ctx.depth ?? 0,
+		meta: normalizeBaseMeta(meta, readStandardSchemaMetadata(schema), ctx.fieldName),
+		required: !optionalEntry.has(declared.type) && declared.fallback === undefined,
+		nullable: acceptsNull(schema),
 	}
 }
 
-type UnionSchema = Schema & { type: 'union'; options: readonly Schema[]; pipe?: readonly unknown[] }
-type VariantSchema = Schema & {
-	type: 'variant'
-	key: string
-	options: readonly Schema[]
-	pipe?: readonly unknown[]
-}
-type IntersectSchema = Schema & {
-	type: 'intersect'
-	options: readonly Schema[]
-	pipe?: readonly unknown[]
-}
-
-const BOOLEANISH = new Set<unknown>([true, false, 'true', 'false', 1, 0, '1', '0'])
-
-function literalLikeValue(schema: Schema): DiscriminatorValue | undefined {
-	if (schema.type === 'literal') {
-		const literalSchema = schema as Schema & { type: 'literal'; literal: unknown }
-		return (literalSchema.literal as DiscriminatorValue) ?? null
+function unsupported(base: Omit<FieldNodeBase, 'kind'>, reason: string): UnsupportedFieldNode {
+	return {
+		...base,
+		kind: 'unsupported',
+		meta: { ...base.meta, readOnly: true },
+		readOnly: true,
+		reason,
 	}
-	if (schema.type === 'picklist') {
-		const picklist = schema as Schema & { options?: readonly (string | number)[] }
-		if (picklist.options?.length === 1) {
-			return (picklist.options[0] as DiscriminatorValue) ?? null
-		}
-	}
-	return undefined
 }
 
-function entriesToMap(schema: Schema): Map<string, Schema> | undefined {
-	const entries = collectObjectEntries(schema)
-	if (!entries) return undefined
-	const map = new Map<string, Schema>()
-	for (const entry of entries) map.set(entry.name, entry.schema)
-	return map
+type Validation = Readonly<Record<string, unknown>>
+
+function bounds(
+	actions: readonly Validation[],
+	minType: string,
+	maxType: string,
+	exactType?: string,
+): { min?: number; max?: number } {
+	let min: number | undefined
+	let max: number | undefined
+	for (const { type, requirement } of actions) {
+		if (typeof requirement !== 'number' || !Number.isFinite(requirement)) continue
+		if (type === minType || type === exactType) min = Math.max(min ?? -Infinity, requirement)
+		if (type === maxType || type === exactType) max = Math.min(max ?? Infinity, requirement)
+	}
+	return { ...(min === undefined ? {} : { min }), ...(max === undefined ? {} : { max }) }
 }
 
-function inferDiscriminatorKey(branches: readonly Schema[]): string | undefined {
-	const entryMaps = branches.map((branch) => entriesToMap(branch)).filter(Boolean) as Map<
-		string,
-		Schema
-	>[]
-	if (entryMaps.length === 0) return undefined
+const stringFormats = new Set(['url', 'email', 'ip', 'ipv4', 'ipv6', 'hex_color'])
 
-	const candidate = new Map<string, DiscriminatorValue[]>()
-	for (const map of entryMaps) {
-		for (const [name, schema] of map.entries()) {
-			const value = literalLikeValue(schema)
-			if (value === undefined) continue
-			const bucket = candidate.get(name) ?? []
-			bucket.push(value)
-			candidate.set(name, bucket)
-		}
+function stringConstraints(validations: readonly Validation[]) {
+	const { min, max } = bounds(validations, 'min_length', 'max_length', 'length')
+	const format = validations.findLast((action) => stringFormats.has(action.type as string))?.type
+	return {
+		...(min === undefined ? {} : { minLength: min }),
+		...(max === undefined ? {} : { maxLength: max }),
+		...(typeof format === 'string' ? { format } : {}),
 	}
+}
 
-	const requiredCount = entryMaps.length
-	const validCandidates = Array.from(candidate.entries()).filter(([, values]) => {
-		if (values.length !== requiredCount) return false
-		return new Set(values.map((v) => `${v}`)).size === requiredCount
-	})
-	if (validCandidates.length === 0) return undefined
+function childContext(fieldName: string, parentPath: string, depth: number): ExtractCtx {
+	return { fieldName, path: parentPath ? `${parentPath}.${fieldName}` : fieldName, depth }
+}
 
-	const booleanCandidate = validCandidates.find(([, values]) =>
-		values.every((v) => BOOLEANISH.has(v)),
+function extractObjectEntry(entry: ObjectEntry, ctx: ExtractCtx): FieldNode {
+	if (entry.duplicate) {
+		return unsupported(
+			fieldBase(entry.schema, ctx),
+			`Intersection contains duplicate key ${JSON.stringify(entry.name)}`,
+		)
+	}
+	return extractField(entry.schema, ctx)
+}
+
+function isDiscriminatorValue(input: unknown): input is DiscriminatorValue {
+	return (
+		input === null ||
+		typeof input === 'string' ||
+		typeof input === 'boolean' ||
+		(typeof input === 'number' && Number.isFinite(input))
 	)
-	if (booleanCandidate) return booleanCandidate[0]
+}
 
-	const priority = ['type', 'kind', 'mode', 'enabled']
-	for (const key of priority) {
-		if (validCandidates.some(([candidateKey]) => candidateKey === key)) return key
+function discriminatorValues(schema: Schema, ancestors = new Set<Schema>()): DiscriminatorValue[] {
+	if (ancestors.has(schema)) return []
+	const current = pipeRoot(schema)
+	if (current.type === 'literal')
+		return isDiscriminatorValue(current.literal) ? [current.literal] : []
+	if (current.type === 'null') return [null]
+	if (current.type === 'picklist' || current.type === 'enum') {
+		return current.options?.every(isDiscriminatorValue) ? [...new Set(current.options)] : []
 	}
-
-	validCandidates.sort(([a], [b]) => a.localeCompare(b))
-	return validCandidates[0][0]
-}
-
-function extractDiscriminatorValueFromBranch(
-	branchSchema: Schema,
-	discriminatorKey?: string,
-): DiscriminatorValue | undefined {
-	if (!discriminatorKey) return undefined
-	const entryMap = entriesToMap(branchSchema)
-	const discriminatorSchema = entryMap?.get(discriminatorKey)
-	if (!discriminatorSchema) return undefined
-	return literalLikeValue(discriminatorSchema)
-}
-
-function gatherUnionParts(schema: UnionSchema | VariantSchema | IntersectSchema) {
-	if (schema.type !== 'intersect') {
-		return {
-			unionSchema:
-				schema.type === 'union' || schema.type === 'variant'
-					? (schema as UnionSchema | VariantSchema)
-					: undefined,
-			sharedObjects: [] as Schema[],
-			mode: schema.type,
+	if (current.type === 'union' && current.options) {
+		ancestors.add(schema)
+		try {
+			const values = new Set<DiscriminatorValue>()
+			for (const member of current.options) {
+				const choices = isSchema(member) ? discriminatorValues(member, ancestors) : []
+				if (choices.length === 0) return []
+				for (const value of choices) values.add(value)
+			}
+			return [...values]
+		} finally {
+			ancestors.delete(schema)
 		}
 	}
-
-	const sharedObjects: Schema[] = []
-	let unionSchema: UnionSchema | VariantSchema | undefined
-
-	const walk = (node: IntersectSchema) => {
-		for (const option of node.options ?? []) {
-			if (!(option && typeof option === 'object' && (option as any).kind === 'schema')) continue
-			if (!unionSchema && (option.type === 'union' || option.type === 'variant')) {
-				unionSchema = option as UnionSchema | VariantSchema
-				continue
-			}
-			if (option.type === 'intersect') {
-				walk(option as IntersectSchema)
-				continue
-			}
-			if (option.type === 'object') {
-				sharedObjects.push(option)
-			}
-		}
-	}
-
-	walk(schema as IntersectSchema)
-	return { unionSchema, sharedObjects, mode: 'intersect' as const }
+	return []
 }
 
-function normalizeBranchKey(value: DiscriminatorValue | undefined, index: number) {
-	if (value === null || value === undefined) return `branch_${index}`
-	if (typeof value === 'boolean') return value ? 'true' : 'false'
-	return String(value)
+function discriminatorEntry(entries: readonly ObjectEntry[] | undefined, key: string) {
+	return entries?.find((entry) => entry.name === key && !entry.duplicate)?.schema
+}
+
+const booleanish = new Set<unknown>([true, false, 'true', 'false', 1, 0, '1', '0'])
+
+function inferDiscriminatorKey(branches: readonly (readonly ObjectEntry[] | undefined)[]) {
+	const first = branches[0]
+	if (!first || branches.length < 2) return undefined
+	const possibilities = first.flatMap(({ name }) => {
+		const values = branches.map((entries) => {
+			const entry = discriminatorEntry(entries, name)
+			return entry ? discriminatorValues(entry) : []
+		})
+		if (values.some((choices) => choices.length !== 1)) return []
+		const candidates = values.map(([value]) => value)
+		return new Set(candidates).size === branches.length ? [{ name, values: candidates }] : []
+	})
+
+	return (
+		possibilities.find((possibility) => possibility.values.every((value) => booleanish.has(value)))
+			?.name ??
+		['type', 'kind', 'mode', 'enabled'].find((key) =>
+			possibilities.some(({ name }) => name === key),
+		) ??
+		possibilities.map(({ name }) => name).sort()[0]
+	)
+}
+
+type BranchSchema = { schema: Schema; entries?: readonly ObjectEntry[] }
+
+function variantBranches(schema: SchemaRecord, ancestors = new Set<Schema>()): BranchSchema[] {
+	if (ancestors.has(schema)) return []
+	ancestors.add(schema)
+	try {
+		return (schema.options ?? []).filter(isSchema).flatMap((option) => {
+			if (option.type === 'variant') return variantBranches(option, ancestors)
+			return [{ schema: option, entries: collectObjectEntries(option) }]
+		})
+	} finally {
+		ancestors.delete(schema)
+	}
 }
 
 function extractUnionNode(
-	schema: Schema,
+	schema: SchemaRecord,
 	metadataSource: Schema,
-	ctx: ExtractCtx,
-	baseMeta: FieldMeta,
-	required: boolean,
-): UnionFieldNode {
-	const meta = extractUnionMeta(metadataSource)
-	const { unionSchema, sharedObjects } = gatherUnionParts(schema as any)
-	const branchesSource = unionSchema?.options ?? []
+	base: Omit<FieldNodeBase, 'kind'>,
+): UnionFieldNode | UnsupportedFieldNode {
+	const { discriminator: hintedDiscriminator, ...meta } = readFieldMetadata(
+		'union',
+		readMeta(metadataSource, META_TYPES.UNION),
+		base.path,
+	)
+	const declaredDiscriminator =
+		schema.type === 'variant' ? (schema as SchemaRecord & { key: string }).key : undefined
+	if (
+		declaredDiscriminator !== undefined &&
+		hintedDiscriminator !== undefined &&
+		declaredDiscriminator !== hintedDiscriminator
+	) {
+		throw new TypeError(
+			`${base.path || 'field'}.unionMeta.discriminator must match the declared variant key ${JSON.stringify(declaredDiscriminator)}`,
+		)
+	}
+	const source =
+		declaredDiscriminator === undefined
+			? (schema.options ?? []).filter(isSchema).map((option) => ({
+					schema: option,
+					entries: collectObjectEntries(option),
+				}))
+			: variantBranches(schema)
 	const discriminator =
-		meta.discriminator ??
-		(branchesSource.length > 0 ? inferDiscriminatorKey(branchesSource) : undefined)
-
-	const sharedFields: UnionBranchField[] = []
-	let discriminatorField: UnionBranchField | undefined
-
-	for (const shared of sharedObjects) {
-		const entries = collectObjectEntries(shared) ?? []
-		for (const entry of entries) {
-			if (entry.name === discriminator) {
-				if (!discriminatorField) {
-					const node = extractField(entry.schema, {
-						fieldName: entry.name,
-						path: ctx.path ? `${ctx.path}.${entry.name}` : entry.name,
-						depth: (ctx.depth ?? 0) + 1,
-					})
-					if (node) {
-						discriminatorField = { key: entry.name, node }
-					}
-				}
-				continue
+		declaredDiscriminator ??
+		hintedDiscriminator ??
+		inferDiscriminatorKey(source.map((branch) => branch.entries))
+	const branches: UnionBranch[] = []
+	const values = new Set<DiscriminatorValue>()
+	const keys = new Set<string>()
+	if (source.length === 0) return unsupported(base, 'The union has no editable branches')
+	for (const branch of source) {
+		const discriminatorSchema =
+			discriminator === undefined ? undefined : discriminatorEntry(branch.entries, discriminator)
+		const choices = discriminatorSchema ? discriminatorValues(discriminatorSchema) : []
+		if (discriminator !== undefined && choices.length === 0) {
+			if (declaredDiscriminator !== undefined) {
+				return unsupported(
+					base,
+					`Variant key ${JSON.stringify(declaredDiscriminator)} has an unprojectable option`,
+				)
 			}
-			const node = extractField(entry.schema, {
-				fieldName: entry.name,
-				path: ctx.path ? `${ctx.path}.${entry.name}` : entry.name,
-				depth: (ctx.depth ?? 0) + 1,
-			})
-			if (node) sharedFields.push({ key: entry.name, node })
+			throw new TypeError(
+				`${base.path || 'field'}.unionMeta.discriminator must identify a finite input value for every branch`,
+			)
+		}
+		const depth = base.depth + 1
+		const fields = branch.entries
+			? branch.entries.flatMap((entry) =>
+					entry.name === discriminator
+						? []
+						: [
+								{
+									key: entry.name,
+									node: extractObjectEntry(entry, childContext(entry.name, base.path, depth)),
+								},
+							],
+				)
+			: [
+					{
+						key: base.name ?? 'value',
+						node: extractField(branch.schema, {
+							fieldName: base.name ?? 'value',
+							path: base.path,
+							depth,
+						}),
+						replaceValue: true,
+					},
+				]
+		for (const value of choices.length > 0 ? choices : [undefined]) {
+			if (value !== undefined && values.has(value) && discriminator !== undefined) {
+				return unsupported(
+					base,
+					`Discriminator ${JSON.stringify(discriminator)} has ambiguous branch values`,
+				)
+			}
+			if (value !== undefined) values.add(value)
+			const preferred = value == null ? `branch_${branches.length}` : String(value)
+			let key = preferred
+			for (let suffix = 1; keys.has(key); suffix++) key = `${preferred}_${suffix}`
+			keys.add(key)
+			branches.push({ key, ...(value === undefined ? {} : { discriminatorValue: value }), fields })
 		}
 	}
 
-	const branches: UnionBranch[] = branchesSource.map((branchSchema, index) => {
-		const discriminatorValue = extractDiscriminatorValueFromBranch(branchSchema, discriminator)
-		const branchKey = normalizeBranchKey(discriminatorValue, index)
-		const branchEntries = collectObjectEntries(branchSchema)
-		if (branchEntries) {
-			const fields: UnionBranchField[] = []
-			for (const entry of branchEntries) {
-				if (entry.name === discriminator) continue
-				if (sharedFields.some((f) => f.key === entry.name)) continue
-				const node = extractField(entry.schema, {
-					fieldName: entry.name,
-					path: ctx.path ? `${ctx.path}.${entry.name}` : entry.name,
-					depth: (ctx.depth ?? 0) + 1,
-				})
-				if (node) fields.push({ key: entry.name, node })
-			}
-			return { key: branchKey, discriminatorValue, fields }
-		}
-
-		const fallbackKey =
-			ctx.fieldName ||
-			discriminator ||
-			(baseMeta.label ? baseMeta.label.toLowerCase().replaceAll(/\s+/g, '_') : 'value')
-		const node = extractField(branchSchema, {
-			fieldName: fallbackKey,
-			path: ctx.path,
-			depth: (ctx.depth ?? 0) + 1,
-		})
-		const fields = node ? [{ key: fallbackKey, node, replaceValue: true }] : []
-		return { key: branchKey, discriminatorValue, fields }
-	})
-
 	return {
+		...base,
 		kind: 'union',
-		name: ctx.fieldName,
-		path: ctx.path ?? '',
-		depth: ctx.depth ?? 0,
-		meta: baseMeta,
-		required,
 		branches,
-		sharedFields,
-		discriminator,
-		discriminatorField,
-		control: meta.control ?? 'select',
-		labels: meta.labels,
-		descriptions: meta.descriptions,
-		placeholder: meta.placeholder,
-		searchable: meta.searchable,
-		expose: meta.expose,
-		preserve: meta.preserve,
-		compact: meta.compact,
+		sharedFields: [],
+		...(discriminator === undefined ? {} : { discriminator }),
+		control: 'select',
+		expose: 'auto',
+		preserve: true,
+		...meta,
 	}
 }
 
-export function extractField(schema: Schema, ctx: ExtractCtx = {}): FieldNode | null {
-	const { schema: unwrapped, required } = unwrapOptional(schema)
-	const baseMeta = normalizeBaseMeta(
-		readMeta(schema, META_TYPES.FORM),
-		readStandardSchemaMetadata(schema),
-		ctx.fieldName,
-	)
-	const resolvedMeta =
-		unwrapped.type === 'literal' &&
-		baseMeta.readOnly === undefined &&
-		baseMeta.disabled === undefined
-			? { ...baseMeta, readOnly: true }
-			: baseMeta
-	const kind = resolveKind(unwrapped)
-	const path = ctx.path ?? ctx.fieldName ?? ''
-	const depth = ctx.depth ?? 0
+export function extractField(schema: Schema, ctx: ExtractCtx = {}): FieldNode {
+	const input = inputSchema(schema)
+	const base = fieldBase(schema, ctx)
+	const { path, depth } = base
+	const literal = input.type === 'literal' ? input.literal : undefined
+	const kind = input.type === 'literal' ? typeof literal : input.type
+	const presentation =
+		input.type === 'literal' ? { ...base, meta: { ...base.meta, readOnly: true } } : base
+	const validations = () => collectRawValidationActions(schema).actions
 
 	switch (kind) {
-		case 'string': {
-			const meta = extractStringMeta(unwrapped, schema)
+		case 'string':
 			return {
-				kind: 'string',
-				name: ctx.fieldName,
-				path,
-				depth,
-				meta: resolvedMeta,
-				required,
-				control: meta.control ?? 'text',
-				placeholder: meta.placeholder,
-				rows: meta.rows,
-				minLength: meta.minLength,
-				maxLength: meta.maxLength,
-				format: meta.format,
+				...presentation,
+				kind,
+				...(typeof literal === 'string' ? { literal } : {}),
+				control: 'text',
+				...readFieldMetadata('string', readMeta(schema, META_TYPES.STRING), path),
+				...stringConstraints(validations()),
 			}
-		}
 		case 'number': {
-			const meta = extractNumberMeta(unwrapped, schema)
+			if (typeof literal === 'number' && !Number.isFinite(literal)) {
+				return unsupported(presentation, 'The number literal is not finite')
+			}
+			const actions = validations()
 			return {
-				kind: 'number',
-				name: ctx.fieldName,
-				path,
-				depth,
-				meta: resolvedMeta,
-				required,
-				min: meta.min,
-				max: meta.max,
-				step: meta.step,
-				integer: meta.integer,
-				placeholder: meta.placeholder,
-				format: meta.format,
+				...presentation,
+				kind,
+				...(typeof literal === 'number' ? { literal } : {}),
+				...readFieldMetadata('number', readMeta(schema, META_TYPES.NUMBER), path),
+				...bounds(actions, 'min_value', 'max_value'),
+				...(actions.some((action) => action.type === 'integer') ? { integer: true } : {}),
 			}
 		}
-		case 'boolean': {
+		case 'boolean':
 			return {
-				kind: 'boolean',
-				name: ctx.fieldName,
-				path,
-				depth,
-				meta: resolvedMeta,
-				required,
+				...presentation,
+				kind,
 				control: 'switch',
+				...(typeof literal === 'boolean' ? { literal } : {}),
 			}
-		}
 		case 'picklist': {
-			const meta = extractPicklistMeta(unwrapped, schema)
+			const choices = input.options?.filter(
+				(value): value is string | number =>
+					typeof value === 'string' || (typeof value === 'number' && Number.isFinite(value)),
+			)
+			if (choices?.length !== input.options?.length) {
+				return unsupported(base, 'The picklist contains a non-portable choice')
+			}
 			return {
-				kind: 'picklist',
-				name: ctx.fieldName,
-				path,
-				depth,
-				meta: resolvedMeta,
-				required,
-				options: meta.options,
-				entries: meta.entries,
-				labels: meta.labels,
-				disabled: meta.disabled,
-				placeholder: meta.placeholder,
-				searchable: meta.searchable,
-				clearable: meta.clearable,
-				max: meta.max,
-				create: meta.create,
-				control: meta.control ?? 'select',
-				emptyLabel: meta.emptyLabel,
+				...base,
+				kind,
+				control: 'select',
+				...readFieldMetadata('picklist', readMeta(schema, META_TYPES.PICKLIST), path),
+				...(choices === undefined ? {} : { options: choices }),
 			}
 		}
 		case 'array': {
-			const meta = extractArrayMeta(unwrapped, schema)
-			const itemSchema = (unwrapped as any).item as Schema | undefined
-			const itemNode = itemSchema
-				? extractField(itemSchema, {
-						fieldName: ctx.fieldName ? `${ctx.fieldName}_item` : 'item',
-						path: ctx.path ? `${ctx.path}[]` : 'item',
-						depth: depth + 1,
-					})
-				: null
+			const { options, reason } = readArrayMetadata(readMeta(schema, META_TYPES.ARRAY), path)
+			if (reason) return unsupported(base, reason)
 			return {
-				kind: 'array',
-				name: ctx.fieldName,
-				path,
-				depth,
-				meta: resolvedMeta,
-				required,
-				item: itemNode,
-				layout: meta.layout,
-				columns: meta.columns,
-				disableAutoGrid: meta.disableAutoGrid,
-				min: meta.min,
-				max: meta.max,
-				addable: meta.addable,
-				removable: meta.removable,
-				reorderable: meta.reorderable,
-				itemLabel: meta.itemLabel,
-				addLabel: meta.addLabel,
-				emptyHint: meta.emptyHint,
-				defaultItem: meta.defaultItem,
+				...base,
+				kind,
+				item: input.item
+					? extractField(input.item, {
+							fieldName: base.name ? `${base.name}_item` : 'item',
+							path: path ? `${path}[]` : 'item',
+							depth: depth + 1,
+						})
+					: null,
+				...options,
+				...bounds(validations(), 'min_length', 'max_length', 'length'),
 			}
 		}
 		case 'record': {
-			const meta = extractRecordMeta(unwrapped, schema)
-			const valueSchema = (unwrapped as any).value as Schema | undefined
-			const valueNode = valueSchema
-				? extractField(valueSchema, {
-						fieldName: ctx.fieldName ? `${ctx.fieldName}_value` : 'value',
-						path: ctx.path ? `${ctx.path}.*` : 'value',
-						depth: depth + 1,
-					})
-				: null
-			return {
-				kind: 'record',
-				name: ctx.fieldName,
+			const { value: valueMeta, ...options } = readFieldMetadata(
+				'record',
+				readMeta(schema, META_TYPES.RECORD),
 				path,
-				depth,
-				meta: resolvedMeta,
-				required,
-				value: valueNode,
-				layout: meta.layout,
-				min: meta.min,
-				max: meta.max,
-				addable: meta.addable,
-				removable: meta.removable,
-				reorderable: meta.reorderable,
-				editableKey: meta.editableKey,
-				key: meta.key,
-				valueMeta: meta.value,
-				addLabel: meta.addLabel,
-				emptyHint: meta.emptyHint,
+			)
+			return {
+				...base,
+				kind,
+				value: input.value
+					? extractField(input.value, {
+							fieldName: base.name ? `${base.name}_value` : 'value',
+							path: path ? `${path}.*` : 'value',
+							depth: depth + 1,
+						})
+					: null,
+				...(valueMeta === undefined ? {} : { valueMeta }),
+				...options,
+				...bounds(validations(), 'min_entries', 'max_entries', 'entries'),
 			}
 		}
-		case 'object': {
-			const meta = extractObjectMeta(schema)
-			const entries = collectObjectEntries(unwrapped) ?? []
-			const fields = entries
-				.map((entry) =>
-					extractField(entry.schema, {
-						fieldName: entry.name,
-						path: ctx.path ? `${ctx.path}.${entry.name}` : entry.name,
-						depth: depth + 1,
-					}),
-				)
-				.filter(Boolean) as FieldNode[]
+		case 'object':
+		case 'strict_object':
+		case 'intersect': {
+			const entries = collectObjectEntries(input)
+			if (!entries) return unsupported(base, `Unsupported object schema type: ${input.type}`)
 			return {
+				...base,
 				kind: 'object',
-				name: ctx.fieldName,
-				path,
-				depth,
-				meta: resolvedMeta,
-				required,
-				fields,
-				variant: meta.variant,
-				columns: meta.columns,
-				gap: meta.gap,
-				collapsible: meta.collapsible,
-				collapsed: meta.collapsed,
+				...readFieldMetadata('object', readMeta(schema, META_TYPES.OBJECT), path),
+				fields: entries.map((entry) =>
+					extractObjectEntry(entry, childContext(entry.name, path, depth + 1)),
+				),
 			}
 		}
 		case 'union':
-			return extractUnionNode(unwrapped, schema, { ...ctx, path, depth }, resolvedMeta, required)
+		case 'variant':
+			return extractUnionNode(input, schema, base)
 		default:
-			if (isDevelopmentEnvironment()) {
-				console.warn(DEFAULT_TEXTS.errors.extractionFailed(unwrapped.type))
-			}
-			return {
-				kind: 'unsupported',
-				name: ctx.fieldName,
-				path,
-				depth,
-				meta: { ...resolvedMeta, readOnly: true },
-				required,
-				readOnly: true,
-				reason: `Unsupported schema type: ${unwrapped.type}`,
-			}
+			return unsupported(base, `Unsupported schema type: ${input.type}`)
 	}
 }
 
-export function extractFormFields(schema: Schema): FieldNode[] {
-	const entries = collectObjectEntries(schema) ?? []
-	return entries
-		.map((entry) =>
-			extractField(entry.schema, {
-				fieldName: entry.name,
-				path: entry.name,
-				depth: 0,
-			}),
+export function extractFormFields(schema: Schema): readonly FieldNode[] {
+	const entries = collectObjectEntries(schema)
+	if (!entries) {
+		throw new TypeError(
+			'Form root must be an object, a strict object, or an intersection of those schemas',
 		)
-		.filter(Boolean) as FieldNode[]
+	}
+	return entries.map((entry) => extractObjectEntry(entry, childContext(entry.name, '', 0)))
 }

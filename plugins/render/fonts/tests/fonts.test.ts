@@ -1,17 +1,19 @@
+import type { Workbench } from '@pluxel/workbench'
 import { InMemory, Passthrough, writeFileAtomic } from '@pluxel/core/fs'
-import { BasePlugin, Plugin } from '@pluxel/core'
+import { BasePlugin, Plugin, parsePluginNodeAddress, defineServiceRef } from '@pluxel/core'
 import { createTestHost } from '@pluxel/test'
-import { standardServices } from '@pluxel/services'
+import { elysia } from '@pluxel/services/elysia'
 import * as nativeFs from 'node:fs'
 import { mkdtemp, readFile, rm } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { GlobalFonts } from '@napi-rs/canvas'
 import { afterEach, describe, expect, it } from 'vitest'
-import { FontsError, FontsPlugin, type FontRegistration } from '../src/index.ts'
+import { FontsError, FontsPlugin } from '../src/index.ts'
 import { FontsTestWorkbench, openFontsManager, openFontSelection } from './workbench-helpers.ts'
 import { registerBrandFont } from './fixtures/result-consumer.ts'
 
+const WorkbenchRef = defineServiceRef<Workbench>()
 @Plugin()
 class FontsTestConsumer extends BasePlugin {
 	constructor(readonly fonts: FontsPlugin) {
@@ -19,7 +21,7 @@ class FontsTestConsumer extends BasePlugin {
 	}
 
 	override init(): void {
-		this.ctx.workbench?.publish(FontsTestWorkbench, {
+		this.ctx.service(WorkbenchRef)?.publish(FontsTestWorkbench, {
 			fonts: { provider: this.fonts },
 		})
 	}
@@ -42,11 +44,9 @@ afterEach(async () => {
 
 describe('FontsPlugin', () => {
 	it('demonstrates invalid font data as a Result while cancellation and withdrawal still reject', async () => {
-		await using host = await createTestHost({
-			services: standardServices(),
-		})
-		await host.start([FontsPlugin, FontsLazyConsumer])
-		const fonts = host.require(FontsLazyConsumer).fonts
+		await using host = await createTestHost()
+		await host.start([FontsPlugin.nodeAddress(), FontsLazyConsumer.nodeAddress()])
+		const fonts = host.require(FontsLazyConsumer.nodeAddress()).fonts
 		const input = { data: new Uint8Array([1, 2, 3]) }
 		const invalid = await registerBrandFont(fonts, input)
 		expect(invalid.isErr()).toBe(true)
@@ -56,35 +56,16 @@ describe('FontsPlugin', () => {
 		await expect(
 			registerBrandFont(fonts, { ...input, signal: AbortSignal.abort(aborted) }),
 		).rejects.toBe(aborted)
-		await host.stop(FontsLazyConsumer)
+		await host.stop(FontsLazyConsumer.nodeAddress())
 		await expect(registerBrandFont(fonts, input)).rejects.toThrow(Error)
-	})
-
-	it.skipIf(!fontPath)('keeps successful Result registrations owned by their caller', async () => {
-		await using host = await createTestHost({
-			services: standardServices(),
-		})
-		await host.start([FontsPlugin, FontsLazyConsumer])
-		const result = await registerBrandFont(host.require(FontsLazyConsumer).fonts, {
-			data: await readFile(fontPath!),
-			family: `Result example ${crypto.randomUUID()}`,
-		})
-		expect(result.isOk()).toBe(true)
-		if (result.isErr()) throw result.error
-		expect(result.value.active).toBe(true)
-		await host.stop(FontsLazyConsumer)
-		expect(result.value.active).toBe(false)
-		result.value.dispose()
 	})
 
 	it('classifies fonts discovered from the host system and resolves an automatic default', async () => {
 		{
-			await using host = await createTestHost({
-				services: standardServices(),
-			})
+			await using host = await createTestHost()
 
-			await host.start([FontsPlugin, FontsLazyConsumer])
-			const fonts = host.require(FontsLazyConsumer).fonts
+			await host.start([FontsPlugin.nodeAddress(), FontsLazyConsumer.nodeAddress()])
+			const fonts = host.require(FontsLazyConsumer.nodeAddress()).fonts
 
 			expect(fonts.families.every(({ source }) => source === 'system')).toBe(true)
 			expect(fonts.defaultFont.cssFamily).toBeTruthy()
@@ -93,8 +74,8 @@ describe('FontsPlugin', () => {
 				fonts.defaultFont.source !== 'system' ||
 					fonts.families.some(({ family }) => family === fonts.defaultFont.family),
 			).toBe(true)
-			expect(host.isRunning(FontsPlugin)).toBe(true)
-			expect(fonts.ctx.workbench).toBeUndefined()
+			expect(host.isRunning(FontsPlugin.nodeAddress())).toBe(true)
+			expect(fonts.ctx.service(WorkbenchRef)).toBeUndefined()
 		}
 	})
 
@@ -104,14 +85,14 @@ describe('FontsPlugin', () => {
 			const backend = { mounts: { '/': { backend: InMemory } } }
 			{
 				await using host = await createTestHost({
-					services: standardServices(),
-					runtime: { zenfs: backend },
+					services: [],
+					coreConfig: { zenfs: backend },
 				})
 
-				await host.start(FontsPlugin)
-				await host.start(FontsTestConsumer)
+				await host.start(FontsPlugin.nodeAddress())
+				await host.start(FontsTestConsumer.nodeAddress())
 
-				let fonts = host.require(FontsTestConsumer).fonts
+				let fonts = host.require(FontsTestConsumer.nodeAddress()).fonts
 				const selected = await fonts.setPreferredFamily(discoveredFamily!)
 				expect(selected).toMatchObject({
 					family: discoveredFamily,
@@ -119,18 +100,20 @@ describe('FontsPlugin', () => {
 					source: 'preference',
 				})
 
-				await host.restart(FontsPlugin)
-				fonts = host.require(FontsTestConsumer).fonts
+				await host.restart(FontsPlugin.nodeAddress())
+				fonts = host.require(FontsTestConsumer.nodeAddress()).fonts
 				expect(fonts.defaultFont).toMatchObject({
 					family: discoveredFamily,
 					preferredFamily: discoveredFamily,
 					source: 'preference',
 				})
 
-				const patched = await host.config.patch(FontsPlugin, { set: { defaultFamily: 'serif' } })
+				const patched = await host.config.patch(FontsPlugin.nodeAddress(), {
+					set: { defaultFamily: 'serif' },
+				})
 				expect(patched.ok).toBe(true)
-				await host.restart(FontsPlugin)
-				fonts = host.require(FontsTestConsumer).fonts
+				await host.restart(FontsPlugin.nodeAddress())
+				fonts = host.require(FontsTestConsumer.nodeAddress()).fonts
 				expect(fonts.defaultFont).toMatchObject({
 					family: 'serif',
 					source: 'config',
@@ -151,69 +134,54 @@ describe('FontsPlugin', () => {
 		},
 	)
 
-	it.skipIf(!fontPath)('owns native font registrations with the caller lifecycle', async () => {
-		const family = `Pluxel Lifecycle ${crypto.randomUUID()}`
-		let registration: FontRegistration | undefined
-		{
-			await using host = await createTestHost({
-				services: standardServices(),
-			})
-
-			await host.start([FontsPlugin, FontsLazyConsumer])
-
-			registration = await host.require(FontsLazyConsumer).fonts.registerFromPath({
-				path: fontPath!,
-				family,
-			})
-			const fonts = host.require(FontsLazyConsumer).fonts
-			expect(fonts.portableFonts.fonts[0]?.resolvedFamilies).toContain(family)
-			expect(registration.active).toBe(true)
-			expect(registration.families).toContain(family)
-			expect(GlobalFonts.has(family)).toBe(true)
-			expect(
-				host.require(FontsLazyConsumer).fonts.families.find((item) => item.family === family),
-			).toMatchObject({ source: 'registered' })
-
-			await host.stop(FontsLazyConsumer)
-			expect(registration.active).toBe(false)
-			expect(GlobalFonts.has(family)).toBe(false)
-			registration.dispose()
-		}
-	})
-
-	it.skipIf(!fontPath)('reference-counts duplicate portable resources by content ID', async () => {
-		{
-			await using host = await createTestHost({
-				services: standardServices(),
-			})
-
-			await host.start([FontsPlugin, FontsLazyConsumer])
-			const fonts = host.require(FontsLazyConsumer).fonts
-			const family = `Pluxel Portable ${crypto.randomUUID()}`
-			const first = await fonts.registerFromPath({ path: fontPath!, family })
-			const second = await fonts.registerFromPath({ path: fontPath!, family })
+	it.skipIf(!fontPath)(
+		'shares one portable resource until its last caller registration is released',
+		async () => {
+			await using host = await createTestHost()
+			const [provider, consumer] = await host.start([
+				FontsPlugin.nodeAddress(),
+				FontsLazyConsumer.nodeAddress(),
+			])
+			const { fonts } = consumer
+			const family = `Pluxel Lifecycle ${crypto.randomUUID()}`
+			const fromPath = await fonts.registerFromPath({ path: fontPath!, family })
+			const result = await registerBrandFont(fonts, { data: await readFile(fontPath!), family })
+			expect(result.isOk()).toBe(true)
+			if (result.isErr()) throw result.error
+			const fromBytes = result.value
 
 			const attached = fonts.portableFonts
-			expect(attached.fonts).toHaveLength(1)
-			first.dispose()
+			expect(attached.fonts).toEqual([
+				expect.objectContaining({ resolvedFamilies: expect.arrayContaining([family]) }),
+			])
+			expect(fromPath.families).toContain(family)
+			expect(fromPath.active).toBe(true)
+			expect(fromBytes.active).toBe(true)
+			expect(GlobalFonts.has(family)).toBe(true)
+			expect(fonts.families.find((item) => item.family === family)).toMatchObject({
+				source: 'registered',
+			})
+
+			fromPath.dispose()
 			expect(fonts.portableFonts).toBe(attached)
-			second.dispose()
-			expect(fonts.portableFonts.fonts).toEqual([])
-			expect(fonts.portableFonts.revision).toBeGreaterThan(attached.revision)
-		}
-	})
+			await host.stop(FontsLazyConsumer.nodeAddress())
+			expect(fromBytes.active).toBe(false)
+			expect(GlobalFonts.has(family)).toBe(false)
+			expect(provider.portableFonts.fonts).toEqual([])
+			expect(provider.portableFonts.revision).toBeGreaterThan(attached.revision)
+			fromBytes.dispose()
+		},
+	)
 
 	it.skipIf(!fontPath)('bounds native registrations across managed and caller fonts', async () => {
 		{
-			await using host = await createTestHost({
-				services: standardServices(),
-			})
+			await using host = await createTestHost()
 
-			await host.start(FontsPlugin, {
+			await host.start(FontsPlugin.nodeAddress(), {
 				initialConfig: { maxNativeRegistrations: 1 },
 			})
-			await host.start(FontsLazyConsumer)
-			const fonts = host.require(FontsLazyConsumer).fonts
+			await host.start(FontsLazyConsumer.nodeAddress())
+			const fonts = host.require(FontsLazyConsumer.nodeAddress()).fonts
 			const first = await fonts.registerFromPath({
 				path: fontPath!,
 				family: `Pluxel Native Limit ${crypto.randomUUID()}`,
@@ -240,15 +208,13 @@ describe('FontsPlugin', () => {
 			const fontData = await readFile(fontPath!)
 			const byteLength = fontData.byteLength
 			{
-				await using host = await createTestHost({
-					services: standardServices(),
-				})
+				await using host = await createTestHost()
 
-				await host.start(FontsPlugin, {
+				await host.start(FontsPlugin.nodeAddress(), {
 					initialConfig: { maxTotalFontBytes: byteLength },
 				})
-				await host.start(FontsLazyConsumer)
-				const fonts = host.require(FontsLazyConsumer).fonts
+				await host.start(FontsLazyConsumer.nodeAddress())
+				const fonts = host.require(FontsLazyConsumer.nodeAddress()).fonts
 				const first = await fonts.registerFromPath({
 					path: fontPath!,
 					family: `Pluxel Byte Limit ${crypto.randomUUID()}`,
@@ -286,11 +252,11 @@ describe('FontsPlugin', () => {
 			{
 				await using host = await createTestHost({
 					workbench: true,
-					services: standardServices(),
-					runtime: { zenfs: backend },
+					services: [elysia()],
+					coreConfig: { zenfs: backend },
 				})
 
-				await host.start([FontsPlugin, FontsTestConsumer])
+				await host.start([FontsPlugin.nodeAddress(), FontsTestConsumer.nodeAddress()])
 
 				using manager = await openFontsManager(host)
 				const installed = await Promise.all([
@@ -303,10 +269,10 @@ describe('FontsPlugin', () => {
 				expect(GlobalFonts.has(family)).toBe(true)
 				id = first.managedFonts[0]!.id
 
-				await host.stop(FontsTestConsumer)
+				await host.stop(FontsTestConsumer.nodeAddress())
 				expect(GlobalFonts.has(family)).toBe(true)
 
-				await host.start(FontsTestConsumer)
+				await host.start(FontsTestConsumer.nodeAddress())
 				using restoredManager = await openFontsManager(host)
 				const restored = await restoredManager.api.snapshotDto()
 				expect(restored.managedFonts).toEqual([
@@ -314,7 +280,7 @@ describe('FontsPlugin', () => {
 				])
 				expect(GlobalFonts.has(family)).toBe(true)
 
-				await host.restart(FontsPlugin)
+				await host.restart(FontsPlugin.nodeAddress())
 				using reloadedManager = await openFontsManager(host)
 				const reloaded = await reloadedManager.api.snapshotDto()
 				expect(reloaded.managedFonts).toEqual([
@@ -326,10 +292,10 @@ describe('FontsPlugin', () => {
 			{
 				await using host = await createTestHost({
 					workbench: true,
-					services: standardServices(),
-					runtime: { zenfs: backend },
+					services: [elysia()],
+					coreConfig: { zenfs: backend },
 				})
-				await host.start([FontsPlugin, FontsTestConsumer])
+				await host.start([FontsPlugin.nodeAddress(), FontsTestConsumer.nodeAddress()])
 				using reopenedManager = await openFontsManager(host)
 				const reopened = await reopenedManager.api.snapshotDto()
 				expect(reopened.managedFonts).toEqual([
@@ -346,13 +312,11 @@ describe('FontsPlugin', () => {
 
 	it('rejects invalid bytes and enforces the configured byte budget', async () => {
 		{
-			await using host = await createTestHost({
-				services: standardServices(),
-			})
+			await using host = await createTestHost()
 
-			await host.start(FontsPlugin, { initialConfig: { maxFontBytes: 4 } })
-			await host.start(FontsLazyConsumer)
-			const fonts = host.require(FontsLazyConsumer).fonts
+			await host.start(FontsPlugin.nodeAddress(), { initialConfig: { maxFontBytes: 4 } })
+			await host.start(FontsLazyConsumer.nodeAddress())
+			const fonts = host.require(FontsLazyConsumer.nodeAddress()).fonts
 
 			await expect(fonts.register({ data: new Uint8Array([1, 2, 3]) })).rejects.toMatchObject({
 				code: 'INVALID_FONT',
@@ -365,13 +329,11 @@ describe('FontsPlugin', () => {
 
 	it('cooperatively snapshots registration bytes and observes cancellation', async () => {
 		{
-			await using host = await createTestHost({
-				services: standardServices(),
-			})
+			await using host = await createTestHost()
 
-			await host.start([FontsPlugin, FontsLazyConsumer])
+			await host.start([FontsPlugin.nodeAddress(), FontsLazyConsumer.nodeAddress()])
 			const controller = new AbortController()
-			const registration = host.require(FontsLazyConsumer).fonts.register({
+			const registration = host.require(FontsLazyConsumer.nodeAddress()).fonts.register({
 				data: new Uint8Array(2 * 1024 * 1024),
 				signal: controller.signal,
 			})
@@ -384,16 +346,16 @@ describe('FontsPlugin', () => {
 		{
 			await using host = await createTestHost({
 				workbench: true,
-				services: standardServices(),
+				services: [elysia()],
 			})
 
-			await host.start(FontsPlugin, {
+			await host.start(FontsPlugin.nodeAddress(), {
 				initialConfig: {
 					maxFontBytes: 2 * 1024 * 1024,
 					maxPendingManagedTasks: 1,
 				},
 			})
-			await host.start(FontsTestConsumer)
+			await host.start(FontsTestConsumer.nodeAddress())
 			using manager = await openFontsManager(host)
 			const active = manager.api.install({
 				fileName: 'invalid.ttf',
@@ -407,12 +369,10 @@ describe('FontsPlugin', () => {
 
 	it('does not commit an async registration after its caller generation stops', async () => {
 		{
-			await using host = await createTestHost({
-				services: standardServices(),
-			})
+			await using host = await createTestHost()
 
-			await host.start([FontsPlugin, FontsLazyConsumer])
-			const registration = host.require(FontsLazyConsumer).fonts.register({
+			await host.start([FontsPlugin.nodeAddress(), FontsLazyConsumer.nodeAddress()])
+			const registration = host.require(FontsLazyConsumer.nodeAddress()).fonts.register({
 				data: new Uint8Array(2 * 1024 * 1024),
 			})
 			const result = registration.then(
@@ -420,7 +380,7 @@ describe('FontsPlugin', () => {
 				(error: unknown) => Object.freeze({ status: 'rejected' as const, error }),
 			)
 
-			await host.stop(FontsLazyConsumer)
+			await host.stop(FontsLazyConsumer.nodeAddress())
 			await expect(result).resolves.toMatchObject({
 				status: 'rejected',
 				error: { code: 'NOT_RUNNING' },
@@ -430,13 +390,11 @@ describe('FontsPlugin', () => {
 
 	it.skipIf(!fontPath)('rejects oversized font files before reading their contents', async () => {
 		{
-			await using host = await createTestHost({
-				services: standardServices(),
-			})
+			await using host = await createTestHost()
 
-			await host.start(FontsPlugin, { initialConfig: { maxFontBytes: 4 } })
-			await host.start(FontsLazyConsumer)
-			const fonts = host.require(FontsLazyConsumer).fonts
+			await host.start(FontsPlugin.nodeAddress(), { initialConfig: { maxFontBytes: 4 } })
+			await host.start(FontsLazyConsumer.nodeAddress())
+			const fonts = host.require(FontsLazyConsumer.nodeAddress()).fonts
 
 			await expect(fonts.registerFromPath({ path: fontPath! })).rejects.toMatchObject({
 				code: 'FONT_TOO_LARGE',
@@ -449,46 +407,42 @@ describe('FontsPlugin', () => {
 			[`managed/${'a'.repeat(43)}.font`, new Uint8Array([1, 2, 3]), 'Managed font is corrupt'],
 		] as const) {
 			{
-				await using host = await createTestHost({
-					services: standardServices(),
-				})
-				await host.start(FontsPlugin)
-				const storage = await host.require(FontsPlugin).ctx.fs!()
-				await host.stop(FontsPlugin)
+				await using host = await createTestHost()
+				await host.start(FontsPlugin.nodeAddress())
+				const storage = await host.require(FontsPlugin.nodeAddress()).ctx.fs()
+				await host.stop(FontsPlugin.nodeAddress())
 				await writeFileAtomic(storage, key, value)
 
 				const failure = await host.commitExpectFail((change) => {
 					change.catalog.add([FontsPlugin, FontsLazyConsumer])
-					change.start(FontsPlugin)
-					change.start(FontsLazyConsumer)
+					change.start(FontsPlugin.nodeAddress())
+					change.start(FontsLazyConsumer.nodeAddress())
 				})
 				expect(failure.lifecycleReport.issues).toContainEqual(
 					expect.objectContaining({
-						plugin: FontsPlugin.nodeAddress(),
+						plugin: parsePluginNodeAddress(FontsPlugin.nodeAddress()),
 						kind: 'start-failed',
 						message: expect.stringContaining(message),
 					}),
 				)
-				expect(host.isRunning(FontsPlugin)).toBe(false)
-				expect(host.isRunning(FontsLazyConsumer)).toBe(false)
+				expect(host.isRunning(FontsPlugin.nodeAddress())).toBe(false)
+				expect(host.isRunning(FontsLazyConsumer.nodeAddress())).toBe(false)
 			}
 		}
 	})
 
 	it('rejects malformed restored default preferences without rewriting them', async () => {
-		await using host = await createTestHost({
-			services: standardServices(),
-		})
-		await host.start(FontsPlugin)
-		const state = host.require(FontsPlugin).ctx.tinybase
+		await using host = await createTestHost()
+		await host.start(FontsPlugin.nodeAddress())
+		const state = host.require(FontsPlugin.nodeAddress()).ctx.tinybase
 		const store = await state.open()
 		store.setValue('defaultFamily', true)
 		await state.flush()
-		await host.stop(FontsPlugin)
-		const failure = await host.commitExpectFail((change) => change.start(FontsPlugin))
+		await host.stop(FontsPlugin.nodeAddress())
+		const failure = await host.commitExpectFail((change) => change.start(FontsPlugin.nodeAddress()))
 		expect(failure.lifecycleReport.issues).toContainEqual(
 			expect.objectContaining({
-				plugin: FontsPlugin.nodeAddress(),
+				plugin: parsePluginNodeAddress(FontsPlugin.nodeAddress()),
 				kind: 'start-failed',
 				message: expect.stringContaining('Default font preference is corrupt'),
 			}),
@@ -497,20 +451,18 @@ describe('FontsPlugin', () => {
 	})
 
 	it('stores the default in the provider Store and persists reset across generations', async () => {
-		await using host = await createTestHost({
-			services: standardServices(),
-		})
-		await host.start(FontsPlugin)
-		let fonts = host.require(FontsPlugin)
+		await using host = await createTestHost()
+		await host.start(FontsPlugin.nodeAddress())
+		let fonts = host.require(FontsPlugin.nodeAddress())
 		await fonts.setPreferredFamily('monospace')
 		const store = await fonts.ctx.tinybase.open()
 		expect(store.getValue('defaultFamily')).toBe('monospace')
-		await host.restart(FontsPlugin)
-		fonts = host.require(FontsPlugin)
+		await host.restart(FontsPlugin.nodeAddress())
+		fonts = host.require(FontsPlugin.nodeAddress())
 		expect(fonts.defaultFont).toMatchObject({ preferredFamily: 'monospace', source: 'preference' })
 		await fonts.setPreferredFamily(null)
-		await host.restart(FontsPlugin)
-		fonts = host.require(FontsPlugin)
+		await host.restart(FontsPlugin.nodeAddress())
+		fonts = host.require(FontsPlugin.nodeAddress())
 		expect(fonts.defaultFont.preferredFamily).toBeUndefined()
 		const restored = await fonts.ctx.tinybase.open()
 		expect(restored.hasValue('defaultFamily')).toBe(false)
@@ -539,14 +491,14 @@ describe('FontsPlugin', () => {
 		}
 		const host = await createTestHost({
 			services: [],
-			runtime: {
+			coreConfig: {
 				zenfs: {
 					mounts: { '/': { backend: Passthrough, fs: native, prefix } },
 					durableMounts: ['/'],
 				},
 			},
 		})
-		const fonts = await host.start(FontsPlugin)
+		const fonts = await host.start(FontsPlugin.nodeAddress())
 		await fonts.setPreferredFamily('serif')
 		const store = await fonts.ctx.tinybase.open()
 		fail = true
@@ -564,13 +516,13 @@ describe('FontsPlugin', () => {
 		{
 			await using host = await createTestHost({
 				workbench: true,
-				services: standardServices(),
+				services: [elysia()],
 			})
 
-			await host.start([FontsPlugin, FontsTestConsumer])
+			await host.start([FontsPlugin.nodeAddress(), FontsTestConsumer.nodeAddress()])
 
-			using selection = await openFontSelection(host, FontsTestConsumer)
-			using secondSelection = await openFontSelection(host, FontsTestConsumer)
+			using selection = await openFontSelection(host, FontsTestConsumer.nodeAddress())
+			using secondSelection = await openFontSelection(host, FontsTestConsumer.nodeAddress())
 			expect(secondSelection.provider).not.toBe(selection.provider)
 			expect(selection).toMatchObject({
 				kind: 'attachment',

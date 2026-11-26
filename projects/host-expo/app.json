@@ -1,0 +1,11 @@
+{
+	"expo": {
+		"name": "Pluxel Host",
+		"slug": "pluxel-host",
+		"version": "1.0.0",
+		"platforms": ["android", "ios"],
+		"android": {
+			"package": "org.pluxel.hostexpo"
+		}
+	}
+}

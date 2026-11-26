@@ -1,5 +1,10 @@
 import type { JSONContent } from '@tiptap/core'
-import type { DocumentFailure, DocumentRequest, DocumentView } from './document-contract'
+import type {
+	DocumentFailure,
+	DocumentRequest,
+	DocumentSource,
+	DocumentView,
+} from './document-contract'
 
 export interface DocumentClientState {
 	view?: DocumentView
@@ -11,7 +16,7 @@ export interface DocumentClientState {
 
 class RequestFailure extends Error {}
 
-/** A business host's serialized save lane. It never owns or receives source files. */
+/** The editor submits either view through the same sequential document requests. */
 export class DocumentClient {
 	private readonly lease = crypto.randomUUID()
 	private readonly documentId: string
@@ -47,7 +52,9 @@ export class DocumentClient {
 		return Object.fromEntries([...this.pending].map(([id, draft]) => [id, draft.document]))
 	}
 
-	private async request(request: DocumentRequest): Promise<DocumentView | Blob | undefined> {
+	private async request(
+		request: DocumentRequest,
+	): Promise<DocumentView | DocumentSource | Blob | undefined> {
 		const response = await fetch('/document-api/session', {
 			method: 'POST',
 			headers: { 'Content-Type': 'application/json', 'X-Document-Client': this.lease },
@@ -55,11 +62,14 @@ export class DocumentClient {
 		})
 		if (!response.ok) {
 			const failure = (await response.json()) as DocumentFailure
+			const range = failure.issues?.find((issue) => 'from' in issue)
+			if (range && 'from' in range)
+				throw new RequestFailure(`${range.message}（字节 ${range.from}–${range.to}）`)
 			throw new RequestFailure(failure.message)
 		}
 		if (response.status === 204) return
 		if (request.action === 'pdf') return response.blob()
-		return response.json() as Promise<DocumentView>
+		return response.json() as Promise<DocumentView | DocumentSource>
 	}
 
 	private run<T>(task: () => Promise<T>): Promise<T> {
@@ -88,8 +98,8 @@ export class DocumentClient {
 		this.update({ view, drafts: this.drafts(), message: '', error: false })
 	}
 
-	private requireConfirmedInput() {
-		const pending = [...document.querySelectorAll('.document-chapter')].some(
+	private hasUnappliedInput() {
+		return [...document.querySelectorAll('.document-chapter')].some(
 			(panel) =>
 				panel.querySelector('[data-typst-unapplied]') ||
 				[...panel.querySelectorAll('[aria-controls]')].some((anchor) =>
@@ -98,7 +108,10 @@ export class DocumentClient {
 						?.querySelector('[data-typst-unapplied]'),
 				),
 		)
-		if (pending) throw new RequestFailure('有尚未确认的输入，请先应用或取消。')
+	}
+
+	private requireConfirmedInput() {
+		if (this.hasUnappliedInput()) throw new RequestFailure('有尚未确认的输入，请先应用或取消。')
 	}
 
 	discardDrafts() {
@@ -112,6 +125,32 @@ export class DocumentClient {
 		return this.run(async () => {
 			this.accept(
 				(await this.request({ action: 'open', documentId: this.documentId })) as DocumentView,
+			)
+		})
+	}
+
+	readSource(chapterId: string) {
+		return this.run(async () => {
+			this.requireConfirmedInput()
+			await this.flush()
+			return (await this.request({
+				action: 'source',
+				chapterId,
+				baseRevision: this.state.view!.revision,
+			})) as DocumentSource
+		})
+	}
+
+	applySource(chapterId: string, draft: DocumentSource) {
+		return this.run(async () => {
+			await this.flush()
+			this.accept(
+				(await this.request({
+					action: 'edit',
+					chapterId,
+					baseRevision: draft.revision,
+					content: { kind: 'typst', source: draft.source },
+				})) as DocumentView,
 			)
 		})
 	}
@@ -133,7 +172,7 @@ export class DocumentClient {
 				action: 'edit',
 				baseRevision: this.state.view!.revision,
 				chapterId,
-				document: draft.document,
+				content: { kind: 'tiptap', document: draft.document },
 			})) as DocumentView
 			if (this.pending.get(chapterId)?.version === draft.version) this.pending.delete(chapterId)
 			this.accept(view)
@@ -186,7 +225,7 @@ export class DocumentClient {
 	}
 
 	get unsaved() {
-		return this.pending.size > 0 || Boolean(this.state.view?.dirty)
+		return this.pending.size > 0 || Boolean(this.state.view?.dirty) || this.hasUnappliedInput()
 	}
 
 	close = () => {

@@ -16,5 +16,4 @@
 
 - [ ] I added or updated tests for behavior changes.
 - [ ] I updated `docs/` for user-facing behavior and relevant `engineering/` docs for architectural changes.
-- [ ] I added a pending `.tegami/*.md` changelog with explicit package bump types for user-visible changes to public packages, or this change does not require one.
 - [ ] I ran the relevant checks, including `vp run verify` when practical.

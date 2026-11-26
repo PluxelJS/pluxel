@@ -11,6 +11,7 @@ import { usePluginDetailSearch } from './pluginDetailSearchState'
 import { useDocumentWorkspace, useOptionalWorkbenchDocument } from '../../workbench/document'
 import { useOptionalWorkspaceSession } from '../../workbench/workspaceContext'
 import { usePluginDetail } from './usePluginDetail'
+import { PLUGIN_OUTBOUND_HTTP_PATH } from '../../outbound-http/paths'
 
 function PluginSkeleton() {
 	return (
@@ -30,7 +31,8 @@ export const PluginScreen = memo(function PluginScreen({ pluginRoute }: PluginSc
 	const pathname = useCurrentPathname()
 	const search = usePluginDetailSearch()
 	const restPath = parsePluginDetailHref(pathname)?.path ?? ''
-	useDocumentWorkspace(search.entry || (restPath && restPath !== '/config') ? 'apps' : 'plugins')
+	const isConfig = !restPath || restPath === '/config' || restPath === PLUGIN_OUTBOUND_HTTP_PATH
+	useDocumentWorkspace(search.entry || !isConfig ? 'apps' : 'plugins')
 	const {
 		detail,
 		ready,
@@ -47,12 +49,14 @@ export const PluginScreen = memo(function PluginScreen({ pluginRoute }: PluginSc
 	const document = useOptionalWorkbenchDocument()
 	const session = useOptionalWorkspaceSession()
 	const titleSync =
-		document && session && detail && !search.entry && (!restPath || restPath === '/config') ? (
+		document && session && detail && !search.entry && isConfig ? (
 			<PluginDocumentTitle session={session} pluginRoute={pluginRoute} pluginLabel={pluginLabel} />
 		) : null
 
 	const owner = detail?.address
-	const configState = usePluginConfig(ready ? owner : undefined)
+	const configState = usePluginConfig(
+		ready && restPath !== PLUGIN_OUTBOUND_HTTP_PATH ? owner : undefined,
+	)
 
 	const handleRefetch = useCallback(async () => {
 		await refetch()

@@ -6,6 +6,7 @@ import { join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { promisify } from 'node:util'
 import { it, onTestFinished } from 'vitest'
+import repositoryManifest from '../package.json' with { type: 'json' }
 
 const exec = promisify(execFile)
 const vp = fileURLToPath(new URL('../node_modules/vite-plus/bin/vp', import.meta.url))
@@ -21,7 +22,11 @@ async function fixture(tasks, build) {
 	)
 	await writeFile(
 		join(root, 'package.json'),
-		JSON.stringify({ name: 'cache-fixture', type: 'module' }),
+		JSON.stringify({
+			name: 'cache-fixture',
+			type: 'module',
+			packageManager: repositoryManifest.packageManager,
+		}),
 	)
 	await writeFile(join(root, 'pnpm-workspace.yaml'), 'packages: []\n')
 	await writeFile(
@@ -33,11 +38,21 @@ export default { run: { tasks: repositoryTasks(${JSON.stringify(tasks)}) } };`,
 	return {
 		root,
 		async run(task = 'compile') {
-			const { stdout } = await exec(process.execPath, [vp, 'run', '-v', task], {
-				cwd: root,
-				timeout: 30_000,
-			})
-			return stdout
+			const started = performance.now()
+			try {
+				const { stdout } = await exec(process.execPath, [vp, 'run', '-v', task], {
+					cwd: root,
+					timeout: 30_000,
+				})
+				return stdout
+			} catch (error) {
+				throw new Error(
+					`Task fixture ${task} in ${root} failed after ${Math.round(performance.now() - started)}ms ` +
+						`(code=${error.code}, signal=${error.signal}, killed=${error.killed}).\n` +
+						`stdout:\n${error.stdout ?? ''}\nstderr:\n${error.stderr ?? ''}`,
+					{ cause: error },
+				)
+			}
 		},
 	}
 }

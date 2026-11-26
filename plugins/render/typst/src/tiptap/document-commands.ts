@@ -2,7 +2,6 @@
 import '@tiptap/starter-kit'
 import '@tiptap/extension-table'
 import '@tiptap/extension-image'
-import '@tiptap/extension-mathematics'
 import '@tiptap/extension-text-style'
 import '@tiptap/extension-text-align'
 import type { JSONContent } from '@tiptap/core'

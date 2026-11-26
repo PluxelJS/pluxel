@@ -5,7 +5,7 @@
 在直接导入它的包目录安装（catalog 工作区见下方指南）：
 
 ```sh
-pnpm add @pluxel/plugin-takumi
+vp add @pluxel/plugin-takumi
 ```
 
 宿主 catalog 包含 TakumiPlugin；业务插件通过 constructor 注入。`render`、`renderSvg`、`renderAnimation` 保留上游参数、返回值和错误。

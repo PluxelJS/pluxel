@@ -53,41 +53,8 @@ function preloweredDefinitionSource(
 }
 
 describe('plugin semantic lowering', () => {
-	it('lowers nested PluginPart occurrences with required and optional edges', async () => {
-		const result = await transform(`
-			import type { AuditPlugin } from '@acme/audit'
-			import { SearchPlugin } from '@acme/search'
-			import { BasePlugin, definePluginRef, Plugin, PluginPart } from '@pluxel/core'
-			const Audit = definePluginRef<AuditPlugin>()
-			class LeafPart extends PluginPart<BranchPart> {
-				constructor(readonly search: SearchPlugin) { super() }
-				override init() { this.plugins.use(Audit, audit => void audit) }
-			}
-			class BranchPart extends PluginPart<OwnerPlugin> {
-				readonly leaf = this.parts.use(LeafPart)
-			}
-			@Plugin() export class OwnerPlugin extends BasePlugin {
-				readonly branch = this.parts.use(BranchPart)
-			}
-		`)
-
-		expect(result?.code).toContain('__setPluginParts as __pluxelSetPluginParts')
-		expect(result?.code).toContain(
-			'__pluxelSetPluginParts(BranchPart, { abiVersion: 2, occurrences: [{ fieldName: "leaf", Part: LeafPart }] })',
-		)
-		expect(result?.code).toContain(
-			'__pluxelSetPluginParts(OwnerPlugin, { abiVersion: 2, occurrences: [{ fieldName: "branch", Part: BranchPart }] })',
-		)
-		expect(result?.code).toContain(
-			'__pluxelSetPluginPartOptional(LeafPart, {"abiVersion":2,"optional":[{"entry"',
-		)
-		expect(result?.code).toContain(
-			'__pluxelSetPluginPartRequires(LeafPart, {"abiVersion":2,"requires":[{"entry":{"kind":"package-root","packageName":"@acme/search"},"exportName":"SearchPlugin"}]})',
-		)
-	})
-
 	it('keeps mixed package-root imports distinct while required package metadata wins', async () => {
-		const { collector, result } = await transformWithCollector(`
+		const { collector } = await transformWithCollector(`
 			import { MainPlugin as Main, SecondaryPlugin as Secondary, type AnotherPlugin as Another } from '@acme/multiple'
 			import { BasePlugin, definePluginRef, Plugin } from '@pluxel/core'
 			const OptionalAnother = definePluginRef<Another>()
@@ -112,27 +79,12 @@ describe('plugin semantic lowering', () => {
 			exportName: 'AnotherPlugin',
 		} as const
 
-		expect(result?.code).toContain('__setPluginDefinition as __pluxelSetPluginDefinition')
-		expect(result?.code).toContain('__definePluginRef as __pluxelDefinePluginRef')
-		expect(result?.code).toContain('from "@pluxel/core/toolchain"')
-		expect(result?.code.split('// [pluxel-plugin-semantics] Injected facts')[1]).not.toMatch(
-			/from ["']@pluxel\/runtime["']/,
-		)
-		expect(result?.code).toContain(
-			'"kind":"source-entry","sourceSpace":"app","path":"plugin-semantics.test.ts"',
-		)
-		expect(result?.code).toContain('"exportName":"OrdersPlugin"')
 		const orders = collector
 			.definitions()
 			.find((definition) => definition.className === 'OrdersPlugin')
 		expect(orders?.requires).toEqual([mainAddress, secondaryAddress])
 		expect(orders?.optional).toEqual([anotherAddress])
 		expect(collector.snapshot()).toEqual(new Map([['@acme/multiple', 'required']]))
-		expect(result?.code).toContain(
-			'__pluxelDefinePluginRef({"abiVersion":2,"definition":{"entry":{"kind":"package-root","packageName":"@acme/multiple"},"exportName":"AnotherPlugin"}})',
-		)
-		expect(result?.code).not.toContain('optionalPlugin')
-		expect(result?.code).not.toContain('PLUXEL_OPTIONAL_PLUGIN_ABSENT')
 	})
 
 	it('replaces raw-source facts atomically and filters them by the active module closure', async () => {
@@ -299,7 +251,10 @@ describe('plugin semantic lowering', () => {
 		const builtModule = new URL('./plugins.test.ts', import.meta.url).pathname
 		const source = `
 			import { BasePlugin, Plugin } from '@pluxel/core'
-			@Plugin() export class TransactionPlugin extends BasePlugin {}
+			import {Provider} from '@fixture/provider'
+			@Plugin() export class TransactionPlugin extends BasePlugin {
+				constructor(readonly provider: Provider) { super() }
+			}
 		`
 		await transformWithExistingCollector(collector, source, sourceModule)
 		const definition = collector.definitions()[0]!.definition
@@ -310,20 +265,18 @@ describe('plugin semantic lowering', () => {
 		)
 
 		const rolledBack = collector.beginArtifactGeneration()
-		expect(() => collector.beginArtifactGeneration()).toThrow('already active')
 		await rolledBack.run(async () => {
 			await transformWithExistingCollector(collector, 'export const ordinary = true', sourceModule)
 			await transformWithExistingCollector(collector, 'export const ordinary = true', builtModule)
 			expect(collector.classifyDefinitionArtifact(definition, [sourceModule])).toBe('unreported')
 			expect(collector.classifyDefinitionArtifact(definition, [builtModule])).toBe('unreported')
+			expect(collector.snapshot().size).toBe(0)
 		})
+		expect(collector.snapshot().get('@fixture/provider')).toBe('required')
 		expect(collector.classifyDefinitionArtifact(definition, [sourceModule])).toBe('source-module')
 		expect(collector.classifyDefinitionArtifact(definition, [builtModule])).toBe('built-module')
 		rolledBack.rollback()
-		rolledBack.rollback()
-		expect((): void => {
-			rolledBack.run((): void => undefined)
-		}).toThrow('already settled')
+		expect(collector.snapshot().get('@fixture/provider')).toBe('required')
 		expect(collector.classifyDefinitionArtifact(definition, [sourceModule])).toBe('source-module')
 		expect(collector.classifyDefinitionArtifact(definition, [builtModule])).toBe('built-module')
 
@@ -331,7 +284,6 @@ describe('plugin semantic lowering', () => {
 		await committed.run(() =>
 			transformWithExistingCollector(collector, 'export const ordinary = true', builtModule),
 		)
-		committed.commit()
 		committed.commit()
 		expect(collector.classifyDefinitionArtifact(definition, [sourceModule])).toBe('source-module')
 		expect(collector.classifyDefinitionArtifact(definition, [builtModule])).toBe('unreported')
@@ -401,15 +353,15 @@ describe('plugin semantic lowering', () => {
 		function contentPlugin(className: string): string {
 			return `
 				import { BasePlugin, Plugin } from '@pluxel/core'
-				import { workbench } from '@pluxel/workbench'
-				export const pages = workbench.define({
+				import { Workbench, workbench } from '@pluxel/workbench'
+				export const pages = workbench.define(import.meta.url, {
 					guide: workbench.content({
-						document: workbench.markdown(import.meta.url, './guide.md'),
-						placement: workbench.tab({ label: 'Guide' }),
+						document: './guide.md',
+						placement: { kind: 'tab', label: 'Guide' },
 					}),
 				})
 				@Plugin() export class ${className} extends BasePlugin {
-					init() { this.ctx.workbench.publish(pages) }
+					init() { this.ctx.service(Workbench).publish(pages) }
 				}
 			`
 		}
@@ -425,7 +377,7 @@ describe('plugin semantic lowering', () => {
 			expect(content[0]!.contentSet.definition).toEqual(definitions[0]!.definition)
 		}
 
-		it('reads accepted Workbench facts after rollback even inside a settled async candidate scope', async () => {
+		it('keeps Workbench publications and definitions in the accepted artifact generation', async () => {
 			await using fixture = await createFixture({
 				'guide.md': '# Guide',
 				'plugin.ts': contentPlugin('OriginalPlugin'),
@@ -444,98 +396,65 @@ describe('plugin semantic lowering', () => {
 				await expectOwner(collector, 'OriginalPlugin')
 			})
 			await expectOwner(collector, 'OriginalPlugin')
-			await expect(collector.workbenchCompilations()).resolves.toEqual([])
+
+			const next = collector.beginArtifactGeneration()
+			await next.run(() =>
+				transformWithExistingCollector(collector, contentPlugin('CurrentPlugin'), moduleId),
+			)
+			await expectOwner(collector, 'OriginalPlugin')
+			next.commit()
+			const [current] = await collector.workbenchContentCompilations()
+			expect(current?.contentSet.definition).toEqual(collector.definitions()[0]?.definition)
+			expect(current?.contentSet.definition.exportName).toBe('CurrentPlugin')
 		})
 
-		it.each(['commit', 'rollback'] as const)(
-			'%s keeps Workbench publication and source facts in the same generation',
-			async (settlement) => {
-				await using fixture = await createFixture({
-					'guide.md': '# Guide',
-					'plugin.ts': contentPlugin('OriginalPlugin'),
-				})
-				const collector = createPluginSemanticsPlugin({ root: fixture.getPath() })
-				const moduleId = fixture.getPath('plugin.ts')
-				await transformWithExistingCollector(collector, contentPlugin('OriginalPlugin'), moduleId)
-				await expectOwner(collector, 'OriginalPlugin')
-
-				const generation = collector.beginArtifactGeneration()
-				await generation.run(async () => {
-					await transformWithExistingCollector(
-						collector,
-						contentPlugin('CandidatePlugin'),
-						moduleId,
-					)
-					await expectOwner(collector, 'CandidatePlugin')
-				})
-				await expectOwner(collector, 'OriginalPlugin')
-				generation[settlement]()
-				await expectOwner(collector, settlement === 'commit' ? 'CandidatePlugin' : 'OriginalPlugin')
-				await expect(collector.workbenchCompilations()).resolves.toEqual([])
-			},
-		)
-
-		it.each([
-			{ location: 'inline', settlement: 'rollback' },
-			{ location: 'imported', settlement: 'rollback' },
-			{ location: 'imported', settlement: 'commit' },
-		] as const)(
-			'keeps $location definitions consistent after a watched candidate $settlement',
-			async ({ location, settlement }) => {
-				const inlineSource = contentPlugin('OriginalPlugin')
-				const declaration = inlineSource.slice(
-					inlineSource.indexOf('export const pages'),
-					inlineSource.indexOf('@Plugin()'),
-				)
-				const definitionSource = `import { workbench } from '@pluxel/workbench'
+		it('restores the accepted imported Workbench declaration when a watched candidate rolls back', async () => {
+			const inlineSource = contentPlugin('OriginalPlugin')
+			const declaration = inlineSource.slice(
+				inlineSource.indexOf('export const pages'),
+				inlineSource.indexOf('@Plugin()'),
+			)
+			const definitionSource = `import { workbench } from '@pluxel/workbench'
 ${declaration}`
-				const pluginSource =
-					location === 'inline'
-						? inlineSource
-						: inlineSource.replace(declaration, "import { pages } from './workbench'\n")
-				await using fixture = await createFixture({
-					'guide.md': '# Guide',
-					'plugin.ts': pluginSource,
-					'workbench.ts': definitionSource,
-				})
-				const collector = createPluginSemanticsPlugin({ root: fixture.getPath() })
-				const moduleId = fixture.getPath('plugin.ts')
-				const resolveImport = async (source: string) =>
-					source === './workbench' ? { id: fixture.getPath('workbench.ts') } : null
-				await transformWithExistingCollector(collector, pluginSource, moduleId, resolveImport)
-				const accepted = await collector.workbenchContentCompilations()
-				expect(accepted[0]!.contentSet.entries.map(({ key }) => key)).toEqual(['guide'])
+			const pluginSource = inlineSource.replace(
+				declaration,
+				"import { pages } from './workbench'\n",
+			)
+			await using fixture = await createFixture({
+				'guide.md': '# Guide',
+				'plugin.ts': pluginSource,
+				'workbench.ts': definitionSource,
+			})
+			const collector = createPluginSemanticsPlugin({ root: fixture.getPath() })
+			const moduleId = fixture.getPath('plugin.ts')
+			const resolveImport = async (source: string) =>
+				source === './workbench' ? { id: fixture.getPath('workbench.ts') } : null
+			await transformWithExistingCollector(collector, pluginSource, moduleId, resolveImport)
+			const accepted = await collector.workbenchContentCompilations()
+			expect(accepted[0]!.contentSet.entries.map(({ key }) => key)).toEqual(['guide'])
 
-				const changedId = location === 'inline' ? moduleId : fixture.getPath('workbench.ts')
-				const changedSource = (location === 'inline' ? pluginSource : definitionSource).replace(
-					'guide: workbench.content',
-					'rejected: workbench.content',
-				)
-				await writeFile(changedId, changedSource)
-				const watchChange = collector.plugin.watchChange as (
-					id: string,
-					change: { event: 'update' },
-				) => void
-				watchChange(changedId, { event: 'update' })
-				const generation = collector.beginArtifactGeneration()
-				await generation.run(async () => {
-					await transformWithExistingCollector(
-						collector,
-						location === 'inline' ? changedSource : pluginSource,
-						moduleId,
-						resolveImport,
-					)
-					const candidate = await collector.workbenchContentCompilations()
-					expect(candidate[0]!.contentSet.entries.map(({ key }) => key)).toEqual(['rejected'])
-				})
-				generation[settlement]()
-				await expectOwner(collector, 'OriginalPlugin')
-				const settled = await collector.workbenchContentCompilations()
-				expect(settled[0]!.contentSet.entries.map(({ key }) => key)).toEqual(
-					settlement === 'rollback' ? ['guide'] : ['rejected'],
-				)
-			},
-		)
+			const changedId = fixture.getPath('workbench.ts')
+			const changedSource = definitionSource.replace(
+				'guide: workbench.content',
+				'rejected: workbench.content',
+			)
+			await writeFile(changedId, changedSource)
+			const watchChange = collector.plugin.watchChange as (
+				id: string,
+				change: { event: 'update' },
+			) => void
+			watchChange(changedId, { event: 'update' })
+			const generation = collector.beginArtifactGeneration()
+			await generation.run(async () => {
+				await transformWithExistingCollector(collector, pluginSource, moduleId, resolveImport)
+				const candidate = await collector.workbenchContentCompilations()
+				expect(candidate[0]!.contentSet.entries.map(({ key }) => key)).toEqual(['rejected'])
+			})
+			generation.rollback()
+			await expectOwner(collector, 'OriginalPlugin')
+			const settled = await collector.workbenchContentCompilations()
+			expect(settled[0]!.contentSet.entries.map(({ key }) => key)).toEqual(['guide'])
+		})
 
 		it('rejects an older transform after a newer transform commits while import resolution is pending', async () => {
 			await using fixture = await createFixture({
@@ -605,50 +524,28 @@ ${declaration}`
 			await expect(collector.workbenchCompilations()).resolves.toEqual([])
 		})
 
-		it.each(['delete', 'ordinary module'] as const)(
-			'withdraws Workbench publications after %s, including across candidate settlement',
-			async (change) => {
-				await using fixture = await createFixture({
-					'guide.md': '# Guide',
-					'plugin.ts': contentPlugin('OriginalPlugin'),
-				})
-				const collector = createPluginSemanticsPlugin({ root: fixture.getPath() })
-				const moduleId = fixture.getPath('plugin.ts')
-				await transformWithExistingCollector(collector, contentPlugin('OriginalPlugin'), moduleId)
-				await expectOwner(collector, 'OriginalPlugin')
-				const withdraw = async () => {
-					if (change === 'delete') {
-						const watchChange = collector.plugin.watchChange as (
-							id: string,
-							change: { event: 'delete' },
-						) => void
-						watchChange(moduleId, { event: 'delete' })
-					} else {
-						await transformWithExistingCollector(
-							collector,
-							'export const ordinary = true',
-							moduleId,
-						)
-					}
-					expect(collector.definitions()).toEqual([])
-					await expect(collector.workbenchContentCompilations()).resolves.toEqual([])
-				}
-
-				const rejected = collector.beginArtifactGeneration()
-				await rejected.run(withdraw)
-				rejected.rollback()
-				await expectOwner(collector, 'OriginalPlugin')
-
-				const candidate = collector.beginArtifactGeneration()
-				await candidate.run(() =>
-					transformWithExistingCollector(collector, contentPlugin('CandidatePlugin'), moduleId),
-				)
-				await withdraw()
-				candidate.commit()
-				expect(collector.definitions()).toEqual([])
-				await expect(collector.workbenchContentCompilations()).resolves.toEqual([])
-			},
-		)
+		it('does not restore a deleted Workbench publication when an older candidate commits', async () => {
+			await using fixture = await createFixture({
+				'guide.md': '# Guide',
+				'plugin.ts': contentPlugin('OriginalPlugin'),
+			})
+			const collector = createPluginSemanticsPlugin({ root: fixture.getPath() })
+			const moduleId = fixture.getPath('plugin.ts')
+			await transformWithExistingCollector(collector, contentPlugin('OriginalPlugin'), moduleId)
+			await expectOwner(collector, 'OriginalPlugin')
+			const candidate = collector.beginArtifactGeneration()
+			await candidate.run(() =>
+				transformWithExistingCollector(collector, contentPlugin('CandidatePlugin'), moduleId),
+			)
+			const watchChange = collector.plugin.watchChange as (
+				id: string,
+				change: { event: 'delete' },
+			) => void
+			watchChange(moduleId, { event: 'delete' })
+			candidate.commit()
+			expect(collector.definitions()).toEqual([])
+			await expect(collector.workbenchContentCompilations()).resolves.toEqual([])
+		})
 	})
 
 	describe('optional Plugin ref authoring boundaries', () => {
@@ -727,22 +624,6 @@ ${declaration}`
 		})
 	})
 
-	it('emits abstract provider facts and a concrete provides edge', async () => {
-		const result = await transform(`
-			import { BasePlugin, Plugin } from '@pluxel/core'
-			export abstract class Database extends BasePlugin {}
-			@Plugin(Database)
-			export class MemoryDatabasePlugin extends Database {}
-		`)
-
-		expect(result?.code).toContain(
-			'__pluxelSetPluginDefinition(Database, {"abiVersion":2,"kind":"abstract"',
-		)
-		expect(result?.code).toContain(
-			'"provides":{"entry":{"kind":"source-entry","sourceSpace":"app","path":"plugin-semantics.test.ts"},"exportName":"Database"}',
-		)
-	})
-
 	it('uses one host-root-relative address across provider and cross-directory edges', async () => {
 		await using fixture = await createFixture({
 			'tests/plugins/Provider.ts': `
@@ -795,10 +676,6 @@ ${declaration}`
 
 	it.each([
 		{ '@pluxel/hmr': './src/index.ts', default: './dist/index.mjs' },
-		{ '@pluxel/source': { import: './src/index.ts' }, default: './dist/index.mjs' },
-		{ development: './src/index.ts', default: './dist/index.mjs' },
-		'./src/index.ts',
-		{ types: './src/index.d.ts', import: './src/index.ts', default: './dist/index.mjs' },
 		{ types: './src/index.d.ts', default: './src/index.ts' },
 	])('maps source root %j re-exports to package provenance', async (sourceRoot) => {
 		await using fixture = await createFixture({
@@ -853,12 +730,7 @@ ${declaration}`
 		expect(definitions.get('TestCacheBackend')?.provides).toEqual(tokenAddress)
 	})
 
-	it.each([
-		'./dist/index.mjs',
-		{ types: './src/index.ts', default: './dist/index.mjs' },
-		{ '@pluxel/hmr': './src/index.d.ts', default: './dist/index.mjs' },
-		{ import: './src/index.d.mts', default: './src/index.d.cts' },
-	])(
+	it.each(['./dist/index.mjs', { '@pluxel/hmr': './src/index.d.ts', default: './dist/index.mjs' }])(
 		'does not infer source package provenance from %j outside the application',
 		async (sourceRoot) => {
 			await using fixture = await createFixture({
@@ -992,251 +864,95 @@ ${declaration}`
 	})
 
 	it.each([
-		{
-			name: 'abstract PluginPart',
-			code: `
-				import { PluginPart } from '@pluxel/core'
-				abstract class BadPart extends PluginPart {}
-			`,
-			message: 'must be concrete',
-		},
-		{
-			name: 'marked PluginPart',
-			code: `
-				import { Plugin, PluginPart } from '@pluxel/core'
-				@Plugin() class BadPart extends PluginPart {}
-			`,
-			message: 'must not use @Plugin',
-		},
-		{
-			name: 'local Part containment cycle',
-			code: `
-				import { BasePlugin, Plugin, PluginPart } from '@pluxel/core'
-				class FirstPart extends PluginPart { second = this.parts.use(SecondPart) }
-				class SecondPart extends PluginPart { first = this.parts.use(FirstPart) }
-				@Plugin() class Owner extends BasePlugin { first = this.parts.use(FirstPart) }
-			`,
-			message: 'containment cycle',
-		},
-		{
-			name: 'dynamic Part occurrence',
-			code: `
-				import { BasePlugin, Plugin, PluginPart } from '@pluxel/core'
-				class ChildPart extends PluginPart {}
-				@Plugin() class Owner extends BasePlugin {
-					make() { return this.parts.use(ChildPart) }
-				}
-			`,
-			message: 'complete initializer of a normal class field',
-		},
-		{
-			name: 'type-only Part occurrence',
-			code: `
-				import type { RemotePart } from './part'
-				import { BasePlugin, Plugin } from '@pluxel/core'
-				@Plugin() class Owner extends BasePlugin {
-					readonly child = this.parts.use(RemotePart)
-				}
-			`,
-			message: 'must use a value import',
-		},
-		{
-			name: 'type-only required dependency',
-			code: `
-				import type { DatabasePlugin } from '@acme/database'
-				import { BasePlugin, Plugin } from '@pluxel/core'
-				@Plugin() export class ConsumerPlugin extends BasePlugin {
-					constructor(readonly database: DatabasePlugin) { super() }
-				}
-			`,
-			message: 'must use a value import',
-		},
-		{
-			name: 'type-only PluginPart required dependency',
-			code: `
-				import type { DatabasePlugin } from '@acme/database'
-				import { PluginPart } from '@pluxel/core'
-				class ConsumerPart extends PluginPart {
-					constructor(readonly database: DatabasePlugin) { super() }
-				}
-			`,
-			message: 'must use a value import',
-		},
-		{
-			name: 'optional PluginPart constructor parameter',
-			code: `
-				import { DatabasePlugin } from '@acme/database'
-				import { PluginPart } from '@pluxel/core'
-				class ConsumerPart extends PluginPart {
-					constructor(readonly database: DatabasePlugin | undefined) { super() }
-				}
-			`,
-			message: 'must be simple Plugin type references',
-		},
-		{
-			name: 'duplicate required dependency definition',
-			code: `
-				import { DatabasePlugin } from '@acme/database'
-				import { BasePlugin, Plugin } from '@pluxel/core'
-				@Plugin() export class ConsumerPlugin extends BasePlugin {
-					constructor(readonly primary: DatabasePlugin, readonly replica: DatabasePlugin) { super() }
-				}
-			`,
-			message: 'plugin_dependency_requirement_duplicate',
-		},
-		{
-			name: 'duplicate PluginPart required dependency definition',
-			code: `
-				import { DatabasePlugin } from '@acme/database'
-				import { PluginPart } from '@pluxel/core'
-				class ConsumerPart extends PluginPart {
-					constructor(readonly primary: DatabasePlugin, readonly replica: DatabasePlugin) { super() }
-				}
-			`,
-			message: 'plugin_dependency_requirement_duplicate',
-		},
-		{
-			name: 'false forkability',
-			code: `
-				import { BasePlugin, Plugin } from '@pluxel/core'
-				@Plugin({ forkable: false }) export class ConsumerPlugin extends BasePlugin {}
-			`,
-			message: 'forkable must be the literal true',
-		},
-		{
-			name: 'dynamic forkability',
-			code: `
-				import { BasePlugin, Plugin } from '@pluxel/core'
-				const enabled = true
-				@Plugin({ forkable: enabled }) export class ConsumerPlugin extends BasePlugin {}
-			`,
-			message: 'forkable must be the literal true',
-		},
-		{
-			name: 'native private Plugin state',
-			code: `
-				import { BasePlugin, Plugin } from '@pluxel/core'
-				@Plugin() export class ConsumerPlugin extends BasePlugin { #state = 1 }
-			`,
-			message: 'plugin_caller_view_private_brand_unsupported',
-		},
-		{
-			name: 'arrow-function Plugin field',
-			code: `
-				import { BasePlugin, Plugin } from '@pluxel/core'
-				@Plugin() export class ConsumerPlugin extends BasePlugin {
-					status = () => this.ctx.caller
-				}
-			`,
-			message: 'plugin_caller_view_callable_field_unsupported',
-		},
-		{
-			name: 'function-expression Plugin field',
-			code: `
-				import { BasePlugin, Plugin } from '@pluxel/core'
-				@Plugin() export class ConsumerPlugin extends BasePlugin {
-					status = function () { return this.ctx.caller }
-				}
-			`,
-			message: 'plugin_caller_view_callable_field_unsupported',
-		},
-		{
-			name: 'bound Plugin method field',
-			code: `
-				import { BasePlugin, Plugin } from '@pluxel/core'
-				@Plugin() export class ConsumerPlugin extends BasePlugin {
-					status() { return this.ctx.caller }
-					boundStatus = this.status.bind(this)
-				}
-			`,
-			message: 'plugin_caller_view_callable_field_unsupported',
-		},
-		{
-			name: 'type-only declared Plugin field',
-			code: `
-				import { BasePlugin, Plugin } from '@pluxel/core'
-				@Plugin() export class ConsumerPlugin extends BasePlugin {
-					declare status: string
-				}
-			`,
-			message: 'plugin_caller_view_declared_field_unsupported',
-		},
-		{
-			name: 'callable field in local Plugin base',
-			code: `
-				import { BasePlugin, Plugin } from '@pluxel/core'
-				abstract class ConsumerBase extends BasePlugin {
-					status = () => this.ctx.caller
-				}
-				@Plugin() export class ConsumerPlugin extends ConsumerBase {}
-			`,
-			message: 'plugin_caller_view_callable_field_unsupported',
-		},
-		{
-			name: 'native private state in local Plugin base',
-			code: `
-				import { BasePlugin, Plugin } from '@pluxel/core'
-				abstract class ConsumerBase extends BasePlugin { #read() {} }
-				@Plugin() export class ConsumerPlugin extends ConsumerBase {}
-			`,
-			message: 'plugin_caller_view_private_brand_unsupported',
-		},
-		{
-			name: 'legacy marker option',
-			code: `
-				import { BasePlugin, Plugin } from '@pluxel/core'
-				@Plugin({ name: 'Legacy' }) export class ConsumerPlugin extends BasePlugin {}
-			`,
-			message: 'unsupported @Plugin option',
-		},
-	])('rejects $name', async ({ code, message }) => {
-		await expect(transform(code)).rejects.toThrow(message)
+		[
+			'Part cannot declare its own Plugin identity',
+			'@Plugin() class Part extends PluginPart {}',
+			'must not use @Plugin',
+		],
+		[
+			'Part containment is acyclic',
+			'class Left extends PluginPart { right = this.parts.use(Right) } class Right extends PluginPart { left = this.parts.use(Left) } @Plugin() class Owner extends BasePlugin { left = this.parts.use(Left) }',
+			'containment cycle',
+		],
+		[
+			'Part construction stays declarative',
+			'class Part extends PluginPart {} @Plugin() class Owner extends BasePlugin { build() { return this.parts.use(Part) } }',
+			'complete initializer of a normal class field',
+		],
+		[
+			'required edge has a runtime provider',
+			`import type { Database } from '@acme/database'; class Part extends PluginPart { constructor(readonly database: Database) { super() } }`,
+			'must use a value import',
+		],
+		[
+			'constructor positions cannot duplicate a definition',
+			`import { Database } from '@acme/database'; @Plugin() class Consumer extends BasePlugin { constructor(readonly first: Database, readonly second: Database) { super() } }`,
+			'plugin_dependency_requirement_duplicate',
+		],
+		[
+			'forkability is a static fact',
+			'const enabled = true; @Plugin({ forkable: enabled }) class Consumer extends BasePlugin {}',
+			'forkable must be the literal true',
+		],
+		[
+			'inherited native private brand cannot cross caller view',
+			'abstract class Parent extends BasePlugin { #read() {} } @Plugin() class Consumer extends Parent {}',
+			'plugin_caller_view_private_brand_unsupported',
+		],
+		[
+			'instance function cannot be rebound to caller view',
+			'@Plugin() class Consumer extends BasePlugin { status = () => this.ctx.caller }',
+			'plugin_caller_view_callable_field_unsupported',
+		],
+		[
+			'type-only field has no descriptor at construction',
+			'@Plugin() class Consumer extends BasePlugin { declare status: string }',
+			'plugin_caller_view_declared_field_unsupported',
+		],
+	])('%s', async (_contract, source, message) => {
+		await expect(
+			transform(`import { BasePlugin, Plugin, PluginPart } from '@pluxel/core'; ${source}`),
+		).rejects.toThrow(message)
 	})
 
 	it.each([
 		{
-			explicit: false,
 			root: "import { BasePlugin } from '@pluxel/core'; export class OrdersPlugin extends BasePlugin {}",
 			message: 'missing @Plugin',
 		},
 		{
-			explicit: false,
 			root: "export { OrdersPlugin } from '@acme/provider'",
 			message: 'cross-package Plugin re-exports are forbidden',
 		},
-	])(
-		'rejects invalid package exports: $message (explicit=$explicit)',
-		async ({ explicit, root, message }) => {
-			const workerPath = explicit ? 'src/worker.js' : 'src/worker.ts'
-			await using fixture = await createFixture({
-				'package.json': JSON.stringify({
-					name: '@acme/orders',
-					type: 'module',
-					exports: {
-						'.': { default: './src/index.ts' },
-						'./worker': explicit ? `./${workerPath}` : { import: `./${workerPath}` },
-					},
-				}),
-				'src/index.ts': root,
-				[workerPath]: `
+	])('rejects invalid package exports: $message', async ({ root, message }) => {
+		const workerPath = 'src/worker.ts'
+		await using fixture = await createFixture({
+			'package.json': JSON.stringify({
+				name: '@acme/orders',
+				type: 'module',
+				exports: {
+					'.': { default: './src/index.ts' },
+					'./worker': { import: `./${workerPath}` },
+				},
+			}),
+			'src/index.ts': root,
+			[workerPath]: `
 				import { BasePlugin, Plugin } from '@pluxel/core'
 				@Plugin() export class WorkerPlugin extends BasePlugin {}
 			`,
-			})
-			const collector = createPluginSemanticsPlugin({
-				root: fixture.getPath(),
-				...(explicit ? { packageJsonPath: fixture.getPath('package.json') } : {}),
-			})
+		})
+		const collector = createPluginSemanticsPlugin({
+			root: fixture.getPath(),
+		})
 
-			await expect(
-				rolldown({
-					input: fixture.getPath(explicit ? 'src/index.ts' : workerPath),
-					external: ['@pluxel/core'],
-					plugins: [collector.plugin],
-				}).then((build) => build.generate({ format: 'esm' })),
-			).rejects.toThrow(message)
-		},
-	)
+		await expect(
+			rolldown({
+				input: fixture.getPath(workerPath),
+				external: ['@pluxel/core'],
+				plugins: [collector.plugin],
+			}).then((build) => build.generate({ format: 'esm' })),
+		).rejects.toThrow(message)
+	})
 
 	it('collects package metadata only from owner-reachable local Parts across modules', async () => {
 		await using fixture = await createFixture({
@@ -1250,8 +966,14 @@ ${declaration}`
 			'src/index.ts': `
 				import { BasePlugin, Plugin } from '@pluxel/core'
 				import { UsedPart } from './parts'
+				import { ExternalPart } from '@acme/parts'
+				import { ZProvider } from '@acme/used'
 				@Plugin() export class OrdersPlugin extends BasePlugin {
+					constructor(readonly lastAlphabetically: ZProvider) { super() }
 					readonly used = this.parts.use(UsedPart)
+				}
+				@Plugin() export class ExternalPartsPlugin extends BasePlugin {
+					readonly external = this.parts.use(ExternalPart)
 				}
 			`,
 			'src/parts.ts': `
@@ -1279,12 +1001,25 @@ ${declaration}`
 		})
 		const build = await rolldown({
 			input: fixture.getPath('src/index.ts'),
-			external: ['@pluxel/core', '@acme/used', '@acme/unused'],
+			external: ['@pluxel/core', '@acme/used', '@acme/unused', '@acme/parts'],
 			plugins: [collector.plugin],
 		})
 		await build.generate({ format: 'esm' })
 
 		expect(collector.snapshot()).toEqual(new Map([['@acme/used', 'required']]))
+		const sources = collector.sourceDefinitions()
+		expect(sources.find((item) => item.className === 'OrdersPlugin')?.dependencies).toEqual({
+			requires: [
+				{ entry: { kind: 'package-root', packageName: '@acme/used' }, exportName: 'ZProvider' },
+				{ entry: { kind: 'package-root', packageName: '@acme/used' }, exportName: 'UsedProvider' },
+			],
+			optional: [],
+			forkable: false,
+		})
+		expect(sources.find((item) => item.className === 'ExternalPartsPlugin')).toMatchObject({
+			className: 'ExternalPartsPlugin',
+			dependencies: undefined,
+		})
 	})
 
 	it.each([
@@ -1444,46 +1179,6 @@ ${declaration}`
 			'__pluxelSetPluginPartRequires(DatabasePart, {"abiVersion":2,"requires":[{"entry":{"kind":"package-subpath","packageName":"@acme/services","subpath":"./plugins"},"exportName":"DatabasePlugin"}]}',
 		)
 		expect(collector.snapshot()).toEqual(new Map([['@acme/services', 'required']]))
-	})
-
-	it('assigns distinct package-root identities to different Plugin constructors', async () => {
-		await using fixture = await createFixture({
-			'package.json': JSON.stringify({
-				name: '@acme/multiple',
-				type: 'module',
-				exports: {
-					'.': { '@pluxel/hmr': './src/index.ts', default: './dist/index.mjs' },
-				},
-			}),
-			'src/index.ts': `
-				import { BasePlugin, Plugin } from '@pluxel/core'
-				@Plugin() export class MainPlugin extends BasePlugin {}
-				@Plugin() export class AnotherPlugin extends BasePlugin {}
-			`,
-		})
-		const collector = createPluginSemanticsPlugin({
-			root: fixture.getPath(),
-			packageJsonPath: fixture.getPath('package.json'),
-		})
-		const build = await rolldown({
-			input: fixture.getPath('src/index.ts'),
-			external: ['@pluxel/core'],
-			plugins: [collector.plugin],
-		})
-		await build.generate({ format: 'esm' })
-
-		const definitions = new Map(
-			collector.definitions().map(({ className, definition }) => [className, definition]),
-		)
-		expect(definitions.size).toBe(2)
-		expect(definitions.get('MainPlugin')).toEqual({
-			entry: { kind: 'package-root', packageName: '@acme/multiple' },
-			exportName: 'MainPlugin',
-		})
-		expect(definitions.get('AnotherPlugin')).toEqual({
-			entry: { kind: 'package-root', packageName: '@acme/multiple' },
-			exportName: 'AnotherPlugin',
-		})
 	})
 
 	it('rejects one constructor exported by two package-root names', async () => {

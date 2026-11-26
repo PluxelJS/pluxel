@@ -1,4 +1,5 @@
 export { Marketplace } from './ui/marketplace.tsx'
+export { createMarketplaceData } from './ui/marketplace-data.ts'
 export type { MarketplaceData, MarketplaceProps, MarketplaceRead } from './ui/marketplace.tsx'
 export { PackageMarketClient } from './market.ts'
 export type * from './market-contracts.ts'

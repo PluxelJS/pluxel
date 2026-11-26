@@ -11,6 +11,7 @@ import type {
 	PluginDefaultNodeAddress,
 	PluginForkNodeAddress,
 	PluginNodeAddress,
+	PluginInstanceNodeAddress,
 } from '../runtime/identity'
 import { pluginDefinitionAddressOf, pluginNodeAddressOf } from '../runtime/definition'
 import type { PluginPartDefinitionTree } from '../runtime/part-definition'
@@ -22,8 +23,6 @@ import {
 import { OptionalPluginBindings } from './OptionalPluginBindings'
 import {
 	createRootPluginParts,
-	closePluginPartConsumerInvocations,
-	closePluginPartInvocations,
 	finalizePluginParts,
 	startPluginParts,
 	assignPluginPartConfig,
@@ -145,14 +144,22 @@ async function adoptCleanup(ctx: Context, resource: PluginCleanup): Promise<void
  */
 export abstract class BasePlugin<C extends PluginContext = PluginContext> {
 	/** Reference a lowered Plugin declaration, including abstract capability tokens. */
-	static definitionAddress(): PluginDefinitionAddress {
+	static address(): PluginDefinitionAddress {
 		return pluginDefinitionAddressOf(this)
 	}
 
 	/** Reference a lowered concrete Plugin node without constructing or starting it. */
-	static nodeAddress(): PluginDefaultNodeAddress
-	static nodeAddress(forkId: string): PluginForkNodeAddress
-	static nodeAddress(forkId: string | undefined): PluginNodeAddress
+	static nodeAddress<P extends abstract new (...args: any[]) => BasePlugin>(
+		this: P,
+	): PluginInstanceNodeAddress<InstanceType<P>, PluginDefaultNodeAddress>
+	static nodeAddress<P extends abstract new (...args: any[]) => BasePlugin>(
+		this: P,
+		forkId: string,
+	): PluginInstanceNodeAddress<InstanceType<P>, PluginForkNodeAddress>
+	static nodeAddress<P extends abstract new (...args: any[]) => BasePlugin>(
+		this: P,
+		forkId: string | undefined,
+	): PluginInstanceNodeAddress<InstanceType<P>>
 	static nodeAddress(forkId?: string): PluginNodeAddress {
 		return pluginNodeAddressOf(this, forkId)
 	}
@@ -288,17 +295,7 @@ export function getPluginLifecycleAdapter<P extends BasePlugin>(
 				state.initActive = false
 			}
 		},
-		drain: async () => {
-			await Promise.all([closeOwnerInvocations(ctx), closePluginPartInvocations(state.parts)])
-			try {
-				await ctx.effects.dispose()
-			} finally {
-				await Promise.all([
-					closeConsumerInvocations(ctx),
-					closePluginPartConsumerInvocations(state.parts),
-				])
-			}
-		},
+		drain: () => drainPluginGeneration(ctx, state.parts.partContexts),
 		subscribeErrors:
 			typeof onError === 'function'
 				? (cb) => {
@@ -306,5 +303,30 @@ export function getPluginLifecycleAdapter<P extends BasePlugin>(
 						return typeof off === 'function' ? (off as () => void) : undefined
 					}
 				: undefined,
+	}
+}
+
+/** Close admission on the generation and all its Parts before awaiting in-flight calls. */
+function closeGenerationInvocations(
+	ctx: Context,
+	parts: ReadonlySet<Context>,
+	close: (owner: Context) => void | Promise<void>,
+): void | Promise<unknown> {
+	const pending = close(ctx)
+	if (parts.size === 0) return pending
+	const drains = [pending]
+	for (const part of parts) drains.push(close(part))
+	return Promise.all(drains)
+}
+
+export async function drainPluginGeneration(
+	ctx: Context,
+	parts: ReadonlySet<Context>,
+): Promise<void> {
+	await closeGenerationInvocations(ctx, parts, closeOwnerInvocations)
+	try {
+		await ctx.effects.dispose()
+	} finally {
+		await closeGenerationInvocations(ctx, parts, closeConsumerInvocations)
 	}
 }

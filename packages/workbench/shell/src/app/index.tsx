@@ -8,7 +8,6 @@ import {
 	type RuntimeClientBootstrap,
 	RuntimeManagementClientProvider,
 } from '../runtime'
-import './bootstrap'
 import '../styles/index.scss'
 import { ProductProvider } from './product'
 import { createAppRouter, readWorkbenchUiBasePath } from './router'
@@ -21,7 +20,7 @@ import { WorkbenchShell } from './workbench/WorkbenchShell'
 import { WorkbenchSessionProvider, useWorkbenchTargetSnapshot } from '../workbench/runtime'
 import { resolveWorkbenchDirectoryRoute } from '../workbench/route-directory'
 import { parsePluginDetailHref, parseWorkbenchHref } from '../workbench/paths'
-import { matchWorkbenchRoute } from '../workbench/routes'
+import { matchWorkbenchRoute } from '../../../src/workbench/routes'
 import type { WorkbenchTargetSnapshot } from '../workbench/client-snapshot'
 import { ManagementQueryProvider } from './managementQuery'
 import { RuntimeUpdatesProvider } from './runtimeUpdates'

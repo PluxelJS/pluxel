@@ -1,26 +1,21 @@
 // eventified.ts
 
 import {
-	appendListenerCopy,
 	copyWithoutIndex,
 	createWrapHelper,
 	insertListenerCopy,
 	ORIGFUNC,
 	onSyncError,
-	prependListenerCopy,
 } from './core/listener'
 import {
-	attachDispose,
 	encodeListenerPosition,
 	normalizeMaxListeners,
 	noopSubscription,
 	POS_BACK,
 	POS_FRONT,
-	POS_INDEX,
-	POS_RESOLVE,
 	type PositionKind,
 	resolveInsertIndex,
-	withAbortSignal,
+	Subscription,
 } from './core/registration'
 import { EventureListenerScope, type EventurePosition, type EventureScope } from './eventureScope'
 import { emitAllFromListeners, emitSettledFromListeners } from './ext/emitShared'
@@ -80,6 +75,7 @@ export class Eventure<E extends IEventMap<E> = Record<string | symbol, EventDesc
 	// 事件 → 监听器列表（不可变写入，emit 避免 slice）
 	protected _listeners: { [K in keyof E]?: EventListener<E[K]>[] } = Object.create(null)
 	protected _activeEvents = new Set<keyof E>()
+	private subscriptions: Partial<Record<keyof E, Subscription[]>> = Object.create(null)
 
 	protected _maxListeners = 10
 	get maxListeners() {
@@ -121,16 +117,6 @@ export class Eventure<E extends IEventMap<E> = Record<string | symbol, EventDesc
 		return (this._listeners[event] ?? EMPTY_LISTENERS) as EventListener<E[K]>[]
 	}
 
-	protected _makeSubscription<K extends keyof E>(
-		event: K,
-		registered: EventListener<E[K]>,
-	): Unsubscribe {
-		const unsub: Unsubscribe = (() => {
-			this._offRegistered(event, registered)
-		}) as Unsubscribe
-		return attachDispose(unsub)
-	}
-
 	protected _insert<K extends keyof E>(
 		event: K,
 		fn: EventListener<E[K]>,
@@ -139,41 +125,11 @@ export class Eventure<E extends IEventMap<E> = Record<string | symbol, EventDesc
 		signal?: AbortSignal,
 	): Unsubscribe {
 		if (posKind === POS_BACK) return this._append(event, fn, signal)
-		if (signal !== undefined && signal.aborted) return noopSubscription
-
-		const prev = this._listeners[event]
-		const count = prev?.length ?? 0
-		let next: EventListener<E[K]>[]
-		switch (posKind) {
-			case POS_FRONT:
-				next = prependListenerCopy(prev, fn)
-				break
-			case POS_INDEX:
-				next = insertListenerCopy(prev, resolveInsertIndex(count, posValue as number), fn)
-				break
-			case POS_RESOLVE:
-				next = insertListenerCopy(
-					prev,
-					resolveInsertIndex(count, posValue as (ctx: { count: number; event: K }) => number, {
-						count,
-						event,
-					}),
-					fn,
-				)
-				break
-		}
-		this._listeners[event] = next
-
-		if (count === 0) this._activeEvents.add(event)
-		const maxListeners = this._maxListeners
-		if (maxListeners !== 0 && next.length > maxListeners) {
-			this._logger.warn(
-				`MaxListenersExceededWarning(remind memory leak): '${String(event)}' has ${next.length} listeners that exceed ${this._maxListeners}`,
-			)
-		}
-
-		const sub = this._makeSubscription(event, fn)
-		return signal === undefined ? sub : withAbortSignal(signal, sub)
+		if (signal?.aborted) return noopSubscription
+		const count = this._listeners[event]?.length ?? 0
+		const position =
+			posKind === POS_FRONT ? 0 : resolveInsertIndex(count, posValue, { count, event })
+		return this.registerListener(event, fn, position, signal)
 	}
 
 	protected _append<K extends keyof E>(
@@ -181,22 +137,42 @@ export class Eventure<E extends IEventMap<E> = Record<string | symbol, EventDesc
 		fn: EventListener<E[K]>,
 		signal?: AbortSignal,
 	): Unsubscribe {
-		if (signal !== undefined && signal.aborted) return noopSubscription
+		return this.registerListener(event, fn, undefined, signal)
+	}
 
+	private registerListener<K extends keyof E>(
+		event: K,
+		fn: EventListener<E[K]>,
+		position: number | undefined,
+		signal?: AbortSignal,
+	): Unsubscribe {
+		if (signal?.aborted) return noopSubscription
 		const prev = this._listeners[event]
-		const next = appendListenerCopy(prev, fn)
+		const count = prev?.length ?? 0
+		const index = position === undefined ? count : Math.min(position, count)
+		const subscription = new Subscription((registration) => {
+			const currentIndex = this.subscriptions[event]?.indexOf(registration) ?? -1
+			if (currentIndex >= 0) this.removeListener(event, currentIndex)
+		}, signal)
+		const registrations = (this.subscriptions[event] ??= [])
+		registrations.splice(index, 0, subscription)
+		const next = insertListenerCopy(prev, index, fn)
 		this._listeners[event] = next
-		if (prev === undefined || prev.length === 0) this._activeEvents.add(event)
+		if (count === 0) this._activeEvents.add(event)
 
 		const maxListeners = this._maxListeners
 		if (maxListeners !== 0 && next.length > maxListeners) {
-			this._logger.warn(
-				`MaxListenersExceededWarning(remind memory leak): '${String(event)}' has ${next.length} listeners that exceed ${this._maxListeners}`,
-			)
+			try {
+				this._logger.warn(
+					`MaxListenersExceededWarning(remind memory leak): '${String(event)}' has ${next.length} listeners that exceed ${this._maxListeners}`,
+				)
+			} catch (error) {
+				subscription.unsubscribe()
+				throw error
+			}
 		}
 
-		const sub = this._makeSubscription(event, fn)
-		return signal === undefined ? sub : withAbortSignal(signal, sub)
+		return subscription.unsubscribe
 	}
 
 	protected _add<K extends keyof E>(
@@ -217,18 +193,13 @@ export class Eventure<E extends IEventMap<E> = Record<string | symbol, EventDesc
 				: this._insert(event, wrapped, posKind, posValue, signal)
 		}
 
-		let offRef: Unsubscribe | null = null
-		const unsubscribe = attachDispose((() => {
-			const off = offRef
-			if (off !== null) {
-				offRef = null
-				off()
-			}
-		}) as Unsubscribe)
-
-		const fn = createLimitedListener(wrapped, times, predicate, unsubscribe)
+		// A warning can emit before the registration method hands back its unsubscribe handle.
+		let unsubscribe: Unsubscribe = () => {
+			this._offRegistered(event, fn)
+		}
+		const fn = createLimitedListener(wrapped, times, predicate, () => unsubscribe())
 		Object.defineProperty(fn, ORIGFUNC, { value: listener, writable: false })
-		offRef = this._insert(event, fn, posKind, posValue, signal)
+		unsubscribe = this._insert(event, fn, posKind, posValue, signal)
 		return unsubscribe
 	}
 
@@ -256,35 +227,46 @@ export class Eventure<E extends IEventMap<E> = Record<string | symbol, EventDesc
 	): boolean {
 		const prev = this._listeners[event]
 		if (!prev || prev.length === 0) return false
-
-		let idx = -1
 		for (let i = 0; i < prev.length; i++) {
 			const fn = prev[i] as any
 			if (fn === listener || (!exact && fn[ORIGFUNC] === listener)) {
-				idx = i
-				break
+				this.removeListener(event, i)
+				return true
 			}
 		}
-		if (idx < 0) return false
+		return false
+	}
 
+	private removeListener(event: keyof E, index: number): void {
+		const prev = this._listeners[event]!
+		const removed = this.subscriptions[event]?.splice(index, 1)[0]
 		if (prev.length === 1) {
-			this._listeners[event] = undefined
+			delete this._listeners[event]
 			this._activeEvents.delete(event)
+			delete this.subscriptions[event]
 		} else {
-			this._listeners[event] = copyWithoutIndex(prev, idx)
+			this._listeners[event] = copyWithoutIndex(prev, index)
 		}
-		return true
+		removed?.end()
 	}
 
 	/** 批量清空；缺省则清空全部 */
 	public clear(event?: keyof E): void {
 		if (event === undefined) {
+			const subscriptions = this.subscriptions
 			this._listeners = Object.create(null)
 			this._activeEvents.clear()
+			this.subscriptions = Object.create(null)
+			for (const key of Reflect.ownKeys(subscriptions) as (keyof E)[]) {
+				for (const registration of subscriptions[key]!) registration.end()
+			}
 			return
 		}
-		this._listeners[event] = undefined
+		const registrations = this.subscriptions[event]
+		delete this._listeners[event]
 		this._activeEvents.delete(event)
+		delete this.subscriptions[event]
+		if (registrations) for (const registration of registrations) registration.end()
 	}
 
 	/** —— emit ——（读取不可变快照，热路径零分配 & 无 slice） */

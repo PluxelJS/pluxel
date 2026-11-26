@@ -159,7 +159,7 @@ export class PluginArtifactCompiler {
 	private async prepareStrictWorkbenchArtifacts(
 		input: WorkbenchArtifactCompilations,
 	): Promise<PreparedWorkbenchArtifacts> {
-		this.requireWorkbenchCoordinator()
+		this.WorkbenchHostCoordinator()
 		const definitions = groupWorkbenchCompilations(input)
 		const materialized = await Promise.all(
 			[...definitions.entries()].map(async ([key, compilation]) => {
@@ -181,7 +181,7 @@ export class PluginArtifactCompiler {
 	private async prepareDevelopmentWorkbenchArtifacts(
 		input: WorkbenchArtifactCompilations,
 	): Promise<PreparedWorkbenchArtifacts> {
-		this.requireWorkbenchCoordinator()
+		this.WorkbenchHostCoordinator()
 		const definitions = groupWorkbenchCompilations(input)
 		const materialized = await Promise.all(
 			[...definitions.entries()].map(async ([key, compilation]) => {
@@ -265,7 +265,7 @@ export class PluginArtifactCompiler {
 		)
 	}
 
-	private requireWorkbenchCoordinator(): PluginArtifactCompilerWorkbenchCoordinator {
+	private WorkbenchHostCoordinator(): PluginArtifactCompilerWorkbenchCoordinator {
 		const coordinator = this.coordinator
 		if (!coordinator) throw new Error('[host-vite] Workbench compiler is not attached')
 		return coordinator
@@ -291,7 +291,7 @@ export class PluginArtifactCompiler {
 			withdrawnDefinitions: readonly WorkbenchFederationProducerPlan['definition'][],
 		) => void,
 	): Promise<PreparedWorkbenchArtifacts> {
-		const coordinator = this.requireWorkbenchCoordinator()
+		const coordinator = this.WorkbenchHostCoordinator()
 		const desired = new Map(this.committedWorkbenchDefinitions)
 		for (const [key, compilation] of definitions) desired.set(key, compilation.definition)
 		const prepared = await Promise.all(
@@ -362,7 +362,7 @@ export class PluginArtifactCompiler {
 		producer: WorkbenchProducerCompilation
 		content?: WorkbenchContentArtifactCandidate
 	}): void {
-		const coordinator = this.requireWorkbenchCoordinator()
+		const coordinator = this.WorkbenchHostCoordinator()
 		const root = resolveProducerRoot(input.producer.root)
 		const policy = this.workbenchProducerTypeAssets()
 		const taskKey = `${input.epoch}\0${input.key}\0${producerTaskKey(input.producer.plan, root, policy)}`

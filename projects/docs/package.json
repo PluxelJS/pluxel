@@ -55,7 +55,6 @@
 		"@pluxel/plugin-takumi": "workspace:*",
 		"@pluxel/plugin-takumi-markdown": "workspace:*",
 		"@pluxel/plugin-typst": "workspace:*",
-		"@pluxel/plugin-wretch": "workspace:*",
 		"@pluxel/rolldown": "workspace:*",
 		"@pluxel/services": "workspace:*",
 		"@pluxel/test": "workspace:*",
@@ -82,7 +81,6 @@
 		"vite": "catalog:build",
 		"vite-plus": "catalog:build",
 		"vitest": "catalog:test",
-		"waku": "catalog:docs",
-		"wretch": "catalog:dev"
+		"waku": "catalog:docs"
 	}
 }

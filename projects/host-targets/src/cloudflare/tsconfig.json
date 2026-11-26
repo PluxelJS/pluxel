@@ -1,0 +1,9 @@
+{
+	"extends": "../../../../tsconfig.json",
+	"compilerOptions": {
+		"experimentalDecorators": true,
+		"lib": ["ES2024", "ESNext.Disposable"],
+		"types": ["@cloudflare/workers-types", "vite/client"]
+	},
+	"include": ["entry.ts"]
+}

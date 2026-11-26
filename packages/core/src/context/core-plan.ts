@@ -1,224 +1,193 @@
 import {
 	createCorePluginExecutionBinding,
 	assertCorePluginExecutionBinding,
+	type CoreExecutionConfig,
 	type CorePluginExecutionBinding,
 } from './plugin-execution'
 import { ConfigService } from '../services/config/ConfigService'
-import { EffectsService } from '../services/effects/EffectsService'
-import { createEventsBackend, createEventsServiceView } from '../services/events/EventsService'
-import { LoggerService } from '../logger/LoggerService'
-import { resolveLogTapeConfig, type ResolvedLogTapeConfig } from '../config/logtape'
-import { Logging } from '../logging/service'
+import { createEventsBackend } from '../services/events/EventsService'
 import { createCoreLoggingRuntime } from './core-logging'
-import { PluginService, type PluginServiceConfig } from '../plugins/runtime/PluginService'
-import { FsService, snapshotFsConfig } from '../fs/service'
+import { assertPreparedCoreFacilities, type PreparedCoreFacilities } from './core-facilities'
+import { assertCoreConfigObject } from './core-config-object'
+import { PluginService } from '../plugins/runtime/PluginService'
+import { VaultRuntime } from '../vault/runtime'
 import { TinyBaseRuntime } from '../tinybase/service'
-import { resolveTinyBaseOptions } from '../tinybase/options'
-import type { TinyBaseOptions } from '../tinybase/types'
-import { pluginNodePhysicalKey } from '../internal/plugin-address'
+import { createOutboundHttpRuntime } from '../http/runtime'
 import {
 	freezeCorePluginLifecycleHooks,
 	type CorePluginLifecycleHooks,
 } from '../plugins/runtime/plugin-service/HostLifecycle'
-import {
-	createContextHost,
-	installRootCapability,
-	installOwnerViewCapability,
-	installScopeCapability,
-	type ContextCapability,
-	type ContextCapabilityInstallation,
-} from '@pluxel/context'
-import { type CoreHostConfig, type Context, type RootContext } from './Context'
-import {
-	CONFIG_SERVICE_CAPABILITY,
-	EFFECTS_CAPABILITY,
-	EVENTS_CAPABILITY,
-	LOGGER_CAPABILITY,
-	PLUGIN_SERVICE_CAPABILITY_IDENTITY,
-	FS_CAPABILITY,
-	PLUGIN_FS_CAPABILITY,
-	TINYBASE_HOST_CAPABILITY,
-	TINYBASE_CAPABILITY,
-} from './core-capabilities'
+import { type ContextHost, type ServiceInstallation } from '@pluxel/context'
+import { createContextPlan, createRootContext } from '@pluxel/context/internal'
+import { type Context, type RootContext } from './Context'
+import { initializeCoreRootContext, requireCoreFilesystem, type CoreRuntime } from './core-context'
+import { createGenerationContext, createOwnerContext } from './context-factory'
 
-export const PLUGIN_SERVICE_CAPABILITY =
-	PLUGIN_SERVICE_CAPABILITY_IDENTITY as ContextCapability<PluginService>
+/** Cache one fixed facility without moving it into the extension service registry. */
+function lazy<T>(name: string, create: () => T): () => T {
+	let value: T
+	let ready = false
+	let constructing = false
+	return () => {
+		if (ready) return value
+		if (constructing) throw new Error(`[core] Construction cycle at ${name}`)
+		constructing = true
+		try {
+			value = create()
+			if (value === undefined) throw new TypeError(`[core] ${name} returned undefined`)
+			ready = true
+			return value
+		} finally {
+			constructing = false
+		}
+	}
+}
 
-export { CONFIG_SERVICE_CAPABILITY, EFFECTS_CAPABILITY, EVENTS_CAPABILITY, LOGGER_CAPABILITY }
-
-export type CoreRootInputs = Readonly<{
-	name: string
-	logtape?: ResolvedLogTapeConfig
-	events?: Readonly<import('../services/events/EventsService').EventsServiceConfig>
-	plugins?: Readonly<PluginServiceConfig>
-	zenfs: ReturnType<typeof snapshotFsConfig>
-	tinybase: Required<TinyBaseOptions>
+export type CoreContextPlanConfig = Readonly<{
+	name?: string
+	execution?: CoreExecutionConfig
+	/** One-time Host preparation seam, fixed before Plugin admission. */
+	executionBinding?: CorePluginExecutionBinding
+	createConfigService?: (root: RootContext) => ConfigService
+	createLifecycleHooks?: (root: RootContext) => CorePluginLifecycleHooks
+	services?: readonly ServiceInstallation[]
 }>
 
-export function resolveCoreRootInputs(config: CoreHostConfig = {}): CoreRootInputs {
-	return Object.freeze({
-		name: config.name ?? 'root',
-		zenfs: snapshotFsConfig(config.zenfs === undefined ? {} : config.zenfs),
-		tinybase: resolveTinyBaseOptions(config.tinybase),
-		logtape: resolveLogTapeConfig(config.logtape),
-		...(config.events
-			? {
-					events: Object.freeze({
-						...config.events,
-						...(config.events.events ? { events: Object.freeze([...config.events.events]) } : {}),
-					}),
+const planFields = new Set([
+	'name',
+	'execution',
+	'executionBinding',
+	'createConfigService',
+	'createLifecycleHooks',
+	'services',
+])
+
+function createCoreRuntime(
+	root: RootContext,
+	inputs: PreparedCoreFacilities,
+	config: CoreContextPlanConfig,
+	execution: CorePluginExecutionBinding,
+): CoreRuntime {
+	const storage = lazy('storage', () => inputs.createStorage(root))
+	const published = new WeakSet<Context>()
+	let tinybaseRuntime: TinyBaseRuntime | undefined
+	const tinybase = lazy('TinyBase', () => {
+		tinybaseRuntime = new TinyBaseRuntime(
+			root,
+			storage(),
+			inputs.tinybase.maxSnapshotBytes,
+			published,
+		)
+		return tinybaseRuntime
+	})
+	const vault = lazy(
+		'Vault',
+		() => new VaultRuntime(root, inputs.vault, () => requireCoreFilesystem(root)),
+	)
+	const http = lazy('outbound HTTP', () => createOutboundHttpRuntime(root, inputs.http))
+	const events = lazy('events', () => createEventsBackend(root, inputs.events))
+	const configService = lazy('configuration', () =>
+		config.createConfigService ? config.createConfigService(root) : new ConfigService(root),
+	)
+	const logging = inputs.logtape
+		? lazy('logging', () => createCoreLoggingRuntime(root, inputs.logtape!))
+		: undefined
+	const plugins = lazy('Plugin runtime', () => {
+		const executionConfig = execution.read()
+		const hooks = freezeCorePluginLifecycleHooks(config.createLifecycleHooks?.(root))
+		return new PluginService(root, executionConfig, {
+			...hooks,
+			prepareCommit(publication) {
+				tinybaseRuntime?.preparePublication(publication.started)
+				return hooks.prepareCommit?.(publication)
+			},
+			publishCommit(publication) {
+				// A generation may first access its Store long after publication.
+				for (const ctx of publication.started) {
+					published.add(ctx)
+					tinybaseRuntime?.publish(ctx)
 				}
-			: {}),
-		...(config.plugins ? { plugins: Object.freeze({ ...config.plugins }) } : {}),
-	})
-}
-
-export function createCoreContextInstallations(
-	inputs: CoreRootInputs,
-	lifecycleHooks: CorePluginLifecycleHooks | ((root: RootContext) => CorePluginLifecycleHooks) = {},
-	createConfigService: (root: RootContext) => ConfigService = (root) => new ConfigService(root),
-	executionBinding?: CorePluginExecutionBinding,
-): readonly ContextCapabilityInstallation[] {
-	const execution = executionBinding ?? createCorePluginExecutionBinding()
-	assertCorePluginExecutionBinding(execution)
-	if (!executionBinding) execution.bind(inputs.plugins ?? {})
-	const fixedLifecycleHooks =
-		typeof lifecycleHooks === 'function'
-			? lifecycleHooks
-			: freezeCorePluginLifecycleHooks(lifecycleHooks)
-	return Object.freeze([
-		installScopeCapability(LOGGER_CAPABILITY, {
-			property: 'logger',
-			create: (ctx) => new LoggerService(ctx as Context),
-		}),
-		installScopeCapability(EFFECTS_CAPABILITY, {
-			property: 'effects',
-			create: (ctx) => new EffectsService(ctx as Context, undefined),
-		}),
-		installOwnerViewCapability(EVENTS_CAPABILITY, {
-			property: 'events',
-			createRoot: (root) => createEventsBackend(root as RootContext, inputs.events),
-			createView: (backend, owner) => createEventsServiceView(backend, owner as Context),
-		}),
-		installRootCapability(CONFIG_SERVICE_CAPABILITY, {
-			create: (ctx) => createConfigService(ctx as RootContext),
-		}),
-		installRootCapability(FS_CAPABILITY, {
-			create: (root) => new FsService(root as RootContext, inputs.zenfs),
-		}),
-		installOwnerViewCapability(PLUGIN_FS_CAPABILITY, {
-			property: 'fs',
-			createRoot: (root) => root.require(FS_CAPABILITY),
-			createView: (filesystem, owner) => {
-				const address = (owner as Context).pluginInfo?.nodeAddress
-				if (!address) throw new TypeError('[core.fs] A Plugin node address is required')
-				const directory = `plugins/${pluginNodePhysicalKey(address)}`
-				return (requirement) => filesystem.directory(directory, requirement)
+				return hooks.publishCommit?.(publication)
 			},
-		}),
-		installRootCapability(TINYBASE_HOST_CAPABILITY, {
-			create: (root) =>
-				new TinyBaseRuntime(
-					root as RootContext,
-					root.require(FS_CAPABILITY),
-					inputs.tinybase.maxSnapshotBytes,
-				),
-		}),
-		...(inputs.logtape
-			? [
-					installRootCapability(Logging, {
-						property: 'logging',
-						create: (root) => createCoreLoggingRuntime(root as RootContext, inputs.logtape!),
-					}),
-				]
-			: []),
-		installScopeCapability(TINYBASE_CAPABILITY, {
-			property: 'tinybase',
-			create: (owner) => owner.root.require(TINYBASE_HOST_CAPABILITY).forOwner(owner as Context),
-		}),
-		installRootCapability(PLUGIN_SERVICE_CAPABILITY, {
-			create: (ctx) => {
-				const executionConfig = execution.read()
-				const builtin = ctx.require(TINYBASE_HOST_CAPABILITY).lifecycle
-				const hooks =
-					typeof fixedLifecycleHooks === 'function'
-						? freezeCorePluginLifecycleHooks(fixedLifecycleHooks(ctx as RootContext))
-						: fixedLifecycleHooks
-				return new PluginService(ctx as RootContext, executionConfig, {
-					...hooks,
-					async prepareCommit(publication) {
-						await builtin.prepareCommit?.(publication)
-						await hooks.prepareCommit?.(publication)
-					},
-					publishCommit(publication) {
-						builtin.publishCommit?.(publication)
-						return hooks.publishCommit?.(publication)
-					},
-				})
-			},
-		}),
-	])
-}
-
-export function createCoreRootContext(config: CoreHostConfig = {}): RootContext {
-	const inputs = resolveCoreRootInputs(config)
-	const host = createContextHost({
-		name: 'core',
-		capabilities: createCoreContextInstallations(inputs),
+		})
 	})
-	return host.createRoot(inputs.name) as RootContext
-}
-
-/** Compile a Core host with an explicit, immutable set of additional capabilities. */
-export function createCoreContextHost<
-	const TCapabilities extends readonly ContextCapabilityInstallation[] = readonly [],
->(
-	config: CoreHostConfig & {
-		/** @internal One-time Host preparation seam; not a mutable runtime setting. */
-		readonly executionBinding?: CorePluginExecutionBinding
-		/** Overrides only the fixed Core config service. The factory is lazy; resources belong to root effects. */
-		readonly createConfigService?: (root: RootContext) => ConfigService
-		/** Fixed host publication stages; evaluated once when the root Plugin service is constructed. */
-		readonly createLifecycleHooks?: (root: RootContext) => CorePluginLifecycleHooks
-		readonly capabilities?: TCapabilities &
-			import('@pluxel/context').ValidateContextInstallations<
-				TCapabilities,
-				| Exclude<
-						keyof import('./Context').PluginContext,
-						keyof import('./Context').ContextServices
-				  >
-				| 'constructor'
-				| '__proto__'
-				| 'logging'
-			>
-	} = {},
-) {
-	if (
-		config.createConfigService !== undefined &&
-		typeof config.createConfigService !== 'function'
-	) {
-		throw new TypeError('[pluxel/core] createConfigService must be a function')
+	return {
+		get storage() {
+			return storage()
+		},
+		get tinybase() {
+			return tinybase()
+		},
+		get vault() {
+			return vault()
+		},
+		get http() {
+			return http()
+		},
+		get events() {
+			return events()
+		},
+		get config() {
+			return configService()
+		},
+		get plugins() {
+			return plugins()
+		},
+		get logging() {
+			return logging?.()
+		},
 	}
-	if (config.executionBinding && config.plugins !== undefined)
-		throw new TypeError('[core] executionBinding and plugins cannot be supplied together')
-	const inputs = resolveCoreRootInputs(config)
-	return createContextHost({
-		name: inputs.name,
-		reservedProperties: ['pluginInfo', 'caller', ...(!inputs.logtape ? ['logging'] : [])],
-		capabilities: [
-			...createCoreContextInstallations(
-				inputs,
-				config.createLifecycleHooks,
-				config.createConfigService,
-				config.executionBinding,
-			),
-			...(config.capabilities ?? []),
-		],
-	}) as import('@pluxel/context').ContextHost<
-		Context &
-			import('@pluxel/context').ContextProjection<TCapabilities> & {
-				readonly root: RootContext & import('@pluxel/context').RootContextProjection<TCapabilities>
-			},
-		RootContext & import('@pluxel/context').RootContextProjection<TCapabilities>
-	>
+}
+
+/** Compile application services alongside the already selected Core facilities. */
+export function createCoreContextHostWithFacilities(
+	config: CoreContextPlanConfig,
+	inputs: PreparedCoreFacilities,
+): ContextHost<Context, RootContext> {
+	assertCoreConfigObject(config, '[core] Host plan', planFields)
+	assertPreparedCoreFacilities(inputs)
+	for (const key of ['createConfigService', 'createLifecycleHooks'] as const) {
+		if (config[key] !== undefined && typeof config[key] !== 'function')
+			throw new TypeError(`[core] ${key} must be a function`)
+	}
+	const {
+		name = 'root',
+		execution: configuredExecution,
+		executionBinding,
+		createConfigService,
+		createLifecycleHooks,
+		services,
+	} = config
+	if (typeof name !== 'string' || !name.trim())
+		throw new TypeError('[core] name must be a non-empty string')
+	if (executionBinding !== undefined && configuredExecution !== undefined)
+		throw new TypeError('[core] executionBinding and execution cannot be supplied together')
+	const execution =
+		executionBinding === undefined ? createCorePluginExecutionBinding() : executionBinding
+	assertCorePluginExecutionBinding(execution)
+	if (executionBinding === undefined)
+		execution.bind(configuredExecution === undefined ? {} : configuredExecution)
+	const factories = Object.freeze({ createConfigService, createLifecycleHooks })
+	const plan = createContextPlan(name, services ?? [])
+	const roots = new WeakSet<RootContext>()
+	function assertRoot(root: RootContext): void {
+		if (!roots.has(root)) throw new TypeError('[core] Context belongs to a different host')
+	}
+	return Object.freeze({
+		name,
+		createRoot(rootName = name) {
+			const root = createRootContext(plan, rootName) as RootContext
+			initializeCoreRootContext(root, createCoreRuntime(root, inputs, factories, execution))
+			roots.add(root)
+			return Object.preventExtensions(root)
+		},
+		createScope(root: RootContext, scopeName: string) {
+			assertRoot(root)
+			return Object.preventExtensions(createGenerationContext(root, scopeName))
+		},
+		createChild(parent: Context, childName: string) {
+			assertRoot(parent.root)
+			return Object.preventExtensions(createOwnerContext(parent, childName))
+		},
+	}) as ContextHost<Context, RootContext>
 }

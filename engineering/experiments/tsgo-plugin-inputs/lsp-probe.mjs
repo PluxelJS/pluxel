@@ -7,6 +7,7 @@ export async function checkCompletions({
 	compiler,
 	root,
 	filename,
+	pluginTarget = 'ExamplePlugin',
 	extraProbes = '',
 	extraMarkers = [],
 }) {
@@ -71,10 +72,10 @@ export async function checkCompletions({
 		send({ method: 'initialized', params: {} })
 		const original = await readFile(filename, 'utf8')
 		const probes = `
-envBinding(ExamplePlugin, {config:{schema:ExampleConfig,mapping:{ /* config-completion */ }}})
-envBinding(ExamplePlugin, {config:{schema:ExampleConfig,mapping:{payload:{ /* payload-completion */ }}}})
-envBinding(ExamplePlugin, {vault:{schema:ExampleCredentials,mapping:{ /* vault-completion */ }}})
-envBinding(ExamplePlugin, {vault:{schema:ExampleCredentials,mapping:{credentials:{ /* credential-completion */ }}}})
+envBinding(${pluginTarget}, {config:{schema:ExampleConfig,mapping:{ /* config-completion */ }}})
+envBinding(${pluginTarget}, {config:{schema:ExampleConfig,mapping:{payload:{ /* payload-completion */ }}}})
+envBinding(${pluginTarget}, {vault:{schema:ExampleCredentials,mapping:{ /* vault-completion */ }}})
+envBinding(${pluginTarget}, {vault:{schema:ExampleCredentials,mapping:{credentials:{ /* credential-completion */ }}}})
 `
 		const text = original + probes + extraProbes,
 			uri = pathToFileURL(filename).href
@@ -113,7 +114,7 @@ envBinding(ExamplePlugin, {vault:{schema:ExampleCredentials,mapping:{credentials
 						text:
 							text +
 							`
-envBinding(ExamplePlugin, {vault:{schema:ExampleCredentials,mapping:{wrongKey:'ENV'}}})
+envBinding(${pluginTarget}, {vault:{schema:ExampleCredentials,mapping:{wrongKey:'ENV'}}})
 `,
 					},
 				],

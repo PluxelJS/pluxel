@@ -4,7 +4,9 @@ import { parseSync } from 'vite'
 import { parse } from 'yaml'
 
 import {
+	isFrameworkReleasePackage,
 	isPublishablePackage,
+	officialPluginsRepository,
 	rootWorkspaceDependencyErrors,
 	packagesRequiringInitialMajor,
 	releasePackageErrors,
@@ -61,7 +63,7 @@ const pnpmLock = await readFile(resolve(root, 'pnpm-lock.yaml'), 'utf8')
 for (const [tool, requiredMajor] of [
 	['node', 24],
 	['pnpm', 11],
-	['viteplus', 1],
+	['"github:voidzero-dev/vite-plus"', 1],
 	['hk', 2],
 	['pitchfork', 2],
 ]) {
@@ -121,7 +123,9 @@ if (
 		'React and ReactDOM must pin the same exact stable version for the precompiled Workbench MF shared contract; ranges can install a version different from the published assets',
 	)
 }
-const vitePlusVersion = /^viteplus\s*=\s*["']([^"']+)["']/m.exec(miseConfig)?.[1]
+const vitePlusVersion = /^"github:voidzero-dev\/vite-plus"\s*=\s*["']([^"']+)["']/m.exec(
+	miseConfig,
+)?.[1]
 if (
 	workspace.catalogs?.build?.['vite-plus'] !== vitePlusVersion ||
 	workspace.peerDependencyRules?.allowedVersions?.vite !== vitePlusVersion ||
@@ -129,7 +133,7 @@ if (
 	workspace.overrides?.['vite@*'] !== `npm:@voidzero-dev/vite-plus-core@${vitePlusVersion}`
 ) {
 	errors.push(
-		'mise viteplus, the vite-plus catalog, Vite Core aliases and peer allowance must pin the same version',
+		'mise Vite+, the vite-plus catalog, Vite Core aliases and peer allowance must pin the same version',
 	)
 }
 const workspacePatterns = new Set(workspace.packages)
@@ -163,6 +167,7 @@ if (new Set(packageNames).size !== packageNames.length) {
 	errors.push('repository package names must be unique')
 }
 const publicPackages = packageManifests.filter(isPublishablePackage)
+const frameworkReleasePackages = publicPackages.filter(isFrameworkReleasePackage)
 errors.push(...releasePackageErrors(packageManifests))
 errors.push(...workspaceOnlyDependencyErrors(packageManifests))
 const publishedDependencies = new Map(
@@ -236,19 +241,21 @@ for (const [id, draft] of releaseDraft.getPackageDrafts()) {
 if (plannedVersions.size > 1)
 	errors.push(`Tegami must plan one public version, got ${[...plannedVersions].join(', ')}`)
 
-for (const { manifest } of packagesRequiringInitialMajor(publicPackages)) {
-	if (
-		!releaseDraft
-			.getChangelogs()
-			.some((entry) =>
-				[manifest.name, `npm:${manifest.name}`, 'group:pluxel'].some(
-					(name) => entry.packages.get(name)?.type === 'major',
-				),
+if (plannedPackages.length > 0) {
+	for (const { manifest } of packagesRequiringInitialMajor(frameworkReleasePackages)) {
+		if (
+			!releaseDraft
+				.getChangelogs()
+				.some((entry) =>
+					[manifest.name, `npm:${manifest.name}`, 'group:pluxel'].some(
+						(name) => entry.packages.get(name)?.type === 'major',
+					),
+				)
+		) {
+			errors.push(
+				`${manifest.name} must have its own major Tegami intent before its initial stable release`,
 			)
-	) {
-		errors.push(
-			`${manifest.name} must have its own major Tegami intent before its initial stable release`,
-		)
+		}
 	}
 }
 
@@ -322,11 +329,18 @@ for (const { packageRoot, manifestPath, directory, kind, manifest } of packageMa
 		if ((await readOptionalFile(resolve(packageRoot, 'LICENSE'))) !== rootLicense) {
 			errors.push(`${manifest.name} must include an unmodified package-local LICENSE`)
 		}
-		if (manifest.repository?.url !== repositoryUrl) {
-			errors.push(`${manifest.name} repository.url must be ${repositoryUrl}`)
+		const releaseRepository = isFrameworkReleasePackage({ kind, manifest })
+			? repositoryUrl
+			: officialPluginsRepository
+		const releaseDirectory =
+			releaseRepository === officialPluginsRepository
+				? directory.slice('plugins/'.length)
+				: directory
+		if (manifest.repository?.url !== releaseRepository) {
+			errors.push(`${manifest.name} repository.url must be ${releaseRepository}`)
 		}
-		if (manifest.repository?.directory !== directory) {
-			errors.push(`${manifest.name} repository.directory must be ${directory}`)
+		if (manifest.repository?.directory !== releaseDirectory) {
+			errors.push(`${manifest.name} repository.directory must be ${releaseDirectory}`)
 		}
 	}
 

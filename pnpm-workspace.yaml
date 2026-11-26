@@ -8,16 +8,12 @@ packages:
   - vendor/split-like-vscode/packages/react
   - vendor/split-like-vscode/packages/demo
   - projects/*
-  - projects/embedded-launcher/sdk
+  - '!projects/host-expo'
+  - projects/host-targets/plugins
 
 allowBuilds:
   # Places the pinned platform binary at the PNPR executable entry.
   '@pnpm/pnpr@0.1.0-alpha.17': true
-  electron: true
-  koffi: true
-  # Studio excludes just-bash archive commands; optional native codecs are unused.
-  '@mongodb-js/zstd': false
-  node-liblzma: false
   '@google/genai': false
   '@parcel/watcher': false
   better-sqlite3: false
@@ -35,123 +31,12 @@ overrides:
   waku: catalog:docs
   # This declaration tool still requires the classic JS Compiler API.
   'dts-bundle-generator>typescript': 6.0.3
-  '@assistant-ui/react-streamdown>@streamdown/code': 2.0.0
   typebox: catalog:dev
 
 # Vite+ Core uses the Vite+ release number while exposing its bundled Vite 8 API.
 peerDependencyRules:
   allowedVersions:
     vite: '1.4.0'
-
-minimumReleaseAgeExclude:
-  - '@logtape/file@2.3.8'
-  - '@logtape/logtape@2.3.8'
-  - '@logtape/pretty@2.3.8'
-  - '@mantine/core@9.6.3'
-  - '@mantine/dates@9.6.3'
-  - '@mantine/hooks@9.6.3'
-  - '@mantine/modals@9.6.3'
-  - '@mantine/notifications@9.6.3'
-  - '@mantine/store@9.6.3'
-  - '@tanstack/query-core@5.104.0 || 5.104.5'
-  - '@tanstack/react-query@5.104.0 || 5.104.5'
-  - '@types/node@26.6.3'
-  - '@rolldown/binding-android-arm-eabi@1.2.13'
-  - '@rolldown/binding-android-arm64@1.2.13'
-  - '@rolldown/binding-darwin-arm64@1.2.13'
-  - '@rolldown/binding-darwin-x64@1.2.13'
-  - '@rolldown/binding-freebsd-x64@1.2.13'
-  - '@rolldown/binding-linux-arm-gnueabihf@1.2.13'
-  - '@rolldown/binding-linux-arm64-gnu@1.2.13'
-  - '@rolldown/binding-linux-arm64-musl@1.2.13'
-  - '@rolldown/binding-linux-ppc64-gnu@1.2.13'
-  - '@rolldown/binding-linux-s390x-gnu@1.2.13'
-  - '@rolldown/binding-linux-x64-gnu@1.2.13'
-  - '@rolldown/binding-linux-x64-musl@1.2.13'
-  - '@rolldown/binding-openharmony-arm64@1.2.13'
-  - '@rolldown/binding-win32-arm64-msvc@1.2.13'
-  - '@rolldown/binding-win32-x64-msvc@1.2.13'
-  - rolldown@1.2.13
-  - '@module-federation/vite@1.23.3 || 1.23.9'
-  - elysia@2.0.0-beta.26 || 2.0.0-rc.0
-  - nf3@0.4.2
-  - '@assistant-ui/core@0.3.27 || 0.3.30'
-  - '@assistant-ui/react@0.15.28 || 0.15.30'
-  - '@assistant-ui/tap@0.9.23 || 0.9.24'
-  - assistant-stream@0.3.50 || 0.3.53
-  - safe-content-frame@0.0.34
-  # Transitive dependency of the Streamdown adapter.
-  - '@assistant-ui/react-markdown@0.14.21'
-  - '@voidzero-dev/vite-plus-core@1.3.0 || 1.4.0'
-  - '@voidzero-dev/vite-plus-darwin-arm64@1.3.0 || 1.4.0'
-  - '@voidzero-dev/vite-plus-darwin-x64@1.3.0 || 1.4.0'
-  - '@voidzero-dev/vite-plus-linux-arm64-gnu@1.3.0 || 1.4.0'
-  - '@voidzero-dev/vite-plus-linux-arm64-musl@1.3.0 || 1.4.0'
-  - '@voidzero-dev/vite-plus-linux-x64-gnu@1.3.0 || 1.4.0'
-  - '@voidzero-dev/vite-plus-linux-x64-musl@1.3.0 || 1.4.0'
-  - '@voidzero-dev/vite-plus-win32-arm64-msvc@1.3.0 || 1.4.0'
-  - '@voidzero-dev/vite-plus-win32-x64-msvc@1.3.0 || 1.4.0'
-  - vite-plus@1.3.0 || 1.4.0
-  - '@fumadocs/base-ui@16.17.7'
-  - fumadocs-core@16.17.7
-  - fumadocs-mdx@15.4.8
-  - fumapress@1.6.2
-  - '@assistant-ui/store@0.3.22'
-  - '@inlang/paraglide-js@2.29.1 || 3.1.0'
-  - '@oxc-parser/binding-android-arm-eabi@0.155.0'
-  - '@oxc-parser/binding-android-arm64@0.155.0'
-  - '@oxc-parser/binding-darwin-arm64@0.155.0'
-  - '@oxc-parser/binding-darwin-x64@0.155.0'
-  - '@oxc-parser/binding-freebsd-x64@0.155.0'
-  - '@oxc-parser/binding-linux-arm-gnueabihf@0.155.0'
-  - '@oxc-parser/binding-linux-arm-musleabihf@0.155.0'
-  - '@oxc-parser/binding-linux-arm64-gnu@0.155.0'
-  - '@oxc-parser/binding-linux-arm64-musl@0.155.0'
-  - '@oxc-parser/binding-linux-ppc64-gnu@0.155.0'
-  - '@oxc-parser/binding-linux-riscv64-gnu@0.155.0'
-  - '@oxc-parser/binding-linux-riscv64-musl@0.155.0'
-  - '@oxc-parser/binding-linux-s390x-gnu@0.155.0'
-  - '@oxc-parser/binding-linux-x64-gnu@0.155.0'
-  - '@oxc-parser/binding-linux-x64-musl@0.155.0'
-  - '@oxc-parser/binding-openharmony-arm64@0.155.0'
-  - '@oxc-parser/binding-win32-arm64-msvc@0.155.0'
-  - '@oxc-parser/binding-win32-ia32-msvc@0.155.0'
-  - '@oxc-parser/binding-win32-x64-msvc@0.155.0'
-  - '@oxc-project/types@0.155.0'
-  - '@takumi-rs/core-darwin-arm64@2.17.0'
-  - '@takumi-rs/core-darwin-x64@2.17.0'
-  - '@takumi-rs/core-linux-arm64-gnu@2.17.0'
-  - '@takumi-rs/core-linux-arm64-musl@2.17.0'
-  - '@takumi-rs/core-linux-x64-gnu@2.17.0'
-  - '@takumi-rs/core-linux-x64-musl@2.17.0'
-  - '@takumi-rs/core-win32-arm64-msvc@2.17.0'
-  - '@takumi-rs/core-win32-x64-msvc@2.17.0'
-  - '@takumi-rs/core@2.17.0'
-  - '@takumi-rs/helpers@2.17.0'
-  - '@takumi-rs/wasm@2.17.0'
-  - '@tanstack/hotkeys@0.17.0'
-  - '@tanstack/react-hotkeys@0.16.0'
-  - chokidar@6.0.0
-  - oxc-parser@0.155.0
-  - streamdown@2.7.1
-  - takumi-js@2.17.0
-  - undici@8.12.3
-  - '@tanstack/react-router@1.170.46'
-  - '@tanstack/router-core@1.171.39'
-  - '@electric-sql/pglite@0.5.15'
-  - '@inlang/sdk@4.2.0'
-  - '@module-federation/bridge-react@2.9.3'
-  - '@module-federation/dts-plugin@2.9.3'
-  - '@module-federation/error-codes@2.9.3'
-  - '@module-federation/managers@2.9.3'
-  - '@module-federation/runtime-core@2.9.3'
-  - '@module-federation/runtime@2.9.3'
-  - '@module-federation/sdk@2.9.3'
-  - '@module-federation/third-party-dts-extractor@2.9.3'
-  - '@tanstack/react-virtual@3.14.26'
-  - '@tanstack/virtual-core@3.19.11'
-  - electron@45.2.2
-  - lucide-react@1.67.0
 
 publicHoistPattern:
   - react
@@ -165,9 +50,8 @@ publicHoistPattern:
 
 trustPolicy: no-downgrade
 trustPolicyExclude:
-  # Elysia 2 rc.0 uses the same npm publisher as beta.26 and is signed by npm but was not published through the trusted-publisher path.
-  # Keep this exact and remove it once the Elysia 2 release line restores publisher evidence.
-  - 'elysia@2.0.0-rc.0'
+  # rc.5 has the same npm publisher as rc.0 and a verified registry signature, without trusted-publisher evidence.
+  - 'elysia@2.0.0-rc.5'
 trustPolicyIgnoreAfter: 43200
 catalogs:
   # The vendored demo uses the same toolchain as Pluxel when run in this workspace.
@@ -179,9 +63,13 @@ catalogs:
     '@libsql/client': ^0.18.0
     drizzle-kit: ^0.31.11
     drizzle-orm: ^0.45.4
+    libpg-query: 18.2.4
     pg: ^8.23.1
-    redis: ^6.3.1
+    redis: ^6.4.0
   build:
+    '@wxt-dev/auto-icons': 2.0.0
+    '@wxt-dev/module-react': 1.2.2
+    '@cloudflare/vite-plugin': 1.70.1
     '@module-federation/vite': 1.23.9
     '@rolldown/pluginutils': ^1.0.1
     '@tailwindcss/vite': ^4.3.4
@@ -192,12 +80,17 @@ catalogs:
     readable-stream: 4.8.0
     rolldown: ^1.2.16
     vite-plus: 1.4.0
+    wxt: 0.21.5
     unplugin-macros: ^0.23.4
     unplugin-preprocessor-directives: ^1.2.0
     unrun: ^0.3.1
     vite: npm:@voidzero-dev/vite-plus-core@1.4.0
   dev:
-    '@cloudflare/workers-types': 5.20261103.1
+    electron: 44.7.1
+    # LLRT v0.9.0-beta pins a different version than the workspace build tools.
+    llrt-readable-stream: npm:readable-stream@4.7.0
+    # Workers types, Miniflare and Wrangler follow the stable Cloudflare Vite plugin's workerd release.
+    '@cloudflare/workers-types': 5.20261117.1
     '@fumapress/tegami': ^1.1.4
     '@logtape/logtape': ^2.4.2
     '@logtape/otel': ^2.4.2
@@ -206,16 +99,16 @@ catalogs:
     '@pnpm/pnpr': 0.1.0-alpha.17
     '@sinclair/parsebox': ^0.11.6
     '@tanstack/router-plugin': ^1.168.48
-    capnweb: 0.12.0
+    capnweb: 0.13.1
     cross-env: ^10.1.0
     dts-bundle-generator: ^9.5.1
-    elysia: 2.0.0-rc.0
+    elysia: 2.0.0-rc.5
     fdir: ^6.5.0
     fs-fixture: ^2.16.0
     ink: ^8.0.0
-    jose: ^6.2.15
+    jose: ^6.2.18
     jsdom: ^30.1.3
-    miniflare: 5.20261103.0-beta
+    miniflare: 5.20261117.0-beta
     pncat: ^0.13.4
     postcss: ^8.5.32
     postcss-preset-mantine: ^1.18.0
@@ -226,12 +119,11 @@ catalogs:
     tsx: ^4.23.15
     typescript: ^7.0.2
     typescript-legacy: npm:typescript@^6.0.3
-    wrangler: 4.157.0
+    wrangler: 4.164.0
     wretch: ^3.0.9
     yaml: ^2.9.1
-    typebox: ^1.4.3
-    '@electron/packager': 20.3.0
-    electron: 45.2.2
+    # Elysia rc.5 declarations use the five-argument StaticType from TypeBox 1.4.4.
+    typebox: 1.4.4
     playwright: 1.64.1
     tm-grammars: 1.32.22
     tm-themes: 1.12.12
@@ -288,13 +180,8 @@ catalogs:
     react: 19.3.1
     react-dom: 19.3.1
     tailwindcss: ^4.3.4
-    '@assistant-ui/react': 0.15.32
-    '@assistant-ui/react-streamdown': 0.3.21
-    '@streamdown/code': 2.0.0
-    '@streamdown/cjk': ^1.0.4
-    streamdown: ^2.7.1
-    '@assistant-ui/styles': 0.3.7
     flexlayout-react: 0.11.1
+    shiki: 4.6.0
   icons:
     '@tabler/icons-react': ^3.50.0
     lucide-react: ^1.67.0
@@ -311,8 +198,13 @@ catalogs:
     flexlayout-react: 0.11.1
     '@opentelemetry/api': ^1.10.0
   prod:
-    modern-tar: ^0.7.7
-    tinybase: 10.0.1
+    '@formatjs/intl-getcanonicallocales': 3.3.0
+    '@formatjs/intl-locale': 5.4.2
+    '@formatjs/intl-numberformat': 10.0.2
+    '@formatjs/intl-pluralrules': 7.0.2
+    magic-string: ^0.30.21
+    modern-tar: ^0.8.6
+    tinybase: 10.1.0
     '@noble/hashes': 2.4.0
     '@r4ai/typst-ast-node': 0.3.0
     '@r4ai/typst-ast-web': 0.3.0
@@ -322,13 +214,11 @@ catalogs:
     kerium: ^1.5.0
     playwright-core: 1.64.1
     validate-npm-package-name: ^8.0.0
-    yauzl: 3.4.0
-    fflate: 0.8.3
     '@antfu/utils': ^9.3.0
     '@chenglou/pretext': ^1.0.0
     '@clack/prompts': ^1.8.1
     '@dagrejs/dagre': ^3.1.3
-    '@electric-sql/pglite': ^0.5.15
+    '@electric-sql/pglite': ^0.6.0
     '@fumapress/ai': ^1.2.1
     '@fumapress/language': ^1.1.3
     '@fumapress/tegami': ^1.1.4
@@ -347,45 +237,44 @@ catalogs:
     '@myriaddreamin/typst.ts': 0.7.0
     '@napi-rs/canvas': ^1.1.0
     '@opentelemetry/api': ^1.10.0
-    '@opentelemetry/context-async-hooks': ^3.0.0
-    '@opentelemetry/core': ^3.0.0
-    '@opentelemetry/exporter-logs-otlp-grpc': ^0.300.0
-    '@opentelemetry/exporter-logs-otlp-http': ^0.300.0
-    '@opentelemetry/exporter-logs-otlp-proto': ^0.300.0
-    '@opentelemetry/exporter-metrics-otlp-grpc': ^0.300.0
-    '@opentelemetry/exporter-metrics-otlp-http': ^0.300.0
-    '@opentelemetry/exporter-metrics-otlp-proto': ^0.300.0
-    '@opentelemetry/exporter-prometheus': ^0.300.0
-    '@opentelemetry/exporter-trace-otlp-grpc': ^0.300.0
-    '@opentelemetry/exporter-trace-otlp-http': ^0.300.0
-    '@opentelemetry/exporter-trace-otlp-proto': ^0.300.0
-    '@opentelemetry/resources': ^3.0.0
-    '@opentelemetry/sdk-logs': ^3.0.0
-    '@opentelemetry/sdk-metrics': ^3.0.0
-    '@pnpm/napi': ^12.17.0
+    '@opentelemetry/context-async-hooks': ^3.1.1
+    '@opentelemetry/core': ^3.1.1
+    '@opentelemetry/exporter-logs-otlp-grpc': ^0.301.2
+    '@opentelemetry/exporter-logs-otlp-http': ^0.301.2
+    '@opentelemetry/exporter-logs-otlp-proto': ^0.301.2
+    '@opentelemetry/exporter-metrics-otlp-grpc': ^0.301.2
+    '@opentelemetry/exporter-metrics-otlp-http': ^0.301.2
+    '@opentelemetry/exporter-metrics-otlp-proto': ^0.301.2
+    '@opentelemetry/exporter-prometheus': ^0.301.2
+    '@opentelemetry/exporter-trace-otlp-grpc': ^0.301.2
+    '@opentelemetry/exporter-trace-otlp-http': ^0.301.2
+    '@opentelemetry/exporter-trace-otlp-proto': ^0.301.2
+    '@opentelemetry/resources': ^3.1.1
+    '@opentelemetry/sdk-logs': ^3.1.1
+    '@opentelemetry/sdk-metrics': ^3.1.1
+    '@pnpm/napi': ^12.23.0
     '@sinclair/typebox': ^0.34.52
     '@standard-schema/spec': ^1.1.0
     age-encryption: ^0.3.1
     ansis: ^4.5.0
     better-result: ^3.0.1
     cac: ^7.1.0
-    capnweb: 0.12.0
+    capnweb: 0.13.1
     cnfast: ^0.2.0
     crossws: ^0.4.17
     deepmerge: ^4.3.1
     detect-indent: ^7.0.2
     diff: ^9.0.0
     echarts: ^6.1.0
-    elysia: 2.0.0-rc.0
-    exact-mirror: ^1.2.6
+    elysia: 2.0.0-rc.5
+    exact-mirror: ^1.2.8
     find-up: ^8.0.0
     fumapress: ^1.6.2
     get-npm-meta: ^0.3.0
     gunshi: ^0.37.3
     jiti: ^2.7.0
-    jose: ^6.2.15
+    jose: ^6.2.18
     jsonc-parser: ^3.3.1
-    mathjs: 15.2.0
     mdast-util-directive: ^3.2.0
     mdast-util-from-markdown: ^2.1.0
     mdast-util-gfm: ^3.1.0
@@ -403,6 +292,7 @@ catalogs:
     rangi: ^2.2.0
     s3mini: ^1.0.3
     satteri: ^0.11.6
+    resolve-pkg-maps: ^1.0.0
     semver: ^7.8.6
     srvx: ^1.0.8
     std-env: ^4.3.0
@@ -414,14 +304,11 @@ catalogs:
     tinyglobby: ^0.2.17
     typescript: ^7.0.2
     unconfig: ^7.5.0
-    undici: ^8.12.3
+    undici: ^8.13.1
     verkit: ^0.5.0
     wretch: ^3.0.9
     yaml: ^2.9.1
-    just-bash: 3.6.0
-    '@mariozechner/pi-coding-agent': 0.73.1
-    quickjs-emscripten: 0.32.0
-    '@opentelemetry/sdk-trace': ^3.0.0
+    '@opentelemetry/sdk-trace': ^3.1.1
   test:
     '@noble/ciphers': 2.4.0
     '@noble/hashes': 2.4.0
@@ -433,14 +320,15 @@ catalogs:
     p-map: ^7.1.1
     p-memoize: ^9.0.0
     p-retry: ^9.0.0
-    vitest: 5.1.0
-    ws: ^8.22.1
+    # Match the Vitest runtime bundled with vite-plus 1.4.0.
+    vitest: 5.0.5
+    ws: ^8.23.0
     zod: 4.6.7
   types:
+    '@types/bun': ^1.4.5
     '@types/jsdom': 30.0.0
     '@types/katex': 0.16.8
     '@types/validate-npm-package-name': ^4.0.2
-    '@types/yauzl': 3.4.0
     '@types/mdast': ^4.0.4
     '@types/mdx': ^2.0.14
     '@types/node': ^26.6.6
@@ -452,7 +340,7 @@ catalogs:
     '@types/ws': ^8.18.2
   validation:
     option-t: ^56.1.2
-    superjson: ^2.2.6
+    superjson: ^2.2.7
     valibot: ^1.5.0
   workflow:
     '@tanstack/pacer': ^0.23.1
@@ -462,5 +350,5 @@ patchedDependencies:
   '@tanstack/react-router@1.170.46': vendor/split-like-vscode/patches/@tanstack+react-router@1.170.46.patch
   '@zenfs/core@2.8.3': patches/@zenfs__core@2.8.3.patch
   '@zenfs/dom@1.2.14': patches/@zenfs__dom@1.2.14.patch
+  '@zenfs/streams@1.0.2': patches/@zenfs__streams@1.0.2.patch
   flexlayout-react@0.11.1: vendor/split-like-vscode/patches/flexlayout-react@0.11.1.patch
-  quickjs-emscripten-core@0.32.0: patches/quickjs-emscripten-core@0.32.0.patch

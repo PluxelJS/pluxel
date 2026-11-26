@@ -1,0 +1,183 @@
+import { writeFile } from 'node:fs/promises'
+import { join } from 'node:path'
+import { describe, expect, expectTypeOf, it } from 'vitest'
+import {
+	createHost,
+	defineHostApplication,
+	prepareHostApplication,
+	resolveHostApplication,
+	type HostApplicationFactory,
+	type HostStartupContext,
+} from '../../src/index'
+import { defineHostApplication as definePortableApplication } from '../../src/application'
+import { runNodeModule } from '../support/node'
+import { createWorkspace, hostPackage } from '../support/workspace'
+
+const startup = { root: process.cwd(), mode: 'test' as const, bindings: {}, env: { VALUE: 'one' } }
+
+describe('shared Host application startup', () => {
+	it('declares without evaluation and preserves contextual startup and concrete return types', async () => {
+		expect(defineHostApplication).toBe(definePortableApplication)
+		let calls = 0
+		const application = defineHostApplication((input) => {
+			expectTypeOf(input).toEqualTypeOf<HostStartupContext>()
+			calls++
+			return { plugins: [], name: 'specific' as const }
+		})
+		expectTypeOf<ReturnType<typeof application>['name']>().toEqualTypeOf<'specific'>()
+		expect(calls).toBe(0)
+		await resolveHostApplication(application, startup)
+		expect(calls).toBe(1)
+		expect(() => {
+			// @ts-expect-error An application declaration must be a factory.
+			defineHostApplication({ plugins: [] })
+		}).toThrow('must be a factory')
+		// The helper defers evaluation, including invalid JavaScript factory results.
+		// @ts-expect-error Unknown result fields are not application configuration.
+		defineHostApplication(() => ({ plugins: [], typo: true }))
+		// @ts-expect-error Unknown async result fields are rejected as well.
+		defineHostApplication(async () => ({ plugins: [], configure() {} }))
+		// A service-only application can omit the plugin catalog.
+		defineHostApplication(async () => ({ services: [] }))
+	})
+
+	it('resolves fresh services and rolls back when application preparation fails', async () => {
+		await using workspace = await createWorkspace('application')
+		const { root } = workspace
+		const entry = join(root, 'app.mjs')
+		await writeFile(
+			entry,
+			`import {defineHostService} from '@pluxel/host';
+import {installRootService} from '@pluxel/core/host';
+export class ApplicationResource {}
+export default async ({env,bindings}) => {
+ const events=bindings.events; events.push('factory:'+env.VALUE); await Promise.resolve();
+ return {plugins:[],services:[defineHostService({name:'ApplicationResource',provides:[installRootService(ApplicationResource,{create:()=>env.VALUE})],prepare({effects}){events.push('prepare:'+env.VALUE);effects.defer(()=>events.push('close:'+env.VALUE))}})],prepare({startup}){if(startup.env.VALUE==='fail')throw new Error('application prerequisite failed')}};
+}`,
+		)
+		const result = await runNodeModule(
+			`import assert from 'node:assert/strict'; const {runHostApplication}=await import(${JSON.stringify(new URL('dist/index.mjs', hostPackage).href)}); const events=[];const startup={root:${JSON.stringify(root)},mode:'test',env:{VALUE:'one'},bindings:{events}};{await using host=await runHostApplication(${JSON.stringify(entry)},{startup});}await assert.rejects(runHostApplication(${JSON.stringify(entry)},{startup:{...startup,env:{VALUE:'fail'}}}),/application prerequisite failed/);console.log(JSON.stringify(events))`,
+		)
+		expect(JSON.parse(result.stdout)).toEqual([
+			'factory:one',
+			'prepare:one',
+			'close:one',
+			'factory:fail',
+			'prepare:fail',
+			'close:fail',
+		])
+	})
+
+	it('isolates concurrent startup inputs and shares each frozen snapshot with prepare', async () => {
+		const handle = { count: 0 }
+		const input = {
+			...startup,
+			env: { VALUE: 'first' },
+			bindings: { handle },
+			deployment: {
+				root: '/first',
+				target: 'node' as const,
+				variant: 'headless' as const,
+				delivery: 'standalone' as const,
+			},
+		}
+		const seen: HostStartupContext[] = []
+		let release!: () => void
+		const barrier = new Promise<void>((resolve) => {
+			release = resolve
+		})
+		const application = defineHostApplication(async (snapshot) => {
+			seen.push(snapshot)
+			await barrier
+			return {
+				plugins: [],
+				name: snapshot.env.VALUE,
+				prepare({ startup: preparedStartup }) {
+					expect(preparedStartup).toBe(snapshot)
+				},
+			}
+		})
+		const first = resolveHostApplication(application, input)
+		input.env.VALUE = 'second'
+		input.deployment.root = '/second'
+		const second = resolveHostApplication(application, input)
+		release()
+		const [a, b] = await Promise.all([first, second])
+		expect([a.name, b.name]).toEqual(['first', 'second'])
+		expect(a.startup.deployment?.root).toBe('/first')
+		expect(a.startup).not.toBe(b.startup)
+		expect(a.startup.env).not.toBe(b.startup.env)
+		expect(a.startup.bindings).not.toBe(b.startup.bindings)
+		for (const snapshot of seen) {
+			expect(Object.isFrozen(snapshot)).toBe(true)
+			expect(Object.isFrozen(snapshot.env)).toBe(true)
+			expect(Object.isFrozen(snapshot.bindings)).toBe(true)
+			expect(snapshot.bindings.handle).toBe(handle)
+		}
+		expect(Object.isFrozen(handle)).toBe(false)
+		expect(Object.isFrozen(input.env)).toBe(false)
+		const host = await createHost({ plugins: [] })
+		try {
+			await prepareHostApplication(a, host)
+			await prepareHostApplication(b, host)
+		} finally {
+			await host.close()
+		}
+	})
+
+	it('captures the evaluated declaration before resolving asynchronous bindings', async () => {
+		const original = { name: 'selected', provides: [] as const }
+		const changed = { name: 'changed', provides: [] as const }
+		const declaration = {
+			plugins: [] as [],
+			services: [original],
+			sources: [{ directory: 'selected', include: ['*.mjs'] }],
+			policy: { execution: { startTimeoutMs: 1500 } },
+		}
+		const application = defineHostApplication(() => {
+			// Mutate after the factory result is received, while input resolution yields.
+			queueMicrotask(() =>
+				queueMicrotask(() => {
+					declaration.services[0] = changed
+					declaration.sources[0]!.directory = 'changed'
+					declaration.policy.execution.startTimeoutMs = 2000
+				}),
+			)
+			return declaration
+		})
+		const resolved = await resolveHostApplication(application, startup)
+		expect(resolved.services?.[0]?.name).toBe('selected')
+		expect(resolved.sources[0]).toMatchObject({ directory: 'selected' })
+		expect(resolved.policy.declared.startTimeoutMs).toBe(1500)
+	})
+
+	it('propagates factory rejection before service preparation', async () => {
+		const failure = new Error('factory failure')
+		await expect(
+			resolveHostApplication(
+				defineHostApplication(async () => {
+					throw failure
+				}),
+				startup,
+			),
+		).rejects.toBe(failure)
+	})
+
+	it.each([
+		[{ plugins: [] }, 'must be a factory'],
+		[(): undefined => undefined, 'must be a plain object'],
+		[() => ({ plugins: [] as const, configure() {} }), 'unsupported "configure"'],
+		[() => ({ plugins: [] as const, services: {} }), 'services must be an array'],
+		[() => ({ plugins: [] as const, acceptStartup: true }), 'acceptStartup must be a function'],
+		[() => ({ plugins: [] as const, launch: {} }), 'launch must be a function'],
+		[() => ({ plugins: [] as const, state: {} }), 'unsupported "state"'],
+		[() => ({ plugins: [] as const, configRecords: {} }), 'unsupported "configRecords"'],
+		[() => ({ plugins: [] as const, runtime: { storage: {} } }), 'unsupported "runtime"'],
+		[() => ({ plugins: [] as const, policy: { initial: {} } }), 'unsupported'],
+		[() => ({ plugins: [] as const, config: { base: [] as const } }), 'unsupported'],
+	])('rejects invalid JavaScript declarations at the boundary', async (application, message) => {
+		await expect(
+			resolveHostApplication(application as unknown as HostApplicationFactory, startup),
+		).rejects.toThrow(message as string)
+	})
+})

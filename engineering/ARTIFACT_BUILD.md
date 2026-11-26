@@ -1,163 +1,83 @@
 # Workbench 与 Node 制品编译
 
-修改 declaration lowering、renderer/Content/Node artifact、构建缓存或 candidate publication 时读本页。UI build primitive 位于 `@pluxel/rolldown/vite/workbench-ui`。作者调用见 [Workbench](../docs/workbench/index.md) 与 [Node artifacts](../docs/plugin-development/node-artifacts.md)；运行期所有权见 [WORKBENCH](WORKBENCH.md) 与 [HMR](HMR.md)。
-
-| 任务                                     | 入口                                                          |
-| ---------------------------------------- | ------------------------------------------------------------- |
-| 声明、browser/server 隔离、native import | [Workbench source declaration](#workbench-source-declaration) |
-| 开发缓存、后台构建、过期候选             | [Development compiler](#development-compiler)                 |
-| Manifest/types、共享模块与生产 inventory | [Production build](#production-build)                         |
+Rolldown 将 server 声明编译为 browser producer/Content 和 Node artifact，Host 按已接纳 definition 读取制品。公开用法见 [Workbench](../docs/workbench/index.md) 与 [Node artifacts](../docs/plugin-development/node-artifacts.md)，运行/更新见 [Workbench](WORKBENCH.md) 与 [HMR](HMR.md)。UI build primitive 位于 `@pluxel/rolldown/vite/workbench-ui`。
 
 ## Workbench source declaration
 
-Declaration 用法见 [Workbench](../docs/workbench/index.md)。
+semantic pass 在 TS 擦除前读取 `workbench.define(import.meta.url, entries)`，用 canonical Plugin definition 与 entry key 生成 identity。它相对 define 所在的源码模块解析 `document` 和 `renderer`，读取 Content 的可选 `slots`，并与运行时共用路径和 placement 校验。View 的浏览器 descriptor 投影包含完整的已验证 placement。
 
-Semantic pass 在 TypeScript 擦除前解析 `workbench.define()`、entry key、Content/View/Attachment kind，以及 literal
-`workbench.markdown(import.meta.url, relativePath, slots?)` / `workbench.entry(import.meta.url, relativePath)`，再与 owning
-canonical `PluginDefinitionAddress` 合成 declaration identity。
-`workbench.panel(region, options)` 静态解析 region 与展示选项，复用 Workbench author 的纯准入规则，只支持
-`left`、`right`、`bottom`，不执行用户模块。View 的 browser descriptor projection 保留 panel 的区域、标签、图标和排序；
-Content 与 Attachment placement 仍走各自既有声明和生命周期路径。
-Markdown 由 build-time CommonMark/GFM + directive compiler 降为有界 portable AST；HTML、图片、相对/不安全链接、task list、
-frontmatter、错误 slot topology 和不支持的语法 fail-fast。`data()`/`action()` 的静态 declaration 被 lower 为 slot metadata；真实
-schema 只保留在 server module，不求值、不序列化。Markdown source 进入 watch graph，但不进入 server bundle 或 browser parser。
-同一 Plugin definition 的全部 renderers 被 lower 成一个 `WorkbenchFederationProducerPlan`；每个 declaration 生成一个
-stable `./views/<key>` expose 和 generated React Bridge entry。作者不声明 owner、remote name、expose、public path、
-manifest URL、shared 或 Bridge wrapper。Content 独立编译为一个 definition-scoped immutable Content set；Content-only definition 的
-producer 数为零，不启动 Federation builder，也不做 React/Mantine compatibility 检查。
+Markdown 由 build-time CommonMark/GFM+directive compiler 生成有界 portable AST。HTML、图片、不安全/相对链接、task list、frontmatter、非法 slot topology 和不支持语法拒绝。data/action 只 lower metadata，真实 schema 留在 server；Markdown 加入 watch graph，但源码/parser 不交付 server/browser。
 
-Mixed Content/View 的 generated Bridge 只导入 renderer descriptor 的 identity projection，不导入完整 definition。Renderer 若直接
-静态 import definition，toolchain 将该 import 改写到同一 projection；dynamic/indirect definition import 直接拒绝。Packaging sentinel
-检查 JS、source map 与 dynamic types，确保 Content schema/handler 不进入 browser outputs，而不是依赖普通 tree-shaking。
+同 definition 的 renderer 合为一个 `WorkbenchFederationProducerPlan`，每项生成稳定 `./views/<key>` expose 与 React Bridge。Content 独立成为 definition-scoped immutable set；Content-only 不启动 MF builder、不检查 React/Mantine。生成器拥有 owner/remote/expose/public path/manifest/shared/Bridge，作者只声明业务。
 
-UI entry 不进入 server bundle。反向边界同样成立：UI source graph 只能引用 browser-safe Workbench definition、
-`capnweb` 类型、`@pluxel/workbench/react` 和公开 UI peers，不得包含 Plugin implementation、
-Context、database handle 或 Node API。
+Mixed Content/View 的 Bridge 只 import renderer identity projection。renderer 直接静态 import definition 时改写到 projection，dynamic/间接 import 拒绝。sentinel 检查 JS、source map、dynamic types，确保 schema/handler 不泄漏。UI entry 不进 server；browser graph 仅用 browser-safe definition、capnweb 类型、Workbench/react 和 UI peers，不带 Plugin implementation、Context、database 或 Node API。
 
 ### Node declarations 与 native owner
 
-额外 Node entry 使用 module-level `defineNodeModule(import.meta.url, literal)`；`defineWorkerTask<Input, Output>()` 复用同一 artifact pipeline。作者操作见 [Node artifacts](../docs/plugin-development/node-artifacts.md)。
+module-level `defineNodeModule(import.meta.url, literal)` 和 `defineWorkerTask<Input, Output>` 共用唯一 `pluginArtifactBuildPlugin`，在同次 server transform 收集已 lower plans/declarations。Node 输出 `dist/artifacts/node/<key>.mjs`，与 Workbench 分开 identity/revision/validator/target，只共享编排和有界接纳。`workbench: false` 跳过 renderer/Markdown compiler/accessor。
 
-唯一的 `pluginArtifactBuildPlugin` 在同一次 server transform 中收集已 lower 的 Workbench producer/Content plans 与 Node
-declarations。Node branch 输出 `dist/artifacts/node/<artifact-key>.mjs`；Workbench 和 Node 使用独立 identity、
-source/build revision、validator 和 target config，只共享 build orchestration 与 bounded admission。`workbench: false`
-完全跳过 renderer 与 Markdown compiler/accessor。
+Node artifact 为单文件 ESM：普通 JS/TS 依赖内联，拒绝 Pluxel runtime/Core value import、CSS/browser asset 和嵌套声明。受控 native residual 必须由发出 import 的最近 package 在 direct dependencies/optionalDependencies 声明，并具有 napi/binary/gypfile 或 .node entry 证据。未声明与同名多 entry 解析拒绝。
 
-Production lowering、`pluginArtifactBuildPlugin` coordinator 与 Node artifact compiler 位于
-`packages/rolldown/src/plugin-artifact/`。Workbench semantic lowering、MF validation/build primitive 位于
-`src/workbench/` 与 `src/vite/`；Node 和 browser output 不共用运行时 identity。
+static default/named native import 转为 owner-aware bridge：定位 entry package，沿源码 package chain 找实际 owner，再从 owner manifest createRequire。dynamic/namespace/export * native import 拒绝，最终静态 import 只留 Node builtins，`onNativeResidual` 向部署报告 binding。workspace 选 `@pluxel/hmr`、发布包选 publishConfig default，同用 validator。Worker 的 default export 与调度协议由 services/workers 拥有。
 
-Node artifact 必须是单文件 ESM，不得 value-import Pluxel runtime/core、CSS/browser asset 或嵌套 Pluxel declaration。
-普通 JS/TS dependency 继续内联。唯一受控 residual 是 source graph 中某个 package 自己 direct
-`dependencies` / `optionalDependencies` 声明，且 metadata 明确含 `napi`、`binary`、`gypfile` 或入口解析为 `.node` 的 native
-package。所有权按发出该 import 的文件最近 package root 校验，而不是要求最外层插件重复声明传递依赖；未声明 native import
-与同名多 entry 解析都会失败。构建器把静态 default/named native import 编译成 package-owner-aware bridge：产物先定位 entry
-package，再沿 source graph 的 package chain 定位真正 owner，最后从 owner manifest 用 `createRequire` 加载 binding。这样 pnpm
-strict layout 下也不会错误地从最外层 artifact 解析 Canvas 的私有依赖；dynamic/namespace/`export *` native import 会被明确拒绝。
-artifact 的静态 import 仍只剩 Node builtins，`onNativeResidual` 继续报告 binding 给部署追踪。workspace build 优先使用
-`@pluxel/hmr` source condition，发布包使用 `publishConfig` 的 default entry，两条图应用相同 validator。`defineNodeModule`
-本身不定义 worker protocol；`defineWorkerTask` 的 default export contract 与调度生命周期由 `@pluxel/services/workers` 统一拥有。
+实现位于 [`plugin-artifact/`](../packages/rolldown/src/plugin-artifact/)、[`workbench/`](../packages/rolldown/src/workbench/) 与 [`vite/`](../packages/rolldown/src/vite/)。
 
 ## Development compiler
 
-Runtime-dev compiler 对 Workbench 只接受 shared semantic pass 产生的完整 producer/Content plan：
+Workbench 编译仅消费 shared semantic pass 的完整 plan：
 
-1. 按 definition + build revision + build root 去重 task；
-2. 收集 renderer 与 Markdown source graph，并把 graph/hash 与 plan 的 build revision 交叉验证；
-3. 同步 materialize Content set，并快速复用内存或磁盘上已验证的 producer candidate；
-4. 先提交 definition topology、Content 与已可用 producer；缺失 producer 会撤掉该 definition 的当前 federation
-   pointer，但对应 View/Attachment placement 仍保留在 layout 中并显示 building 状态；
-5. 缺失 producer 进入后台 build queue，使用持久 Vite/cache root；同一 cache root 的访问串行化，避免 DTS/Vite
-   临时文件竞争；
-6. 后台完成后确认该 plan 仍是最新 desired revision，再把 producer 与同一轮 Content candidate 作为完整 tuple 原子提交；
-7. 后台失败时不提交 producer inventory，而是把对应 layout entry 更新为 failed 状态和安全错误 message；
-8. 验证 Manifest/Snapshot、exact exposes/shared/runtime assets，以及 Content definition/content digest 和 portable plan；
-9. 有界保留 disk cache，stale/superseded candidate 不再获得 commit authority。
+1. 按 definition/build revision/build root 去重，核对 renderer/Markdown graph hash 与 plan revision。
+2. 同步 materialize Content，复用已验证 memory/disk producer；准备结果保持独立候选。
+3. graph 接纳时同步提交 topology/Content/可用 producer。缺 producer 时撤旧 federation pointer，保留 placement 并显示 building。
+4. 缺失 producer 后台构建；完成后核对 desired revision/epoch，作为 producer+同轮 Content tuple 原子提交；失败只发布 failed/message。
+5. 校验 Manifest/Snapshot、exact exposes/shared/assets 和 Content digest/plan，进入有界 disk cache；stale/superseded 不能提交。
 
-Node module 继续拥有独立 watcher、content-addressed build、staged setup 和 last-known-good。Workbench producer 成功 commit
-通过 session epoch invalidation 驱动 full document reload；producer-status-only 的 building/failed 展示可在同一 session
-轻量刷新，但不做 Content-local reconnect 或页内 remote replacement。
+同 cache root 的 DTS/Vite transaction 串行，producer 成功提交使 session epoch 失效并整页 reload。building/failed 状态可轻量刷新；Content 不另设 reconnect 或页内 remote replacement。并发 slot/cohort 与接纳时点见 [HMR](HMR.md#构建并发与发布权限)。
 
-Node 制品并发构建只共享编译任务；每个消费构建仍独立发布到自己的输出目录并接收 native residual 部署事实，不能因缓存命中跳过。
-原生依赖桥接的相对路径按最终制品目录计算，缓存身份包含该目录到 package root 的相对布局，不能把缓存目录的位置烘焙进发行文件。
-standalone 的生产源码解析接受插件包生成的 `@pluxel/hmr` 出口条件；这里只选择源码入口，仍执行生产 semantic lowering，不启用 `development` 运行条件。
-standalone 源码构建由部署根拥有已追踪的 native residual，bridge 从发行根 `package.json` 解析 binding，不再依赖被内联的源码 package 或其 package chain。该 owner 模式与相对布局进入缓存签名；普通插件包与开发构建仍保留原 package owner chain。
+Node 有独立 watcher、content-addressed build、staged setup 和 last-known-good。并发消费者可共享编译，每个消费构建仍独立写自己的输出并报告 residual。bridge 相对路径按最终 artifact 位置计算，output 到 package root 的布局进入缓存签名。
+
+standalone 的 source resolution 选择 `@pluxel/hmr` 后仍执行 production lowering/conditions。部署根拥有已追踪 residual，bridge 从发行 root manifest 解析；普通包/开发继续 package owner chain。owner 模式和相对布局都进入签名。
 
 ### 解析根与缓存身份
 
-`workbench.entry(import.meta.url, './renderer.tsx')` 的 literal path 相对声明模块解析；lowering 从实际
-definition/renderer module 收集 source graph，在 owning package root 的 `.pluxel/workbench-generated/` 生成 Bridge entry，
-并把 package-relative entry 写入 producer plan。Builder 明确区分三个目录事实：producer root 解析 Bridge/source 与 producer
-依赖；host application root 作为 Vite root，并决定 fixed shared winner、compatibility signature 与 MF export detection；两者的
-最小公共祖先作为 TypeScript declaration `rootDir`，覆盖跨 workspace link 的 producer。这里不接受调用方目录列表、absolute
-renderer declaration、runtime-module fallback、root override 或第二套 filesystem discovery。
+entry literal 相对声明模块解析；lowering 在 owning package 的 `.pluxel/workbench-generated` 生成 Bridge，plan 保存 package-relative path。producer root 解析源码/依赖；application root 是 Vite root，决定 shared winner、compatibility signature、MF export detection；两者最小公共祖先作为声明 rootDir。入口、source graph 和 root 均来自真实解析，不接受第二套目录发现或 runtime fallback。
 
 ## Production build
 
-可选 UI 集成的 JavaScript 与声明都需保持入口边界。Fonts 根入口保留静态 Workbench definition 与直接 publication，供 semantic pass 识别 producer；只有 Workbench RPC 执行快照读取时才加载 server DTO 校验。根入口公开的纯字体 snapshot 类型单独维护，不能在声明共享 chunk 中重新连到 Workbench RPC 类型。Typst 对 Fonts 的 required constructor 仍使用直接值导入，不用类型导入绕过来源检查。
+| 输出                                               | 位置                                                                                |
+| -------------------------------------------------- | ----------------------------------------------------------------------------------- |
+| producer manifest、remoteEntry、chunks、CSS、types | `dist/workbench/<producer>/<revision>/`                                             |
+| Content plan                                       | `dist/workbench/content/<definition-digest>/<content-set-digest>/content-plan.json` |
+| 根索引                                             | `dist/workbench/pluxel-workbench-producers.json`、`pluxel-workbench-content.json`   |
 
-生产构建输出 `dist/workbench/<producer>/<revision>/mf-manifest.json`、`remoteEntry.js`、expose chunks、CSS 和 dynamic
-types；Content 输出 `dist/workbench/content/<definition-digest>/<content-set-digest>/content-plan.json`。Root 分别写
-`dist/workbench/pluxel-workbench-producers.json` 与 `dist/workbench/pluxel-workbench-content.json`。发布包和应用产物
-都消费预编译 Content inventory，因此 distribution 不要求保留原始 `src/*.md`。Cache/build revision 包含解析后的 UI 源码图、
-实际命中的 package metadata 与 subpath、fixed shared compatibility set 和 compiler version；无关 workspace lockfile 内容不参与。
-只有类型声明入口的已安装依赖（包括仅向 TypeScript 导出根入口的包）以清单参与 revision，不要求其具有 JS 根入口；若清单声明了运行时根导出，解析失败仍使构建失败。
-清单依赖遍历允许未安装的 `optionalDependencies`（包括包管理器遗留的断链），不为其构造运行时根 import；依赖声明仍进入 revision。实际源码 import 不享有此例外，缺失模块仍必须报错。
-Builder 不接受调用方覆盖 Vite、shared、Bridge、并发或 cache policy。
+发布包和应用直接消费预编译 Content，不需 src/*.md。cache/build revision 包含已解析 UI 图、实际 metadata/subpath、fixed shared compatibility、compiler version，无关 lockfile 不参与。类型专用依赖以 manifest 参与，无需 JS 根；声明了 runtime 根则必须可解析。未安装 optionalDependencies（含断链）可跳过 runtime 解析但声明仍入 revision，实际源码 import 缺失仍报错。
 
-standalone 的 Workbench 制品选择只消费已验证的固定 `plugins` catalog。静态 declaration parser 沿原 import/export
-解析器保存 constructor 的 lexical binding；Plugin semantic pass 从源声明或已编译 lowering ABI 把该 binding 映射为
-canonical definition。缺失或歧义事实明确使构建失败，不求值 application factory，也不按 class display name 或整个包推断。
-同一 definition key 集在 semantic snapshot 读取 renderer/Markdown 前筛选 publication，并在 final assembly 中筛选
-应用的 producer/Content inventory。依赖包 inventory 另外只接纳最终 server bundle 模块中具有 compiled lowering ABI 事实的
-definition；从源码编译的定义以本次输出为权威，不再读取同包旧 `dist` 中的副本。同一个包可以同时包含源码与已编译定义，
-因此选择按 definition 而非 package 或目录判断。未选中定义不构建、不读取或复制其制品树；被读取的 inventory 仍完整解析，
-所选树继续验证 digest、immutable bytes 与 collision。包里有其他 producer，或其注册副作用仍保留在 server chunk，
-都不会扩大应用 catalog 的制品集合。modules 和插件包按其公开编译定义交付，不套用 standalone 的固定 catalog 选择。
+standalone 选择精确固定 catalog：parser 保留 constructor lexical binding，semantic pass 从源码/已编译 ABI 映射 canonical definition，缺失或歧义失败。renderer/Markdown 读取前及 final assembly 都按该集合筛选；依赖 inventory 只接纳最终 server 模块中有 compiled ABI 的定义。本轮源码输出拥有对应 definition，其他 built definition 仍读其真实 owner，可在同包并存。未选 definition 不读取或复制制品树，已选 inventory 仍完整解析并验证 digest/collision；modules/插件包交付各自公开定义。
 
-Fixed shared、React ancestry 与 CSS 所有权见 [WORKBENCH](WORKBENCH.md#mf2-与-react-bridge)。Application root 必须解析全部 Shell-provided peers；producer 的 React/Workbench/Mantine 与 winner 精确一致。开发显式选择源码 exports 与 development 条件；Plugin/package 和 application 的生产源码编译显式选择源码 exports 与 production 条件，包含 shared 导出分析与 DTS 解析。低层 builder 的 `packageMode: 'source'` 表达这条路径，默认仍要求完整 dynamic types；`distribution` 使用 built exports。不从目录或已有 dist 猜测，也不在缺少 built entry 时切换源码。Production builder 按同一 build contract 生成 Shell 与 producer，并用 canonical plan/compatibility set 校验全部候选。
+fixed shared/React ancestry/CSS 由 [Workbench](WORKBENCH.md#mf2-与-react-bridge)维护。application root 解析全部 Shell peers，producer 的 React/Workbench/Mantine 精确匹配 winner。开发用 source+development，生产源码用 source+production，distribution 用 built exports；builder 的 `packageMode: source` 明确选择路径，不按 dist 是否存在猜测。低层 builder 固定 Vite/shared/Bridge/并发/cache policy。
 
-Rolldown 的发布制品内联 Workbench 的纯 transport 规则与 Host 的 `internal/shared-runtime`
-metadata 叶子，不加载 Workbench／Services 运行时。共用叶子检查 manifest、catalog 与精确安装版；
-Workbench target 与显式声明 TinyBase peer 的原生 Store 消费者分别产生版本事实；只调用 Core 固定能力不标记为原生消费者。Vite Task 的 Rolldown compile
-inputs 显式包含这两个源码入口及所属包清单，规则或导出变更会使内联产物失效。包构建以能力
-所有者的清单定位原生安装，不要求所有者的 JS 制品已经生成。共享原生 import 保留为外部依赖，
-应用装配在验证原安装后接到能力所有者的 copy（TinyBase 由 Core 持有）；TinyBase 的上游子路径与运行环境条件不被改成根入口。
+Rolldown 发布制品内联 Workbench transport 纯规则和 Host internal/shared-runtime metadata 叶子，不加载其 runtime。叶子检查 manifest/catalog/实际精确版本；Workbench target 与显式 TinyBase peer 的原生 Store 使用者生成版本事实，单用 Core 固定能力不标记。compile inputs 包含两个叶子与 owner manifest；能力 owner 的 manifest 定位 native 安装，无需其 JS 已构建。装配验证后共享 import 接 owner copy（TinyBase 为 Core），保留上游 subpath/环境条件。
 
-固定 shared 全部使用 `import: false`，producer 不携带 fallback。MF Vite 的 used-export facade 在真实 Mantine producer 中曾遗漏
-命名导出；升级到 1.23.3 后保留此回归边界，builder 因此在 expose analysis 前注入带内部 marker 的 bare side-effect import，
-并在后置 transform 删除，确保完整 export surface。Marker 和 shared implementation 都不进入产物。移除此适配前必须
-验证真实 Mantine producer，不能仅凭简化 export fixture 或上游发布说明判断问题已解决。
+全部 fixed shared 为 `import: false`，无 producer fallback。MF Vite used-export facade 曾遗漏真实 Mantine named exports：builder 在 expose analysis 前加内部 marker 的 bare side-effect import，后置删除，完整 shared surface/marker 均不打包。移除适配须以真实 Mantine producer 验证，即使升级上游也保留此边界。
 
-Dynamic types 使用 MF 2.9 的默认 `tsc`，不再把绝对 compiler executable 交给 package manager。开发 producer 默认省略
-dynamic type artifact，只校验浏览器运行时 contract；显式 required 或 production producer 仍生成并校验 `api` 与 `zip`
-类型资产。required DTS build 使用 producer-scoped `tsBuildInfoFile` 与串行 cache transaction，避免并发 producer 共享
-MF 默认 cache 文件；production 中类型、Manifest 或 asset 缺失都使 candidate 失败。
+Dynamic types 使用 MF 默认 tsc。开发默认省略，只验证 browser runtime；production/required 生成并验证 api/zip，缺 types/manifest/asset 即失败。required DTS 使用 producer-scoped `tsBuildInfoFile` 和串行 cache transaction。production 无 `sourcesContent` 内嵌源码 map，host-vite 保留开发 map。
 
-Production producer 不输出内嵌源码 sourcemap；host-vite producer 保留 sourcemap 供开发诊断。
+Fonts 根入口保留静态 definition/publication，server DTO 仅在 RPC 快照读取时加载。纯 snapshot 类型单独维护，声明 shared chunk 不连 RPC；Typst 的 Fonts required constructor 仍为 direct value import。
 
-static freezer 无论 headless/workbench variant 都收集可达 Node artifacts，并在 `pluxel-deployment.json` 记录 key、
-relative file 与 sha256；artifact builder 同时把受控 native residual 的已解析 entry 交给 NF3，因此只在 worker entry 中出现的
-binding 也会被复制进 deployment `node_modules`。variant 只改变 browser Workbench closure。
-Native residual 从生成桥的 owner package.json 以 Node `require` 条件解析；不能复用源码 import 命中的另一条件入口。
-NF3 从该实际入口追踪 CJS 及其传递依赖，搬迁后的 Worker 只依赖发行目录内的文件。
+### Node 输出选择
 
-Node declaration compiler 把本轮 lowering 的 artifact keys 写入对应 Rolldown module meta；Node builder 与 standalone
-assembly 都只选择最终 rendered module 中保留的引用，不以原始 imports 或同包 Plugin definition 推断 Node 所有权。
-同一 artifact 的所有原始 module IDs 都参与保留判定；query alias 被裁剪不能覆盖另一个仍在使用的 source 引用。
-本轮 source 引用消费本轮输出；built module 引用按其实际 package root 和 key 读取已构建产物。同一个包可同时提供
-source 和 built Node 模块，未被引用的旧 `dist/artifacts/node` 文件不读取、不合并。若 source 与 built 都实际引用同一个
-key，两份 bytes 仍须一致；未知来源的 destination 文件也不能覆盖已选 packaged artifact，真实冲突继续使构建失败。
+freezer 在 headless/workbench 都收集可达 Node artifacts，deployment 记录 key/file/SHA-256。native residual 从 bridge owner manifest 按 Node require 条件解析，再交 nf3 追踪实际 CJS/传递依赖，因此只在 worker 中出现的 binding 也能搬移运行。
 
-`@pluxel/core/federation` 是唯一 dependency-neutral build contract。host-vite、Rolldown 和 host 直接依赖该
-contract，不通过 runtime 转手 re-export，也不引入反向 build dependency。
+compiler 把 artifact keys 写入 Rolldown module meta，builder/assembly 只选最终 rendered module 的引用，全部原始 module IDs 共同参与；query alias 被裁剪不覆盖仍存引用。source 引用读本轮输出，built 引用读实际 owner 的 inventory，不读取未引用旧 dist。source/built 同 key 必须 bytes 一致，未知目标文件也不能覆盖已选制品。
+
+`@pluxel/core/federation` 是 Host-vite/Rolldown/Host 直接依赖的中立 build contract。
 
 ## 验证边界
 
-声明测试验证 exact identity、server-only schema/handler 不进入 browser assets、Content-only 零 MF、Node artifact 的 native owner chain。开发回归使用真实 Vite，覆盖双 producer、不同 application root、同 output/cache 排序、superseded build 与迟到结果拒绝。生产回归检查 Manifest/Snapshot、所有 digest inventory、dynamic types 和无 fallback shared；Node 制品还需从最终发行目录加载 native residual。
+声明回归覆盖 exact identity、browser 无 schema/handler、Content-only 零 MF、native owner chain。真实 Vite 验证双 producer/不同 root、同 output/cache 排序、superseded/迟到拒绝；生产验证 Manifest/Snapshot、digest、types、无 fallback，并从搬移后的发行目录加载 native residual。
 
 ## Loaded owner 的运行时读取
 
-modules 应用保留原 canonical definition，在 `pluxel-modules.json` 中列出编译定义、chunk 路径与 SHA-256。生成工厂记录实际输出 URL，Host 在服务准备前校验 inventory；包的 `pluxel.artifactRoot` 只定位已声明制品，不证明 Plugin 身份。
+modules 的 `pluxel-modules.json` 记录编译 definition/chunk/SHA-256；工厂登记实际输出 URL，Host 在 service prepare 前验证。`artifactRoot` 只定位制品，不产生身份。
 
-Node 的 `pluxel-node-artifacts.json` 包含 key、文件和摘要，即使为空也输出。Workbench 沿用 producer/content inventory 和领域校验。`pluxel.nodeArtifacts`、`pluxel.workbenchArtifacts` 为 true 时，loaded owner 的 inventory 缺失、摘要错误、重复或真实路径越界均失败；运行时不修复、不编译。未启用领域能力不创建 backend/compiler/watcher。原生 Services 和 Workbench reader 不导入 Vite/Rolldown；Vite 附件也消费同一实际 owner 和 packaged readers。
+Node 的 `pluxel-node-artifacts.json` 即使为空也输出，Workbench 沿 producer/content inventory 验证。声明 nodeArtifacts/workbenchArtifacts 能力后，缺 inventory、坏摘要、重复或 realpath 越界均失败。未启用能力不创建 backend/compiler/watcher，native readers 不依赖 Vite/Rolldown，Vite 附件也使用同一 loaded owner。

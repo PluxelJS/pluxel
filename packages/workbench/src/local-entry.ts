@@ -1,6 +1,6 @@
-import type { RootContext, PluginNodeAddress } from '@pluxel/core'
+import type { PluginNodeAddress } from '@pluxel/core'
 import { RpcStub, type RpcTarget } from 'capnweb'
-import { requireWorkbench } from './services/workbench'
+import type { WorkbenchHost } from './token'
 import { openWorkbenchEntry, readWorkbenchLayout } from './workbench/client'
 import {
 	readWorkbenchOpenedContentHandle,
@@ -10,6 +10,7 @@ import {
 } from './workbench/opened-entry'
 import {
 	readWorkbenchDescriptor,
+	type WorkbenchDefinedEntry,
 	type WorkbenchContent,
 	type WorkbenchContentSlotMap,
 	type WorkbenchDescriptorApi,
@@ -25,9 +26,10 @@ import type {
 import type { WorkbenchContentPlan } from '@pluxel/core/internal'
 
 /** Existential input shape; exact authored descriptor brands are inferred by `open()`. */
-export type WorkbenchOpenableEntry = Readonly<{
-	kind: 'view' | 'attachment-placement' | 'content'
-}>
+export type WorkbenchOpenableEntry = WorkbenchDefinedEntry &
+	Readonly<{
+		kind: 'view' | 'attachment-placement' | 'content'
+	}>
 
 export type LocalWorkbenchEntryOptions<Entry extends WorkbenchOpenableEntry> = Readonly<{
 	target: PluginNodeAddress
@@ -98,12 +100,11 @@ export type OpenedLocalWorkbenchEntry<Entry extends WorkbenchOpenableEntry> =
 
 /** Opens a published entry using a local session. The caller owns the returned disposable handle. */
 export async function openLocalWorkbenchEntry<const Entry extends WorkbenchOpenableEntry>(
-	ctx: RootContext,
+	backend: WorkbenchHost,
 	options: LocalWorkbenchEntryOptions<Entry>,
 ): Promise<OpenedLocalWorkbenchEntry<Entry>> {
 	const { target, signal } = options
 	signal?.throwIfAborted()
-	const backend = requireWorkbench(ctx)
 	const metadata = readWorkbenchDescriptor(options.entry)
 	if (!backend.registry.hasPublishedEntry(target, options.entry)) {
 		throw workbenchSetupError(

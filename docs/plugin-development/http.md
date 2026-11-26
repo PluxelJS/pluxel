@@ -3,7 +3,11 @@ title: 插件 HTTP 与 WebSocket 服务
 description: 在插件中集成 Elysia 2 路由、Webhook 与 WebSocket，实现强类型接口与生命周期联动。
 ---
 
-在 Pluxel 插件中对外提供 Web 接口非常便捷：通过在 `init()` 钩子中调用 `this.ctx.require(ElysiaApp)`，即可直接使用原生的 [Elysia](https://elysiajs.com/) 实例定义路由。宿主在启动时负责监听端口并将请求分发至对应插件，当插件停止或热重载时，相关路由会自动安全注销。
+在 Pluxel 插件中对外提供 Web 接口非常便捷：通过在 `init()` 钩子中调用 `this.ctx.service(ElysiaApp)`，即可直接使用原生的 [Elysia](https://elysiajs.com/) 实例定义路由。宿主在启动时负责监听端口并将请求分发至对应插件，当插件停止或热重载时，相关路由会自动安全注销。
+
+Host 须安装 `elysia()`；`servicesPreset()` 包含它，见 [Host 服务组合](../host/services.md)。
+
+插件向外部服务发起请求时使用内建的 `ctx.wretch` 或 `ctx.fetch`。 [受管出站 HTTP](./outbound-http.md)
 
 ## 最小路由
 
@@ -20,7 +24,7 @@ export class OrdersPlugin extends BasePlugin {
 	protected override init() {
 		// 1. 获取当前插件绑定的 ElysiaApp 实例并注册路由
 		this.ctx
-			.require(ElysiaApp)
+			.service(ElysiaApp)
 			.get('/health', () => ({ ok: true }))
 			.get('/orders/:id', ({ params }) => this.findOrder(params.id))
 	}
@@ -38,14 +42,16 @@ export class OrdersPlugin extends BasePlugin {
 > 声明的路由路径即为最终对外暴露的 URL 路径。如果需要统一的路由前缀，建议使用 Elysia 的 `.group()` 组织：
 >
 > ```ts
-> this.ctx.require(ElysiaApp).group('/api/v1', (app) => app.get('/orders', () => this.listOrders()))
+> import { ElysiaApp } from '@pluxel/services/elysia'
+>
+> this.ctx.service(ElysiaApp).group('/api/v1', (app) => app.get('/orders', () => this.listOrders()))
 > ```
 >
 > 注意：`/__pluxel` 为框架管理面板的保留前缀，插件不可占用。
 
 ## 直接使用 Elysia 能力
 
-`this.ctx.require(ElysiaApp)` 返回的是标准的 Elysia 实例，所有 Elysia 2 的原生特性均可直接使用：
+`this.ctx.service(ElysiaApp)` 返回当前插件与它的 Parts 共享的 Elysia 实例，可以直接声明路由、schema 和请求钩子。
 
 ### 强类型输入校验与文档（TypeBox）
 
@@ -55,7 +61,7 @@ Elysia 内建了基于 TypeBox 的高性能校验器 `t`：
 import { ElysiaApp } from '@pluxel/services/elysia'
 import { t } from 'elysia'
 
-this.ctx.require(ElysiaApp).post(
+this.ctx.service(ElysiaApp).post(
 	'/orders',
 	{
 		body: t.Object({
@@ -75,8 +81,10 @@ this.ctx.require(ElysiaApp).post(
 可以使用 `onRequest`、`onBeforeHandle` 或 `onError` 统一处理请求生命周期：
 
 ```ts no-twoslash
+import { ElysiaApp } from '@pluxel/services/elysia'
+
 this.ctx
-	.require(ElysiaApp)
+	.service(ElysiaApp)
 	.onRequest(({ request }) => {
 		this.ctx.logger.debug('Incoming request', { url: request.url })
 	})
@@ -94,7 +102,7 @@ import { ElysiaApp } from '@pluxel/services/elysia'
 import { websocket } from 'elysia/websocket'
 
 this.ctx
-	.require(ElysiaApp)
+	.service(ElysiaApp)
 	.use(websocket())
 	.ws('/events', {
 		open(socket) {
@@ -121,8 +129,8 @@ import { BasePlugin, Plugin, PluginPart } from '@pluxel/core'
 
 class MetricsPart extends PluginPart<OrdersPlugin> {
 	protected override init() {
-		// Part 内部同样可以通过 this.ctx.require(ElysiaApp) 注册专属路由
-		this.ctx.require(ElysiaApp).get('/orders/metrics', () => this.getMetrics())
+		// Part 内部同样可以通过 this.ctx.service(ElysiaApp) 注册专属路由
+		this.ctx.service(ElysiaApp).get('/orders/metrics', () => this.getMetrics())
 	}
 
 	private getMetrics() {
@@ -138,12 +146,11 @@ export class OrdersPlugin extends BasePlugin {
 
 ## finalization 与生命周期
 
-- **注册窗口**：所有路由必须在插件的 `init()` 阶段同步完成注册。当所有插件的 `init()` 完成后，宿主会触发 Elysia 的编译优化（Compile）。
-- **自动卸载**：当插件由于热更新、配置变更或手动停止而卸载时，其挂载的路由会立即从宿主路由表中剔除。
+在插件的 `init()` 中注册路由和模块。该代插件初始化成功后，宿主等待该 Elysia 实例的异步模块就绪，编译路由，检查冲突，然后随本次提交发布已接纳的路由。停止或替换该代插件时，宿主撤回它的路由并结算在途请求、stream 与 WebSocket。
 
 ## 错误边界
 
-- **路由冲突处理**：如果两个不同的插件尝试在同一个 HTTP Method 上注册完全相同的路径，宿主启动时会抛出冲突异常并拒绝服务。
+- 不同插件节点声明相同种类、method 和路径时，冲突候选的生命周期报告会记录启动失败，已接纳的节点继续处理请求。不同声明可以匹配同一个 URL，HTTP 按 Elysia 原生规则选择路由。例如两个插件分别声明 `ALL /catalog/new` 和 `GET /catalog/:id` 时，`GET /catalog/new` 命中静态路径。参数名不同的声明可能匹配同一批请求，请给这些路由明确的归属。
 - **业务异常与状态码**：对于业务预期的参数或权限错误，应直接返回标准的 HTTP 状态码（如 400、401、404），避免直接将内部未处理的原始数据库报错暴露给客户端。
 
 ## 测试
@@ -161,7 +168,7 @@ it('能够正确响应 HTTP 请求', async () => {
 		services: [elysia()],
 	})
 
-	await host.start(OrdersPlugin)
+	await host.start(OrdersPlugin.nodeAddress())
 
 	// 使用内置的轻量 fetch 客户端
 	const res = await host.http.fetch(new URL('/health', host.http.origin))
@@ -172,4 +179,6 @@ it('能够正确响应 HTTP 请求', async () => {
 
 ## 当前 Elysia 2 与 carrier 边界
 
-Pluxel 当前深度集成 Elysia 2（`2.0.0-rc.0`）。在开发模式下（Vite），Elysia 会接入 Vite 开发服务器作为底层 Carrier，并完整保留 Vite 自带的 HMR 链路；在生产模式下，Elysia 直接绑定高性能 Node 原生 Listener 监听外部流量。
+Pluxel 使用 Elysia `2.0.0-rc.5`。已有 Host 安装 `elysia()` 后，调用 `@pluxel/services/elysia` 的 `createElysiaHandler(host)` 可得到标准的 `(request: Request) => Promise<Response>`，用作应用的 `fetch` 导出。外层应用负责传输和关闭 Host。Node 需要监听端口和处理 WebSocket 时，通过 `@pluxel/services/elysia/node` 的 `listenElysia()` 启动 srvx。开发模式复用 Vite 的 listener，并优先处理 Vite HMR 的升级请求。
+
+插件在 `init()` 注册路由和模块，用当前 Context 的 effects 释放资源。物理 listener 归宿主持有，在插件实例调用 `app.listen()`、`app.stop()` 会报错。当前版本缺少外部挂载与卸载协议，直接注册 `app.onStart()`、`app.onStop()` 也会报错。

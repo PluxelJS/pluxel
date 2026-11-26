@@ -3,6 +3,7 @@ import {
 	Badge,
 	Button,
 	CopyButton,
+	DataList,
 	Group,
 	Paper,
 	Stack,
@@ -14,6 +15,17 @@ import type { ReactNode } from 'react'
 import type { PluginStatusEntry } from '../../pluginOverview'
 import { describePluginRuntime } from '../../pluginExecutionPresentation'
 import { describePluginControl } from '../controls/pluginControlModel'
+
+const diagnosticStyles = {
+	item: { gap: 'var(--mantine-spacing-xs)' },
+	itemLabel: { flexShrink: 0, whiteSpace: 'nowrap' },
+	itemValue: { flex: 1, minWidth: 0, overflowWrap: 'anywhere' },
+} as const
+const summaryStyles = {
+	...diagnosticStyles,
+	item: { ...diagnosticStyles.item, alignItems: 'center' },
+	itemValue: { flex: 1, minWidth: 0 },
+} as const
 
 export function PluginRuntimeSummaryCard({
 	status,
@@ -54,44 +66,57 @@ export function PluginRuntimeSummaryCard({
 	)
 
 	return (
-		<Paper withBorder p="sm" shadow="none" bg="var(--plx-raised)">
-			<Stack gap={8}>
+		<Paper withBorder p="xs" bg="var(--plx-raised)">
+			<Stack gap="xs">
 				{description ? (
 					<Text size="xs" c="dimmed">
 						{description}
 					</Text>
 				) : null}
-				<SummaryRow label="当前状态">
-					<Tooltip
-						label={`${control.desiredStateLabel}；${control.sessionIntentLabel}；${control.activationReasonLabel}`}
-					>
-						<Badge size="xs" variant="light" color={control.statusTone}>
-							{control.statusLabel}
-						</Badge>
-					</Tooltip>
-				</SummaryRow>
-				<SummaryRow label="来源">
-					<Tooltip label={definition.detailLabel} multiline maw={360}>
-						<Text size="xs" className="plx-pluginWorkbench__summaryText">
-							{definition.compactLabel}
-						</Text>
-					</Tooltip>
-					<CopyButton value={canonicalReference}>
-						{({ copied, copy }) => (
-							<Tooltip label={copied ? '已复制插件引用' : '复制插件引用'}>
-								<ActionIcon
-									size="xs"
-									variant="subtle"
-									color="gray"
-									aria-label="复制插件引用"
-									onClick={copy}
-								>
-									{copied ? <IconCheck size={13} /> : <IconCopy size={13} />}
-								</ActionIcon>
+				<DataList
+					size="xs"
+					gap={2}
+					labelWidth="2.25em"
+					styles={summaryStyles}
+					aria-label="运行摘要"
+				>
+					<SummaryRow label="状态">
+						<Group gap={0}>
+							<Tooltip
+								label={`${control.desiredStateLabel}；${control.sessionIntentLabel}；${control.activationReasonLabel}`}
+							>
+								<Badge size="xs" variant="light" color={control.statusTone}>
+									{control.statusLabel}
+								</Badge>
 							</Tooltip>
-						)}
-					</CopyButton>
-				</SummaryRow>
+						</Group>
+					</SummaryRow>
+					<SummaryRow label="来源">
+						<Group gap={4} wrap="nowrap">
+							<Tooltip label={definition.detailLabel} multiline maw={360}>
+								<Text size="xs" miw={0} truncate="end">
+									{definition.compactLabel}
+								</Text>
+							</Tooltip>
+							<CopyButton value={canonicalReference}>
+								{({ copied, copy }) => (
+									<Tooltip label={copied ? '已复制插件引用' : '复制插件引用'}>
+										<ActionIcon
+											size="xs"
+											variant="subtle"
+											color="gray"
+											style={{ flexShrink: 0 }}
+											aria-label="复制插件引用"
+											onClick={copy}
+										>
+											{copied ? <IconCheck size={13} /> : <IconCopy size={13} />}
+										</ActionIcon>
+									</Tooltip>
+								)}
+							</CopyButton>
+						</Group>
+					</SummaryRow>
+				</DataList>
 
 				{updateWarning ? (
 					<Group
@@ -132,27 +157,29 @@ export function PluginRuntimeSummaryCard({
 
 				<details className="plx-pluginWorkbench__diagnostics" key={canonicalReference}>
 					<summary>调试信息</summary>
-					<Stack gap={8} mt={8}>
-						<SummaryRow label="引用">{canonicalReference}</SummaryRow>
-						<SummaryRow label="执行">
-							{execution.currentLabel} · {execution.artifactLabel}
-						</SummaryRow>
-						<SummaryRow label="更新">{execution.updateLabel}</SummaryRow>
-						<SummaryRow label="会话">
-							{control.sessionIntentLabel} · {control.activationReasonLabel}
-						</SummaryRow>
-						<SummaryRow label="启动">
-							自动启动{status.autoStart ? '已开启' : '已关闭'} · {control.desiredStateLabel}
-						</SummaryRow>
-						{status.recentUpdate ? (
-							<SummaryRow label="本插件上次更新">
-								{recentUpdate.label}
-								{recentUpdate.meta ? ` · ${recentUpdate.meta}` : ''}
+					<Stack gap="xs" mt="xs" align="flex-start">
+						<DataList size="xs" gap={4} labelWidth="4.25em" styles={diagnosticStyles} w="100%">
+							<SummaryRow label="引用">{canonicalReference}</SummaryRow>
+							<SummaryRow label="执行">
+								{execution.currentLabel} · {execution.artifactLabel}
 							</SummaryRow>
-						) : null}
-						{recentUpdate.batchLabel ? (
-							<SummaryRow label="所属更新批次">{recentUpdate.batchLabel}</SummaryRow>
-						) : null}
+							<SummaryRow label="更新">{execution.updateLabel}</SummaryRow>
+							<SummaryRow label="会话">
+								{control.sessionIntentLabel} · {control.activationReasonLabel}
+							</SummaryRow>
+							<SummaryRow label="启动">
+								自动启动{status.autoStart ? '已开启' : '已关闭'} · {control.desiredStateLabel}
+							</SummaryRow>
+							{status.recentUpdate ? (
+								<SummaryRow label="上次更新">
+									{recentUpdate.label}
+									{recentUpdate.meta ? ` · ${recentUpdate.meta}` : ''}
+								</SummaryRow>
+							) : null}
+							{recentUpdate.batchLabel ? (
+								<SummaryRow label="更新批次">{recentUpdate.batchLabel}</SummaryRow>
+							) : null}
+						</DataList>
 						<CopyButton value={diagnostic}>
 							{({ copied, copy }) => (
 								<Button size="compact-xs" variant="subtle" onClick={copy}>
@@ -169,9 +196,9 @@ export function PluginRuntimeSummaryCard({
 
 function SummaryRow({ label, children }: { label: string; children: ReactNode }) {
 	return (
-		<div className="plx-pluginWorkbench__summaryRow">
-			<span className="plx-pluginWorkbench__summaryLabel">{label}</span>
-			<div className="plx-pluginWorkbench__summaryValue">{children}</div>
-		</div>
+		<DataList.Item>
+			<DataList.ItemLabel>{label}</DataList.ItemLabel>
+			<DataList.ItemValue>{children}</DataList.ItemValue>
+		</DataList.Item>
 	)
 }

@@ -65,16 +65,7 @@ function readMetaRecursive<T extends MetaType>(
 				FORM_METADATA_KEY in item.metadata
 			) {
 				const standard = item.metadata as Record<string, unknown>
-				const presentation = standard[FORM_METADATA_KEY]
-				if (presentation && typeof presentation === 'object' && !Array.isArray(presentation)) {
-					return {
-						...(presentation as MetaValueMap[typeof META_TYPES.FORM]),
-						...(typeof standard.title === 'string' ? { title: standard.title } : {}),
-						...(typeof standard.description === 'string'
-							? { description: standard.description }
-							: {}),
-					} as MetaValueMap[T]
-				}
+				return readFormMeta(standard) as MetaValueMap[T]
 			} else if (item.kind === 'metadata' && item.type === type && 'metadata' in item) {
 				return (item as { metadata: MetaValueMap[T] }).metadata
 			}
@@ -89,4 +80,23 @@ function readMetaRecursive<T extends MetaType>(
 	const wrapped = (schema as Schema & { wrapped?: Schema }).wrapped
 	if (wrapped) return readMetaRecursive(wrapped, type, seen)
 	return undefined
+}
+
+function readFormMeta(standard: Record<string, unknown>): unknown {
+	const presentation = standard[FORM_METADATA_KEY]
+	if (
+		!presentation ||
+		typeof presentation !== 'object' ||
+		Array.isArray(presentation) ||
+		(Object.getPrototypeOf(presentation) !== Object.prototype &&
+			Object.getPrototypeOf(presentation) !== null)
+	) {
+		return presentation
+	}
+	const descriptors = Object.getOwnPropertyDescriptors(presentation)
+	for (const key of ['title', 'description']) {
+		const descriptor = Object.getOwnPropertyDescriptor(standard, key)
+		if (descriptor) descriptors[key] = descriptor
+	}
+	return Object.defineProperties({}, descriptors)
 }

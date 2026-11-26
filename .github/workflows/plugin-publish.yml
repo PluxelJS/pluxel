@@ -1,0 +1,212 @@
+name: Publish a Pluxel plugin
+
+on:
+  workflow_call:
+    inputs:
+      artifact-name:
+        description: Name of the uploaded plugin tarball artifact
+        type: string
+        default: pluxel-plugin
+      package-name:
+        description: Exact package name to publish from a multi-package workspace
+        type: string
+      framework-ref:
+        description: Exact Pluxel commit for a plugins workspace developed as the framework's plugins submodule
+        type: string
+      registry-url:
+        description: Canonical HTTPS /npm URL of a Pluxel hosted registry. Omit for npmjs.org.
+        type: string
+      market-url:
+        description: HTTPS market origin for the OIDC notification
+        type: string
+      wait-for-indexing:
+        description: Wait up to six minutes for the market receipt to reach a terminal state
+        type: boolean
+        default: false
+    secrets:
+      market-notification-token:
+        description: Notification credential for a private market source
+        required: false
+
+permissions: {}
+
+jobs:
+  build:
+    permissions:
+      contents: read
+    uses: ./.github/workflows/plugin-build.yml
+    with:
+      artifact-name: ${{ inputs.artifact-name }}
+      package-name: ${{ inputs.package-name }}
+      framework-ref: ${{ inputs.framework-ref }}
+
+  publish:
+    needs: build
+    if: github.event_name == 'workflow_dispatch' || github.event_name == 'push' || github.event_name == 'release'
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      id-token: write
+    outputs:
+      name: ${{ steps.package.outputs.name }}
+      version: ${{ steps.package.outputs.version }}
+      market: ${{ steps.package.outputs.market }}
+      registry: ${{ steps.package.outputs.registry }}
+    steps:
+      - uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6
+        with:
+          node-version: '24.22.2'
+          package-manager-cache: false
+      - uses: actions/download-artifact@37930b1c2abaa49bbe596cd826c3c89aef350131 # v7
+        with:
+          artifact-ids: ${{ needs.build.outputs.artifact-id }}
+          path: ${{ runner.temp }}/pluxel-artifact
+          merge-multiple: true
+      - name: Read package coordinates
+        id: package
+        env:
+          MARKET_URL: ${{ inputs.market-url }}
+          PACKAGE_NAME: ${{ inputs.package-name }}
+          REGISTRY_URL: ${{ inputs.registry-url }}
+        run: |
+          set -euo pipefail
+          tar -xOf "$RUNNER_TEMP/pluxel-artifact/plugin.tgz" package/package.json |
+            node --input-type=module -e '
+              import { readFileSync } from "node:fs"
+              const { name, version, private: isPrivate } = JSON.parse(readFileSync(0, "utf8"))
+              if (typeof name !== "string" || !/^(@[a-z0-9._-]+\/)?[a-z0-9._-]+$/.test(name)
+                || typeof version !== "string" || !/^[0-9][0-9A-Za-z.+-]+$/.test(version)) {
+                throw new Error("The packaged manifest must contain a package name and version")
+              }
+              if (process.env.PACKAGE_NAME && name !== process.env.PACKAGE_NAME) {
+                throw new Error("The packaged name does not match package-name")
+              }
+              if (isPrivate) throw new Error("The selected package is private")
+              const hosted = process.env.REGISTRY_URL ? new URL(process.env.REGISTRY_URL) : null
+              if (hosted && (hosted.protocol !== "https:" || hosted.href !== `${hosted.origin}/npm`
+                || hosted.href !== process.env.REGISTRY_URL || !name.startsWith("@"))) {
+                throw new Error("Hosted publishing requires a canonical HTTPS registry-url ending /npm and a scoped package")
+              }
+              console.log(`name=${name}\nversion=${version}\nregistry=${hosted?.href ?? "https://registry.npmjs.org"}`)
+              if (process.env.MARKET_URL) {
+                const market = new URL(process.env.MARKET_URL)
+                if (market.protocol !== "https:" || market.href !== `${market.origin}/`) {
+                  throw new Error("market-url must be an HTTPS origin")
+                }
+                console.log(`market=${market.origin}`)
+              }
+            ' >> "$GITHUB_OUTPUT"
+      - name: Publish to npm with Trusted Publishing
+        if: inputs.registry-url == ''
+        run: npm publish "$RUNNER_TEMP/pluxel-artifact/plugin.tgz" --registry=https://registry.npmjs.org --access=public --provenance --ignore-scripts
+      - name: Publish with Pluxel registry OIDC
+        if: inputs.registry-url != ''
+        uses: actions/github-script@ed597411d8f924073f98dfc5c65a23a2325f34cd # v8
+        env:
+          REGISTRY: ${{ steps.package.outputs.registry }}
+        with:
+          script: |
+            const { execFileSync } = require('node:child_process')
+            const { mkdtempSync, rmSync, writeFileSync } = require('node:fs')
+            const { join } = require('node:path')
+            const registry = new URL(process.env.REGISTRY)
+            const token = await core.getIDToken(registry.href)
+            core.setSecret(token)
+            const cwd = mkdtempSync(join(process.env.RUNNER_TEMP, 'pluxel-npm-'))
+            try {
+              const config = join(cwd, 'npmrc')
+              writeFileSync(config, `//${registry.host}/npm/:_authToken=\${NODE_AUTH_TOKEN}\n`, { mode: 0o600 })
+              const env = { ...process.env, NODE_AUTH_TOKEN: token }
+              delete env.NPM_ID_TOKEN
+              delete env.ACTIONS_ID_TOKEN_REQUEST_TOKEN
+              delete env.ACTIONS_ID_TOKEN_REQUEST_URL
+              execFileSync('npm', ['publish', join(process.env.RUNNER_TEMP, 'pluxel-artifact/plugin.tgz'),
+                '--registry', `${registry.href}/`, '--userconfig', config,
+                '--access=restricted', '--provenance=false', '--ignore-scripts'], { cwd, env, stdio: 'inherit' })
+            } finally {
+              rmSync(cwd, { recursive: true, force: true })
+            }
+
+  notify:
+    needs: publish
+    if: needs.publish.outputs.market != ''
+    runs-on: ubuntu-latest
+    timeout-minutes: 8
+    permissions:
+      id-token: write
+    steps:
+      - name: Send OIDC market notification
+        uses: actions/github-script@ed597411d8f924073f98dfc5c65a23a2325f34cd # v8
+        env:
+          MARKET: ${{ needs.publish.outputs.market }}
+          NAME: ${{ needs.publish.outputs.name }}
+          VERSION: ${{ needs.publish.outputs.version }}
+          REGISTRY: ${{ needs.publish.outputs.registry }}
+          WAIT_FOR_INDEXING: ${{ inputs.wait-for-indexing }}
+          NOTIFICATION_TOKEN: ${{ secrets.market-notification-token }}
+        with:
+          script: |
+            const { MARKET, NAME, VERSION, REGISTRY, WAIT_FOR_INDEXING, NOTIFICATION_TOKEN } = process.env
+            const endpoint = new URL('/v1/notifications', MARKET)
+            const coordinate = { registry: REGISTRY, name: NAME, version: VERSION }
+            const summary = core.summary.addHeading('Pluxel Market')
+              .addRaw(`npm published ${NAME}@${VERSION}`, true)
+            let receiptUrl
+            let receipt
+            async function readReceipt(response) {
+              const value = await response.json()
+              if (!response.ok) {
+                const code = /^[a-z][a-z0-9-]{0,63}$/.test(value?.code ?? '') ? ` (${value.code})` : ''
+                throw new Error(`Market returned HTTP ${response.status}${code}`)
+              }
+              if (!/^[\w-]{1,64}$/.test(value?.id ?? '')
+                  || Object.entries(coordinate).some(([key, expected]) => value[key] !== expected)
+                  || !['pending', 'processing', 'indexed', 'failed'].includes(value.status)) {
+                throw new Error('Market returned an invalid receipt')
+              }
+              return value
+            }
+            try {
+              let token = NOTIFICATION_TOKEN || await core.getIDToken(endpoint.href)
+              let goodUntil = Date.now() + 240_000
+              const response = await fetch(endpoint, {
+                method: 'POST',
+                headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
+                body: JSON.stringify(coordinate),
+                redirect: 'error',
+                signal: AbortSignal.timeout(10_000),
+              })
+              receipt = await readReceipt(response)
+              receiptUrl = new URL(`/v1/notifications/${receipt.id}`, MARKET)
+              const active = () => ['pending', 'processing'].includes(receipt.status)
+              if (WAIT_FOR_INDEXING === 'true') {
+                const deadline = Date.now() + 360_000
+                while (active() && Date.now() + 15_000 < deadline) {
+                  await new Promise((resolve) => setTimeout(resolve, 15_000))
+                  if (!NOTIFICATION_TOKEN && Date.now() >= goodUntil) {
+                    token = await core.getIDToken(endpoint.href)
+                    goodUntil = Date.now() + 240_000
+                  }
+                  const next = await readReceipt(await fetch(receiptUrl, {
+                    headers: { Authorization: `Bearer ${token}` },
+                    redirect: 'error',
+                    signal: AbortSignal.timeout(Math.min(10_000, Math.max(1, deadline - Date.now()))),
+                  }))
+                  if (next.id !== receipt.id) throw new Error('Market returned a different receipt ID')
+                  receipt = next
+                }
+                if (active()) throw new Error('Market indexing did not finish within six minutes')
+              }
+              if (receipt.status === 'failed') {
+                const code = typeof receipt.code === 'string' && /^[a-z][a-z0-9-]{0,63}$/.test(receipt.code)
+                  ? ` (${receipt.code})` : ''
+                throw new Error(`Market indexing failed${code}`)
+              }
+            } finally {
+              if (receiptUrl) {
+                summary.addLink('Market receipt', receiptUrl.href).addRaw(` · ${receipt.status}`, true)
+              } else {
+                summary.addRaw('Market receipt unavailable', true)
+              }
+              await summary.write()
+            }

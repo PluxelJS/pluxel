@@ -1,7 +1,7 @@
 import { Alert, Badge, Button, Group, Loader, SimpleGrid, Stack, Text } from '@mantine/core'
 import { WorkbenchMantineProvider } from '@pluxel/workbench/mantine'
 import { useEffect, useRef, useState } from 'react'
-import type { VaultKeyPair } from '@pluxel/services/vault'
+import type { VaultKeyPair } from '@pluxel/core/vault'
 import { overviewQuery, securityOf, vaultScope } from './scope.ts'
 import { DeployKeyPanel, NamespaceInventoryPanel } from './panels.tsx'
 import {
@@ -21,7 +21,7 @@ function VaultPage() {
 	const [search, setSearch] = useState('')
 	const [busy, setBusy] = useState<SecurityBusyKey | null>(null)
 	const [keyPair, setKeyPair] = useState<VaultKeyPair | null>(null)
-	const vault = query.data?.enabled ? query.data.state : null
+	const vault = query.data?.state
 	useEffect(() => {
 		if (!vault || initialized.current) return
 		initialized.current = true
@@ -61,7 +61,7 @@ function VaultPage() {
 				<Button onClick={() => void query.refetch()}>Retry</Button>
 			</Alert>
 		)
-	if (!vault) return <Text>Vault is unavailable.</Text>
+	if (!vault) return <Text>Reading credential state…</Text>
 	const filtered = (vault.namespaces ?? []).filter((row) =>
 		row.namespace.toLowerCase().includes(search.trim().toLowerCase()),
 	)

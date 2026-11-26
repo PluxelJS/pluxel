@@ -1,5 +1,7 @@
 import { referenceSource } from '../tiptap/reference-source.js'
 
+export { referenceSource }
+
 /** Identifiable ordinary Typst source, copied into the user's project and owned there. */
 export const typstSourceLibrary = `${referenceSource}
 ${String.raw`#import "mitex/mitex.typ": mi, mitex

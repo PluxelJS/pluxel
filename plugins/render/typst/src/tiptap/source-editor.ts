@@ -32,7 +32,7 @@ export function prepareTypstSourceCopy(
 	path: string,
 	position: number,
 ): Transaction | undefined {
-	if (!editor.isEditable || editor.view.composing) return undefined
+	if (!editor.isEditable || !project.isWritable(path) || editor.view.composing) return undefined
 	const projection = project.open(path)
 	if (!editor.schema.nodeFromJSON(projection.document).eq(editor.state.doc)) return undefined
 	const node = editor.state.doc.nodeAt(position)
@@ -185,10 +185,16 @@ export const TypstComponent = Node.create({
 	isolating: true,
 	addAttributes: () =>
 		Object.fromEntries(
-			['module', 'name', 'label', 'parameters', 'props', 'binding', 'source'].map((name) => [
-				name,
-				{ default: null },
-			]),
+			[
+				'module',
+				'name',
+				'label',
+				'parameters',
+				'readonlyParameters',
+				'props',
+				'binding',
+				'source',
+			].map((name) => [name, { default: null }]),
 		),
 	parseHTML: () => [
 		{
@@ -265,9 +271,15 @@ export function createTypstSourceEditor(options: TypstSourceEditorOptions): Edit
 	let unavailable = false
 	let disposed = false
 	let editor: Editor
+	// Tiptap emits beforeTransaction after filtering, and a listener can replace the project there.
+	const transactionRevisions = new WeakMap<Transaction, number>()
+	const canEdit = () => editor.isEditable && project.isWritable(path)
 	const report = (issues: readonly TypstSourceDiagnostic[]) => options.onIssues?.(issues)
-	const issue = (message: string): TypstSourceDiagnostic => ({
-		code: 'INVALID_EDIT',
+	const issue = (
+		message: string,
+		code: TypstSourceDiagnostic['code'] = 'INVALID_EDIT',
+	): TypstSourceDiagnostic => ({
+		code,
 		path,
 		revision: project.revision,
 		from: 0,
@@ -282,7 +294,7 @@ export function createTypstSourceEditor(options: TypstSourceEditorOptions): Edit
 			insertTypstReference:
 				(target: string) =>
 				({ commands }) =>
-					editor.isEditable &&
+					canEdit() &&
 					!editor.view.composing &&
 					validReferenceLabel(target) &&
 					commands.insertContent({ type: 'reference', attrs: { target, showCaption: null } }),
@@ -312,14 +324,14 @@ export function createTypstSourceEditor(options: TypstSourceEditorOptions): Edit
 			undo:
 				() =>
 				({ tr, dispatch }) => {
-					if (!editor.isEditable || unavailable || !project.canUndo) return false
+					if (!canEdit() || unavailable || !project.canUndo) return false
 					if (dispatch) tr.setMeta(sourceHistory, 'undo')
 					return true
 				},
 			redo:
 				() =>
 				({ tr, dispatch }) => {
-					if (!editor.isEditable || unavailable || !project.canRedo) return false
+					if (!canEdit() || unavailable || !project.canRedo) return false
 					if (dispatch) tr.setMeta(sourceHistory, 'redo')
 					return true
 				},
@@ -339,6 +351,7 @@ export function createTypstSourceEditor(options: TypstSourceEditorOptions): Edit
 				key: sourceSync,
 				filterTransaction(transaction, state) {
 					if (transaction === synchronization) return true
+					transactionRevisions.set(transaction, projection.revision)
 					if (transaction.docChanged)
 						transaction.setMeta(sourceAdmission, { accepted: false, doc: state.doc })
 					if (
@@ -357,15 +370,12 @@ export function createTypstSourceEditor(options: TypstSourceEditorOptions): Edit
 					}
 					if (!transaction.before.eq(state.doc)) {
 						report([
-							{
-								...issue('The editor transaction belongs to an older source projection.'),
-								code: 'CONFLICT',
-							},
+							issue('The editor transaction belongs to an older source projection.', 'CONFLICT'),
 						])
 						return false
 					}
-					if (!editor.isEditable) {
-						report([issue('This source view is read-only.')])
+					if (!canEdit()) {
+						report([issue('This source view is read-only.', 'READ_ONLY')])
 						return false
 					}
 					const copy = transaction.getMeta(sourceCopy) as CopyInput | undefined
@@ -386,18 +396,20 @@ export function createTypstSourceEditor(options: TypstSourceEditorOptions): Edit
 							!current
 						) {
 							report([
-								{
-									...issue(
-										'The copy request belongs to an older source range or was combined with another edit.',
-									),
-									code: 'CONFLICT',
-								},
+								issue(
+									'The copy request belongs to an older source range or was combined with another edit.',
+									'CONFLICT',
+								),
 							])
 							return false
 						}
 					}
 					if (!transaction.docChanged) return true
-					const prepared = project.prepareEdit({ projection, document: transaction.doc.toJSON() })
+					const prepared = project.prepareEdit({
+						path,
+						baseRevision: projection.revision,
+						document: transaction.doc.toJSON(),
+					})
 					if (!prepared.ok) report(prepared.issues)
 					return prepared.ok
 				},
@@ -435,10 +447,10 @@ export function createTypstSourceEditor(options: TypstSourceEditorOptions): Edit
 		} catch (error) {
 			unavailable = true
 			report([
-				{
-					...issue(error instanceof Error ? error.message : String(error)),
-					...(error instanceof TypstSourceProjectError ? { code: error.code } : {}),
-				},
+				issue(
+					error instanceof Error ? error.message : String(error),
+					error instanceof TypstSourceProjectError ? error.code : undefined,
+				),
 			])
 			return
 		}
@@ -498,22 +510,44 @@ export function createTypstSourceEditor(options: TypstSourceEditorOptions): Edit
 		onTransaction({ transaction, appendedTransactions }) {
 			if (syncing || transaction === synchronization) return
 			const copy = transaction.getMeta(sourceCopy) as CopyInput | undefined
+			const action = transaction.getMeta(sourceHistory) as 'undo' | 'redo' | undefined
+			const changed =
+				transaction.docChanged || appendedTransactions.some((value) => value.docChanged)
+			if (!copy && !action && !changed) return
+			const baseRevision = transactionRevisions.get(transaction)
+			if (baseRevision !== project.revision) {
+				report([
+					issue(
+						'The source project changed while this editor transaction was being applied.',
+						'CONFLICT',
+					),
+				])
+				refresh()
+				return
+			}
+			if (!canEdit()) {
+				report([issue('This source view is read-only.', 'READ_ONLY')])
+				refresh()
+				return
+			}
 			if (copy) {
 				const result = project.copy(copy)
 				report(result.ok ? [] : result.issues)
 				return
 			}
-			const action = transaction.getMeta(sourceHistory) as 'undo' | 'redo' | undefined
 			if (action) {
 				const result = project[action]()
 				report(result.ok ? [] : result.issues)
 				return
 			}
-			if (!transaction.docChanged && !appendedTransactions.some((value) => value.docChanged)) return
 			committing = true
 			let accepted = false
 			try {
-				const result = project.edit({ projection, document: editor.getJSON() })
+				const result = project.edit({
+					path,
+					baseRevision,
+					document: editor.getJSON(),
+				})
 				accepted = result.ok
 				report(result.ok ? [] : result.issues)
 			} finally {

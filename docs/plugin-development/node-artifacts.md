@@ -10,7 +10,7 @@ description: 将特定逻辑编译为独立的 Node ESM 产物，或将 CPU 密�
 
 ## 选择安装能力
 
-在宿主配置中，`standardServices()` 与 `servicesPreset()` 默认已包含 Node 模块与 Worker 服务。如果手动装配宿主，请显式挂载 `nodeModules()` 与 `workers()`：
+在宿主配置中，`servicesPreset()` 默认已包含 Node 模块与 Worker 服务。如果手动装配宿主，请显式挂载 `nodeModules()` 与 `workers()`：
 
 ```ts
 import { nodeModules } from '@pluxel/services/node'
@@ -36,7 +36,7 @@ const rulesModule = defineNodeModule(import.meta.url, './rules-entry.ts')
 export class RulesPlugin extends BasePlugin {
 	protected override async init() {
 		// 2. 加载模块并在当前插件作用域中执行初始化
-		await this.ctx.require(NodeModules).use(rulesModule, async (url) => {
+		await this.ctx.service(NodeModules).use(rulesModule, async (url) => {
 			const mod = await import(url.href)
 			return mod.setup({ logger: this.ctx.logger })
 		})
@@ -74,7 +74,7 @@ const sumTask = defineWorkerTask<SumInput, SumOutput>(import.meta.url, './sum-wo
 export class ReportsPlugin extends BasePlugin {
 	calculate(values: number[], signal?: AbortSignal) {
 		// 2. 将任务分派给线程池执行，支持 AbortSignal 取消
-		return this.ctx.require(Workers).run(sumTask, { values }, { signal })
+		return this.ctx.service(Workers).run(sumTask, { values }, { signal })
 	}
 }
 ```

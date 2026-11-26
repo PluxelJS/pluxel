@@ -1,6 +1,6 @@
+import { type Cleanup, type DisposableLike } from '../../services/effects/EffectsService'
 import type { Context } from '../../context/Context'
 import { requirePluginService } from '../../internal/plugin-service'
-import type { Cleanup, DisposableLike } from '../../services/effects/EffectsService'
 import { isPluginRef, type PluginRef } from '../runtime/definition'
 
 function isPromiseLike(value: unknown): value is PromiseLike<unknown> {

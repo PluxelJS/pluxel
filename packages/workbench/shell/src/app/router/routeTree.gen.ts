@@ -15,12 +15,16 @@ import { Route as WorkbenchIndexRouteImport } from './routes/_workbench.index'
 import { Route as WorkbenchSplatRouteImport } from './routes/_workbench.$'
 import { Route as WorkbenchAppsRouteImport } from './routes/_workbench.apps'
 import { Route as WorkbenchLogsRouteImport } from './routes/_workbench.logs'
+import { Route as WorkbenchOutboundHttpRouteImport } from './routes/_workbench.outbound-http'
 import { Route as WorkbenchPluginGraphRouteImport } from './routes/_workbench.plugin-graph'
 import { Route as WorkbenchPluginsRouteImport } from './routes/_workbench.plugins'
 import { Route as WorkbenchSecurityRouteImport } from './routes/_workbench.security'
+import { Route as WorkbenchOutboundHttpIndexRouteImport } from './routes/_workbench.outbound-http.index'
+import { Route as WorkbenchOutboundHttpDefaultsRouteImport } from './routes/_workbench.outbound-http.defaults'
 import { Route as WorkbenchPluginsIndexRouteImport } from './routes/_workbench.plugins.index'
 import { Route as WorkbenchPluginsSplatRouteImport } from './routes/_workbench.plugins.$'
-import { Route as WorkbenchSecurityAuditRouteImport } from './routes/_workbench.security_.audit'
+import { Route as WorkbenchSecurityIndexRouteImport } from './routes/_workbench.security.index'
+import { Route as WorkbenchSecurityAuditRouteImport } from './routes/_workbench.security.audit'
 import { Route as StandaloneWorkbenchStandalonePluginNameSplatRouteImport } from './routes/_standalone.workbench-standalone.$pluginName.$'
 import { Route as WorkbenchPluginGraphKindSplatRouteImport } from './routes/_workbench.plugin-graph_.$kind.$'
 import { Route as WorkbenchWorkbenchPluginNameSplatRouteImport } from './routes/_workbench.workbench.$pluginName.$'
@@ -53,6 +57,11 @@ const WorkbenchLogsRoute = WorkbenchLogsRouteImport.update({
   path: '/logs',
   getParentRoute: () => WorkbenchRoute,
 } as any)
+const WorkbenchOutboundHttpRoute = WorkbenchOutboundHttpRouteImport.update({
+  id: '/outbound-http',
+  path: '/outbound-http',
+  getParentRoute: () => WorkbenchRoute,
+} as any)
 const WorkbenchPluginGraphRoute = WorkbenchPluginGraphRouteImport.update({
   id: '/plugin-graph',
   path: '/plugin-graph',
@@ -68,6 +77,18 @@ const WorkbenchSecurityRoute = WorkbenchSecurityRouteImport.update({
   path: '/security',
   getParentRoute: () => WorkbenchRoute,
 } as any)
+const WorkbenchOutboundHttpIndexRoute =
+  WorkbenchOutboundHttpIndexRouteImport.update({
+    id: '/',
+    path: '/',
+    getParentRoute: () => WorkbenchOutboundHttpRoute,
+  } as any)
+const WorkbenchOutboundHttpDefaultsRoute =
+  WorkbenchOutboundHttpDefaultsRouteImport.update({
+    id: '/defaults',
+    path: '/defaults',
+    getParentRoute: () => WorkbenchOutboundHttpRoute,
+  } as any)
 const WorkbenchPluginsIndexRoute = WorkbenchPluginsIndexRouteImport.update({
   id: '/',
   path: '/',
@@ -78,10 +99,15 @@ const WorkbenchPluginsSplatRoute = WorkbenchPluginsSplatRouteImport.update({
   path: '/$',
   getParentRoute: () => WorkbenchPluginsRoute,
 } as any)
+const WorkbenchSecurityIndexRoute = WorkbenchSecurityIndexRouteImport.update({
+  id: '/',
+  path: '/',
+  getParentRoute: () => WorkbenchSecurityRoute,
+} as any)
 const WorkbenchSecurityAuditRoute = WorkbenchSecurityAuditRouteImport.update({
-  id: '/security_/audit',
-  path: '/security/audit',
-  getParentRoute: () => WorkbenchRoute,
+  id: '/audit',
+  path: '/audit',
+  getParentRoute: () => WorkbenchSecurityRoute,
 } as any)
 const StandaloneWorkbenchStandalonePluginNameSplatRoute =
   StandaloneWorkbenchStandalonePluginNameSplatRouteImport.update({
@@ -107,12 +133,16 @@ export interface FileRoutesByFullPath {
   '/$': typeof WorkbenchSplatRoute
   '/apps': typeof WorkbenchAppsRoute
   '/logs': typeof WorkbenchLogsRoute
+  '/outbound-http': typeof WorkbenchOutboundHttpRouteWithChildren
   '/plugin-graph': typeof WorkbenchPluginGraphRoute
   '/plugins': typeof WorkbenchPluginsRouteWithChildren
-  '/security': typeof WorkbenchSecurityRoute
+  '/security': typeof WorkbenchSecurityRouteWithChildren
+  '/outbound-http/defaults': typeof WorkbenchOutboundHttpDefaultsRoute
   '/plugins/$': typeof WorkbenchPluginsSplatRoute
   '/security/audit': typeof WorkbenchSecurityAuditRoute
+  '/outbound-http/': typeof WorkbenchOutboundHttpIndexRoute
   '/plugins/': typeof WorkbenchPluginsIndexRoute
+  '/security/': typeof WorkbenchSecurityIndexRoute
   '/workbench-standalone/$pluginName/$': typeof StandaloneWorkbenchStandalonePluginNameSplatRoute
   '/plugin-graph/$kind/$': typeof WorkbenchPluginGraphKindSplatRoute
   '/workbench/$pluginName/$': typeof WorkbenchWorkbenchPluginNameSplatRoute
@@ -123,10 +153,12 @@ export interface FileRoutesByTo {
   '/apps': typeof WorkbenchAppsRoute
   '/logs': typeof WorkbenchLogsRoute
   '/plugin-graph': typeof WorkbenchPluginGraphRoute
-  '/security': typeof WorkbenchSecurityRoute
+  '/outbound-http/defaults': typeof WorkbenchOutboundHttpDefaultsRoute
   '/plugins/$': typeof WorkbenchPluginsSplatRoute
   '/security/audit': typeof WorkbenchSecurityAuditRoute
+  '/outbound-http': typeof WorkbenchOutboundHttpIndexRoute
   '/plugins': typeof WorkbenchPluginsIndexRoute
+  '/security': typeof WorkbenchSecurityIndexRoute
   '/workbench-standalone/$pluginName/$': typeof StandaloneWorkbenchStandalonePluginNameSplatRoute
   '/plugin-graph/$kind/$': typeof WorkbenchPluginGraphKindSplatRoute
   '/workbench/$pluginName/$': typeof WorkbenchWorkbenchPluginNameSplatRoute
@@ -138,13 +170,17 @@ export interface FileRoutesById {
   '/_workbench/$': typeof WorkbenchSplatRoute
   '/_workbench/apps': typeof WorkbenchAppsRoute
   '/_workbench/logs': typeof WorkbenchLogsRoute
+  '/_workbench/outbound-http': typeof WorkbenchOutboundHttpRouteWithChildren
   '/_workbench/plugin-graph': typeof WorkbenchPluginGraphRoute
   '/_workbench/plugins': typeof WorkbenchPluginsRouteWithChildren
-  '/_workbench/security': typeof WorkbenchSecurityRoute
+  '/_workbench/security': typeof WorkbenchSecurityRouteWithChildren
   '/_workbench/': typeof WorkbenchIndexRoute
+  '/_workbench/outbound-http/defaults': typeof WorkbenchOutboundHttpDefaultsRoute
   '/_workbench/plugins/$': typeof WorkbenchPluginsSplatRoute
-  '/_workbench/security_/audit': typeof WorkbenchSecurityAuditRoute
+  '/_workbench/security/audit': typeof WorkbenchSecurityAuditRoute
+  '/_workbench/outbound-http/': typeof WorkbenchOutboundHttpIndexRoute
   '/_workbench/plugins/': typeof WorkbenchPluginsIndexRoute
+  '/_workbench/security/': typeof WorkbenchSecurityIndexRoute
   '/_standalone/workbench-standalone/$pluginName/$': typeof StandaloneWorkbenchStandalonePluginNameSplatRoute
   '/_workbench/plugin-graph_/$kind/$': typeof WorkbenchPluginGraphKindSplatRoute
   '/_workbench/workbench/$pluginName/$': typeof WorkbenchWorkbenchPluginNameSplatRoute
@@ -156,12 +192,16 @@ export interface FileRouteTypes {
     | '/$'
     | '/apps'
     | '/logs'
+    | '/outbound-http'
     | '/plugin-graph'
     | '/plugins'
     | '/security'
+    | '/outbound-http/defaults'
     | '/plugins/$'
     | '/security/audit'
+    | '/outbound-http/'
     | '/plugins/'
+    | '/security/'
     | '/workbench-standalone/$pluginName/$'
     | '/plugin-graph/$kind/$'
     | '/workbench/$pluginName/$'
@@ -172,10 +212,12 @@ export interface FileRouteTypes {
     | '/apps'
     | '/logs'
     | '/plugin-graph'
-    | '/security'
+    | '/outbound-http/defaults'
     | '/plugins/$'
     | '/security/audit'
+    | '/outbound-http'
     | '/plugins'
+    | '/security'
     | '/workbench-standalone/$pluginName/$'
     | '/plugin-graph/$kind/$'
     | '/workbench/$pluginName/$'
@@ -186,13 +228,17 @@ export interface FileRouteTypes {
     | '/_workbench/$'
     | '/_workbench/apps'
     | '/_workbench/logs'
+    | '/_workbench/outbound-http'
     | '/_workbench/plugin-graph'
     | '/_workbench/plugins'
     | '/_workbench/security'
     | '/_workbench/'
+    | '/_workbench/outbound-http/defaults'
     | '/_workbench/plugins/$'
-    | '/_workbench/security_/audit'
+    | '/_workbench/security/audit'
+    | '/_workbench/outbound-http/'
     | '/_workbench/plugins/'
+    | '/_workbench/security/'
     | '/_standalone/workbench-standalone/$pluginName/$'
     | '/_workbench/plugin-graph_/$kind/$'
     | '/_workbench/workbench/$pluginName/$'
@@ -247,6 +293,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof WorkbenchLogsRouteImport
       parentRoute: typeof WorkbenchRoute
     }
+    '/_workbench/outbound-http': {
+      id: '/_workbench/outbound-http'
+      path: '/outbound-http'
+      fullPath: '/outbound-http'
+      preLoaderRoute: typeof WorkbenchOutboundHttpRouteImport
+      parentRoute: typeof WorkbenchRoute
+    }
     '/_workbench/plugin-graph': {
       id: '/_workbench/plugin-graph'
       path: '/plugin-graph'
@@ -268,6 +321,20 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof WorkbenchSecurityRouteImport
       parentRoute: typeof WorkbenchRoute
     }
+    '/_workbench/outbound-http/': {
+      id: '/_workbench/outbound-http/'
+      path: '/'
+      fullPath: '/outbound-http/'
+      preLoaderRoute: typeof WorkbenchOutboundHttpIndexRouteImport
+      parentRoute: typeof WorkbenchOutboundHttpRoute
+    }
+    '/_workbench/outbound-http/defaults': {
+      id: '/_workbench/outbound-http/defaults'
+      path: '/defaults'
+      fullPath: '/outbound-http/defaults'
+      preLoaderRoute: typeof WorkbenchOutboundHttpDefaultsRouteImport
+      parentRoute: typeof WorkbenchOutboundHttpRoute
+    }
     '/_workbench/plugins/': {
       id: '/_workbench/plugins/'
       path: '/'
@@ -282,12 +349,19 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof WorkbenchPluginsSplatRouteImport
       parentRoute: typeof WorkbenchPluginsRoute
     }
-    '/_workbench/security_/audit': {
-      id: '/_workbench/security_/audit'
-      path: '/security/audit'
+    '/_workbench/security/': {
+      id: '/_workbench/security/'
+      path: '/'
+      fullPath: '/security/'
+      preLoaderRoute: typeof WorkbenchSecurityIndexRouteImport
+      parentRoute: typeof WorkbenchSecurityRoute
+    }
+    '/_workbench/security/audit': {
+      id: '/_workbench/security/audit'
+      path: '/audit'
       fullPath: '/security/audit'
       preLoaderRoute: typeof WorkbenchSecurityAuditRouteImport
-      parentRoute: typeof WorkbenchRoute
+      parentRoute: typeof WorkbenchSecurityRoute
     }
     '/_standalone/workbench-standalone/$pluginName/$': {
       id: '/_standalone/workbench-standalone/$pluginName/$'
@@ -326,6 +400,21 @@ const StandaloneRouteWithChildren = StandaloneRoute._addFileChildren(
   StandaloneRouteChildren,
 )
 
+interface WorkbenchOutboundHttpRouteChildren {
+  WorkbenchOutboundHttpDefaultsRoute: typeof WorkbenchOutboundHttpDefaultsRoute
+  WorkbenchOutboundHttpIndexRoute: typeof WorkbenchOutboundHttpIndexRoute
+}
+
+const WorkbenchOutboundHttpRouteChildren: WorkbenchOutboundHttpRouteChildren = {
+  WorkbenchOutboundHttpDefaultsRoute: WorkbenchOutboundHttpDefaultsRoute,
+  WorkbenchOutboundHttpIndexRoute: WorkbenchOutboundHttpIndexRoute,
+}
+
+const WorkbenchOutboundHttpRouteWithChildren =
+  WorkbenchOutboundHttpRoute._addFileChildren(
+    WorkbenchOutboundHttpRouteChildren,
+  )
+
 interface WorkbenchPluginsRouteChildren {
   WorkbenchPluginsSplatRoute: typeof WorkbenchPluginsSplatRoute
   WorkbenchPluginsIndexRoute: typeof WorkbenchPluginsIndexRoute
@@ -339,15 +428,28 @@ const WorkbenchPluginsRouteChildren: WorkbenchPluginsRouteChildren = {
 const WorkbenchPluginsRouteWithChildren =
   WorkbenchPluginsRoute._addFileChildren(WorkbenchPluginsRouteChildren)
 
+interface WorkbenchSecurityRouteChildren {
+  WorkbenchSecurityAuditRoute: typeof WorkbenchSecurityAuditRoute
+  WorkbenchSecurityIndexRoute: typeof WorkbenchSecurityIndexRoute
+}
+
+const WorkbenchSecurityRouteChildren: WorkbenchSecurityRouteChildren = {
+  WorkbenchSecurityAuditRoute: WorkbenchSecurityAuditRoute,
+  WorkbenchSecurityIndexRoute: WorkbenchSecurityIndexRoute,
+}
+
+const WorkbenchSecurityRouteWithChildren =
+  WorkbenchSecurityRoute._addFileChildren(WorkbenchSecurityRouteChildren)
+
 interface WorkbenchRouteChildren {
   WorkbenchSplatRoute: typeof WorkbenchSplatRoute
   WorkbenchAppsRoute: typeof WorkbenchAppsRoute
   WorkbenchLogsRoute: typeof WorkbenchLogsRoute
+  WorkbenchOutboundHttpRoute: typeof WorkbenchOutboundHttpRouteWithChildren
   WorkbenchPluginGraphRoute: typeof WorkbenchPluginGraphRoute
   WorkbenchPluginsRoute: typeof WorkbenchPluginsRouteWithChildren
-  WorkbenchSecurityRoute: typeof WorkbenchSecurityRoute
+  WorkbenchSecurityRoute: typeof WorkbenchSecurityRouteWithChildren
   WorkbenchIndexRoute: typeof WorkbenchIndexRoute
-  WorkbenchSecurityAuditRoute: typeof WorkbenchSecurityAuditRoute
   WorkbenchPluginGraphKindSplatRoute: typeof WorkbenchPluginGraphKindSplatRoute
   WorkbenchWorkbenchPluginNameSplatRoute: typeof WorkbenchWorkbenchPluginNameSplatRoute
 }
@@ -356,11 +458,11 @@ const WorkbenchRouteChildren: WorkbenchRouteChildren = {
   WorkbenchSplatRoute: WorkbenchSplatRoute,
   WorkbenchAppsRoute: WorkbenchAppsRoute,
   WorkbenchLogsRoute: WorkbenchLogsRoute,
+  WorkbenchOutboundHttpRoute: WorkbenchOutboundHttpRouteWithChildren,
   WorkbenchPluginGraphRoute: WorkbenchPluginGraphRoute,
   WorkbenchPluginsRoute: WorkbenchPluginsRouteWithChildren,
-  WorkbenchSecurityRoute: WorkbenchSecurityRoute,
+  WorkbenchSecurityRoute: WorkbenchSecurityRouteWithChildren,
   WorkbenchIndexRoute: WorkbenchIndexRoute,
-  WorkbenchSecurityAuditRoute: WorkbenchSecurityAuditRoute,
   WorkbenchPluginGraphKindSplatRoute: WorkbenchPluginGraphKindSplatRoute,
   WorkbenchWorkbenchPluginNameSplatRoute:
     WorkbenchWorkbenchPluginNameSplatRoute,

@@ -1,0 +1,66 @@
+{
+	"name": "@pluxel-example/host-targets-plugins",
+	"version": "0.0.0",
+	"private": true,
+	"files": [
+		"dist"
+	],
+	"type": "module",
+	"exports": {
+		".": {
+			"@pluxel/hmr": "./src/index.ts",
+			"default": "./dist/index.js"
+		},
+		"./probe": {
+			"@pluxel/hmr": "./src/probe.ts",
+			"default": "./dist/probe.js"
+		},
+		"./package.json": "./package.json",
+		"./control": {
+			"types": "./dist/control/index.d.mts",
+			"import": "./dist/control/index.mjs",
+			"default": "./dist/control/index.mjs"
+		}
+	},
+	"publishConfig": {
+		"exports": {
+			".": "./dist/index.js",
+			"./probe": "./dist/probe.js",
+			"./package.json": "./package.json",
+			"./control": {
+				"types": "./dist/control/index.d.mts",
+				"import": "./dist/control/index.mjs",
+				"default": "./dist/control/index.mjs"
+			}
+		}
+	},
+	"scripts": {
+		"build": "vp run compile",
+		"typecheck": "vp run check-types"
+	},
+	"dependencies": {
+		"valibot": "catalog:validation"
+	},
+	"devDependencies": {
+		"@pluxel/agent-sdk": "workspace:*",
+		"@pluxel/cli": "workspace:*",
+		"@pluxel/rolldown": "workspace:*",
+		"typescript": "catalog:dev",
+		"vite-plus": "catalog:build"
+	},
+	"peerDependencies": {
+		"@pluxel/core": "workspace:^",
+		"@pluxel/host": "workspace:^"
+	},
+	"peerDependenciesMeta": {
+		"@pluxel/host": {
+			"optional": true
+		}
+	},
+	"pluxel": {
+		"artifactRoot": "dist",
+		"nodeArtifacts": true,
+		"workbenchArtifacts": true,
+		"control": "./dist/control/manifest.json"
+	}
+}

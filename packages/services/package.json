@@ -13,37 +13,10 @@
 		"!**/*.map"
 	],
 	"type": "module",
-	"types": "./dist/index.d.mts",
-	"imports": {
-		"#pluxel/database-driver/pglite": {
-			"@pluxel/source": "./src/database/adapters/pglite.ts",
-			"default": "./dist/internal/database/pglite.mjs"
-		},
-		"#pluxel/database-driver/postgres": {
-			"@pluxel/source": "./src/database/adapters/postgres.ts",
-			"default": "./dist/internal/database/postgres.mjs"
-		}
-	},
 	"exports": {
-		".": {
-			"@pluxel/source": "./src/index.ts",
-			"default": "./dist/index.mjs"
-		},
 		"./commands": {
 			"@pluxel/source": "./src/commands.ts",
 			"default": "./dist/commands.mjs"
-		},
-		"./database": {
-			"@pluxel/source": "./src/database.ts",
-			"default": "./dist/database.mjs"
-		},
-		"./database/pglite": {
-			"@pluxel/source": "./src/database/pglite.ts",
-			"default": "./dist/database/pglite.mjs"
-		},
-		"./database/postgres": {
-			"@pluxel/source": "./src/database/postgres.ts",
-			"default": "./dist/database/postgres.mjs"
 		},
 		"./elysia": {
 			"@pluxel/source": "./src/elysia.ts",
@@ -125,6 +98,18 @@
 			"@pluxel/source": "./src/development/node.ts",
 			"default": "./dist/node/vite.mjs"
 		},
+		"./pg": {
+			"@pluxel/source": "./src/pg.ts",
+			"default": "./dist/pg.mjs"
+		},
+		"./pg/pglite": {
+			"@pluxel/source": "./src/database/pg/pglite.ts",
+			"default": "./dist/pg/pglite.mjs"
+		},
+		"./pg/postgres": {
+			"@pluxel/source": "./src/database/pg/postgres.ts",
+			"default": "./dist/pg/postgres.mjs"
+		},
 		"./plugins": {
 			"@pluxel/hmr": "./src/plugins.ts",
 			"default": "./dist/plugins.mjs"
@@ -137,9 +122,21 @@
 			"@pluxel/source": "./src/sources.ts",
 			"default": "./dist/sources.mjs"
 		},
-		"./vault": {
-			"@pluxel/source": "./src/vault.ts",
-			"default": "./dist/vault.mjs"
+		"./sqlite": {
+			"@pluxel/source": "./src/sqlite.ts",
+			"default": "./dist/sqlite.mjs"
+		},
+		"./sqlite/d1": {
+			"@pluxel/source": "./src/database/sqlite/d1.ts",
+			"default": "./dist/sqlite/d1.mjs"
+		},
+		"./sqlite/d1/migrate": {
+			"@pluxel/source": "./src/database/sqlite/d1-migrate.ts",
+			"default": "./dist/sqlite/d1/migrate.mjs"
+		},
+		"./sqlite/libsql": {
+			"@pluxel/source": "./src/database/sqlite/libsql.ts",
+			"default": "./dist/sqlite/libsql.mjs"
 		},
 		"./vite": {
 			"@pluxel/source": "./src/vite.ts",
@@ -149,19 +146,16 @@
 			"@pluxel/source": "./src/workers.ts",
 			"default": "./dist/workers.mjs"
 		},
-		"./package.json": "./package.json"
+		"./package.json": "./package.json",
+		"./control": {
+			"types": "./dist/control/index.d.mts",
+			"import": "./dist/control/index.mjs",
+			"default": "./dist/control/index.mjs"
+		}
 	},
 	"publishConfig": {
-		"imports": {
-			"#pluxel/database-driver/pglite": "./dist/internal/database/pglite.mjs",
-			"#pluxel/database-driver/postgres": "./dist/internal/database/postgres.mjs"
-		},
 		"exports": {
-			".": "./dist/index.mjs",
 			"./commands": "./dist/commands.mjs",
-			"./database": "./dist/database.mjs",
-			"./database/pglite": "./dist/database/pglite.mjs",
-			"./database/postgres": "./dist/database/postgres.mjs",
 			"./elysia": "./dist/elysia.mjs",
 			"./elysia/node": "./dist/elysia/node.mjs",
 			"./elysia/vite": "./dist/elysia/vite.mjs",
@@ -182,13 +176,24 @@
 			"./management/session": "./dist/management/session.mjs",
 			"./node": "./dist/node.mjs",
 			"./node/vite": "./dist/node/vite.mjs",
+			"./pg": "./dist/pg.mjs",
+			"./pg/pglite": "./dist/pg/pglite.mjs",
+			"./pg/postgres": "./dist/pg/postgres.mjs",
 			"./plugins": "./dist/plugins.mjs",
 			"./preset": "./dist/preset.mjs",
 			"./sources": "./dist/sources.mjs",
-			"./vault": "./dist/vault.mjs",
+			"./sqlite": "./dist/sqlite.mjs",
+			"./sqlite/d1": "./dist/sqlite/d1.mjs",
+			"./sqlite/d1/migrate": "./dist/sqlite/d1/migrate.mjs",
+			"./sqlite/libsql": "./dist/sqlite/libsql.mjs",
 			"./vite": "./dist/vite.mjs",
 			"./workers": "./dist/workers.mjs",
-			"./package.json": "./package.json"
+			"./package.json": "./package.json",
+			"./control": {
+				"types": "./dist/control/index.d.mts",
+				"import": "./dist/control/index.mjs",
+				"default": "./dist/control/index.mjs"
+			}
 		},
 		"access": "public"
 	},
@@ -196,14 +201,13 @@
 		"bench:worker-task": "vp test bench bench/worker-task.bench.ts",
 		"build": "vp run compile",
 		"test": "vp run check-tests",
-		"test:installed": "vp test run --config tests/installed.config.mts && node tests/installed-plugin.smoke.mjs && node tests/installed-node.smoke.mjs",
-		"test:installed-workbench": "node tests/installed-workbench.smoke.mjs",
+		"test:installed": "vp test run --config tests/installed/smoke.config.mts && node tests/installed/plugin.smoke.mjs && node tests/installed/node.smoke.mjs",
+		"test:installed-workbench": "node tests/installed/workbench.smoke.mjs",
 		"typecheck": "vp run check-types"
 	},
 	"dependencies": {
 		"@types/node": "catalog:types",
 		"@types/pg": "catalog:types",
-		"age-encryption": "catalog:prod",
 		"chokidar": "catalog:node",
 		"crossws": "catalog:prod",
 		"drizzle-orm": "catalog:backend",
@@ -213,10 +217,12 @@
 		"valibot-form": "workspace:^"
 	},
 	"devDependencies": {
+		"@cloudflare/workers-types": "catalog:dev",
 		"@electric-sql/pglite": "catalog:prod",
 		"@libsql/client": "catalog:backend",
 		"@logtape/logtape": "catalog:prod",
 		"@mantine/core": "catalog:frontend",
+		"@pluxel/agent-sdk": "workspace:*",
 		"@pluxel/commands": "workspace:*",
 		"@pluxel/core": "workspace:*",
 		"@pluxel/host": "workspace:*",
@@ -225,23 +231,27 @@
 		"@pluxel/test": "workspace:*",
 		"@pluxel/workbench": "workspace:*",
 		"@tabler/icons-react": "catalog:icons",
+		"@types/bun": "catalog:types",
 		"@types/react": "catalog:types",
 		"@types/react-dom": "catalog:types",
+		"age-encryption": "catalog:prod",
 		"capnweb": "catalog:prod",
 		"elysia": "catalog:prod",
 		"fs-fixture": "catalog:dev",
+		"miniflare": "catalog:dev",
 		"pg": "catalog:backend",
 		"playwright-core": "catalog:prod",
 		"react": "catalog:frontend",
 		"react-dom": "catalog:frontend",
-		"tinybase": "catalog:prod",
 		"tsx": "catalog:dev",
 		"valibot": "catalog:validation",
 		"vite": "catalog:build",
 		"vite-plus": "catalog:build"
 	},
 	"peerDependencies": {
+		"@cloudflare/workers-types": "catalog:dev",
 		"@electric-sql/pglite": "catalog:prod",
+		"@libsql/client": "catalog:backend",
 		"@mantine/core": "catalog:frontend",
 		"@pluxel/commands": "workspace:^",
 		"@pluxel/core": "workspace:^",
@@ -258,6 +268,12 @@
 		"vite": ">=8.2.2 <9"
 	},
 	"peerDependenciesMeta": {
+		"@cloudflare/workers-types": {
+			"optional": true
+		},
+		"@libsql/client": {
+			"optional": true
+		},
 		"@pluxel/commands": {
 			"optional": true
 		},
@@ -299,9 +315,10 @@
 		"node": ">=24"
 	},
 	"pluxel": {
-		"workbenchCapnweb": "0.12.0",
+		"workbenchCapnweb": "0.13.1",
 		"artifactRoot": "dist",
 		"nodeArtifacts": true,
-		"workbenchArtifacts": true
+		"workbenchArtifacts": true,
+		"control": "./dist/control/manifest.json"
 	}
 }

@@ -5,6 +5,8 @@ description: 创建一个可以独立构建、测试和发布的 Pluxel 插件�
 
 当需要将开发的插件分发给其他工程或发布至 npm 时，可以使用 CLI 生成标准的独立插件包结构。
 
+应用在开发机安装 npm 包，发布时从公开入口加载编译好的插件。联调源码可在 Node 的 Vite 环境选择 `@pluxel/hmr` 导出。面向 LLRT 或 React Native 时，可另行把插件打成适合目标引擎的 JS，交给应用安装并在下次启动时加载。 [开发与交付](../host/runtime-portability.md#开发与交付)
+
 ## 创建插件包工程
 
 使用官方模板生成一个独立的插件包：
@@ -78,11 +80,23 @@ vite.config.ts         全包任务调度（Vite Task）
 - 聚合 Part 树中的依赖，自动去重并确定必需（required）与可选（optional）边界；
 - 若代码中注入的外部插件未在 `package.json` 的 `peerDependencies` 中声明，构建时会报错提醒补齐依赖。
 
+## 插件控制声明
+
+同一次 `pluxel build` 使用正式 Rolldown 插件生成 `dist/control/`，并维护包的 `./control` 导出和 `pluxel.control` 标记。消费者从这个独立入口导入纯数据描述符，可以读取配置类型、Schema 源码表达式和 class 的方法、属性类型；生成过程不会加载插件实现。
+
+控制生成沿用 tsdown 最终选定的 `tsconfig`，包含自定义路径或显式 `false`。直接使用 `@pluxel/rolldown/control` 的生成器或 Rolldown 插件时，可用同名选项指定配置；省略时从 `root` 查找项目配置，`false` 使用生成器的默认类型环境。整批声明使用构建所有者的配置，不从某个插件包推断。
+
+插件包的实例类型引用原公开包声明，保留与原 class 的名义兼容性；调用方安装该包及其公开类型依赖。应用和 Vite 的控制材料则携带本地应用声明闭包，适合没有应用源码的脚本作者，公开外部类型包仍由作者提供。两种模式的调用与材料同步见[插件控制类型](./plugin-control.md)。
+
+发布时将 `dist/control/` 与其他产物一起打包。生成失败、缺失类型或无法表达的公开声明会使构建失败，先修复后再发布。
+
+构建作者需要安装公开声明实际引用的类型依赖，包括上游标记为 optional peer 的类型包。例如使用 Elysia 时，作者环境须提供匹配的 `@types/bun`，才能完整分析它的公开声明；可放在作者工程的 `devDependencies`。
+
 <span id="构建与发布检查"></span>
 
 ## 构建与发布检查清单
 
-在执行 `npm publish` 或 `pluxel publish` 之前，执行以下验证步骤：
+在执行 `vp pm publish` 或 `vp exec pluxel publish` 之前，执行以下验证步骤：
 
 ```sh
 # 1. 运行完整代码门禁
@@ -100,3 +114,5 @@ vp exec pluxel publish --webhook
 - `dist/` 目录下正确生成了 `.mjs` 模块及 `.d.ts` 类型声明文件；
 - 临时文件、测试夹具、敏感凭据或源码映射未被误打包；
 - `peerDependencies` 版本范围符合目标运行环境的要求。
+
+独立插件仓库可以调用 Pluxel 的可复用 GitHub Actions workflow 做 PR 构建、npm Trusted Publishing 和市场通知。见 [GitHub Actions 示例](./plugin-market.md#github-actions)。

@@ -1,26 +1,33 @@
+import type { Workbench } from '@pluxel/workbench'
 import { assertWorkbenchDto } from '@pluxel/workbench/server'
 import { Commands } from '@pluxel/services/commands'
 import { resolve } from 'node:path'
 import { defineCommand, Result } from '@pluxel/commands'
 import { Type, obj } from '@pluxel/commands/typebox'
-import { BasePlugin, Plugin } from '@pluxel/core'
+import { BasePlugin, Plugin, defineServiceRef } from '@pluxel/core'
 import * as f from 'valibot-form'
 import * as v from 'valibot'
 import { RpcTarget } from 'capnweb'
-import { requirePluginSource } from '@pluxel/host/sources'
-import type {
-	PackageManagerApi,
-	PackageManagerSnapshot,
-	PackageMutationResult,
-	PackagePreparationResult,
-	MarketInstallRequest,
-	MarketPackageQuery,
-	MarketReleaseQuery,
+import { readPluginSourceImpact, requirePluginSource } from '@pluxel/host/sources'
+import {
+	packageMutationLimit,
+	type PackageManagerApi,
+	type LocalPackageLocation,
+	type PackageManagerSnapshot,
+	type PackageInstallConfirmation,
+	type PackageMutationResult,
+	type PackagePreparationResult,
+	type MarketInstallRequest,
+	type MarketCatalogFilters,
+	type MarketPackageQuery,
+	type MarketReleaseQuery,
 } from './contracts.ts'
 import { loadPnpmEngine } from './pnpm-engine.ts'
+import { defaultNpmMirrors, registrySchema } from './market.ts'
 import { ManagedPackageStore } from './store.ts'
 import { PackageManagerWorkbench } from './workbench.ts'
 
+const WorkbenchRef = defineServiceRef<Workbench>()
 export const PackageManagerConfig = v.object({
 	markets: v.pipe(
 		v.optional(
@@ -58,6 +65,14 @@ export const PackageManagerConfig = v.object({
 			description: 'Optional HTTP package catalogs. Direct installation works without a market.',
 		}),
 	),
+	npmMirrors: v.pipe(
+		v.optional(v.array(registrySchema), () => [...defaultNpmMirrors]),
+		f.formMeta({
+			title: 'Public npm mirrors',
+			description:
+				'Accept these pnpm registry URLs for checked public npm releases. Configure the active download registry in pnpm.',
+		}),
+	),
 	rootDir: v.pipe(
 		v.optional(v.string(), '.pluxel/managed-plugins'),
 		f.formMeta({
@@ -93,11 +108,11 @@ export type PackageManagerPluginConfig = v.InferOutput<typeof PackageManagerConf
 const mutationInput = obj({
 	specs: Type.Array(Type.String({ minLength: 1, maxLength: 512 }), {
 		minItems: 1,
-		maxItems: 100,
+		maxItems: packageMutationLimit,
 	}),
 })
 
-@Plugin({ startTimeoutMs: 120_000 })
+@Plugin({ displayName: 'Package Manager', startTimeoutMs: 120_000 })
 export class PackageManagerPlugin extends BasePlugin {
 	private readonly config = this.configs.use(PackageManagerConfig)
 	private store?: ManagedPackageStore
@@ -105,8 +120,7 @@ export class PackageManagerPlugin extends BasePlugin {
 	override async init(signal: AbortSignal): Promise<void> {
 		const rootDir = resolve(process.cwd(), this.config.rootDir)
 		const source = requirePluginSource(this.ctx, {
-			kind: 'directory',
-			path: resolve(rootDir, 'entries'),
+			directory: resolve(rootDir, 'entries'),
 			include: ['*.mjs'],
 		})
 		const store = new ManagedPackageStore(await loadPnpmEngine(), {
@@ -115,7 +129,9 @@ export class PackageManagerPlugin extends BasePlugin {
 			allowBuilds: this.config.allowBuilds,
 			minimumReleaseAgeMinutes: this.config.minimumReleaseAgeMinutes,
 			markets: this.config.markets,
+			npmMirrors: this.config.npmMirrors,
 			sourceUpdates: source.updates,
+			readHostImpact: (packages) => readPluginSourceImpact(this.ctx, packages),
 			signal,
 		})
 		this.ctx.effects.defer(() => store.close())
@@ -125,25 +141,24 @@ export class PackageManagerPlugin extends BasePlugin {
 			if (this.store === store) this.store = undefined
 		})
 
-		this.ctx.require(Commands).register(
+		this.ctx.service(Commands).register(
 			defineCommand({
 				name: 'package.prepare',
 				description:
-					'Download and prepare plugin packages for review without publishing source entries.',
+					'Review exact plugin packages, affected Host nodes and their direct consumers before publishing.',
 				input: mutationInput,
 				execute: async ({ specs }) => Result.ok(await store.prepareInstall(specs)),
 			}),
 		)
-		this.ctx.require(Commands).register(
+		this.ctx.service(Commands).register(
 			defineCommand({
 				name: 'package.confirm',
-				description: 'Publish a prepared installation; does not activate Plugin instances.',
+				description: 'Recheck the reviewed Host state and publish the prepared source entries.',
 				input: obj({ planId: Type.String({ minLength: 1, maxLength: 64 }) }),
-				execute: async ({ planId }) =>
-					Result.ok(toCommandMutation(await store.confirmInstall(planId))),
+				execute: async ({ planId }) => Result.ok(await store.confirmInstall(planId)),
 			}),
 		)
-		this.ctx.require(Commands).register(
+		this.ctx.service(Commands).register(
 			defineCommand({
 				name: 'package.install',
 				description: 'Install plugin packages into the managed dynamic source project.',
@@ -151,7 +166,7 @@ export class PackageManagerPlugin extends BasePlugin {
 				execute: async ({ specs }) => Result.ok(toCommandMutation(await store.install(specs))),
 			}),
 		)
-		this.ctx.require(Commands).register(
+		this.ctx.service(Commands).register(
 			defineCommand({
 				name: 'package.remove',
 				description: 'Remove plugin packages from the managed dynamic source project.',
@@ -159,9 +174,10 @@ export class PackageManagerPlugin extends BasePlugin {
 				execute: async ({ specs }) => Result.ok(toCommandMutation(await store.remove(specs))),
 			}),
 		)
-		this.ctx.workbench?.publish(PackageManagerWorkbench, {
-			marketplace: () => new PackageManagerTarget(store),
-			manager: () => new PackageManagerTarget(store),
+		const open = () => new PackageManagerTarget(store)
+		this.ctx.service(WorkbenchRef)?.publish(PackageManagerWorkbench, {
+			marketplace: open,
+			manager: open,
 		})
 	}
 
@@ -177,7 +193,7 @@ export class PackageManagerPlugin extends BasePlugin {
 		return this.requireStore().prepareInstall(specs)
 	}
 
-	confirmInstall(planId: string): Promise<PackageMutationResult> {
+	confirmInstall(planId: string): Promise<PackageInstallConfirmation> {
 		return this.requireStore().confirmInstall(planId)
 	}
 
@@ -197,12 +213,16 @@ export class PackageManagerPlugin extends BasePlugin {
 		return this.requireStore().marketReleases(marketId, name, query)
 	}
 
-	prepareMarketInstall(request: MarketInstallRequest): Promise<PackagePreparationResult> {
-		return this.requireStore().prepareMarketInstall(request)
+	/** Prepares one dependency graph for the exact releases selected across configured markets.
+	 * Confirm the returned plan ID to publish its entries. */
+	prepareMarketInstall(
+		requests: readonly MarketInstallRequest[],
+	): Promise<PackagePreparationResult> {
+		return this.requireStore().prepareMarketInstall(requests)
 	}
 
-	remove(names: readonly string[]): Promise<PackageMutationResult> {
-		return this.requireStore().remove(names)
+	remove(names: readonly string[], expectedRevision?: number): Promise<PackageMutationResult> {
+		return this.requireStore().remove(names, expectedRevision)
 	}
 
 	private requireStore(): ManagedPackageStore {
@@ -222,6 +242,24 @@ function toCommandMutation(result: PackageMutationResult) {
 class PackageManagerTarget extends RpcTarget implements PackageManagerApi {
 	constructor(private readonly store: ManagedPackageStore) {
 		super()
+	}
+
+	async searchRegistryDto(query: string, includeAll: boolean) {
+		const result = await this.store.searchRegistry(query, includeAll)
+		assertWorkbenchDto(result)
+		return result
+	}
+
+	async inspectRegistryDto(spec: string) {
+		const result = await this.store.inspectRegistry(spec)
+		assertWorkbenchDto(result)
+		return result
+	}
+
+	async localPackageDto(location: LocalPackageLocation) {
+		const result = await this.store.localPackage(location)
+		assertWorkbenchDto(result)
+		return result
 	}
 
 	async snapshotDto(): Promise<PackageManagerSnapshot> {
@@ -254,6 +292,12 @@ class PackageManagerTarget extends RpcTarget implements PackageManagerApi {
 		return result
 	}
 
+	async marketFacetsDto(marketId: string, filters?: MarketCatalogFilters) {
+		const result = await this.store.marketFacets(marketId, filters)
+		assertWorkbenchDto(result)
+		return result
+	}
+
 	async marketPackageDto(marketId: string, name: string, registry?: string) {
 		const result = await this.store.marketPackage(marketId, name, registry)
 		assertWorkbenchDto(result)
@@ -272,14 +316,19 @@ class PackageManagerTarget extends RpcTarget implements PackageManagerApi {
 		return result
 	}
 
-	async prepareMarketInstallDto(request: MarketInstallRequest) {
-		const result = await this.store.prepareMarketInstall(request)
+	async prepareMarketInstallDto(requests: readonly MarketInstallRequest[]) {
+		const result = await this.store.prepareMarketInstall(requests)
 		assertWorkbenchDto(result)
 		return result
 	}
 
-	async removeDto(names: readonly string[]): Promise<PackageMutationResult> {
-		const result = await this.store.remove(names)
+	async removeDto(
+		names: readonly string[],
+		expectedRevision: number,
+	): Promise<PackageMutationResult> {
+		if (!Number.isSafeInteger(expectedRevision) || expectedRevision < 0)
+			throw new TypeError('Package removal requires the reviewed installation revision')
+		const result = await this.store.remove(names, expectedRevision)
 		assertWorkbenchDto(result)
 		return result
 	}
@@ -289,12 +338,15 @@ export type {
 	ManagedPackage,
 	PackageManagerApi,
 	PackageManagerSnapshot,
+	PackageInstallConfirmation,
 	PackageMutationFailure,
 	PackageMutationResult,
 	PackageMarket,
 	PackageInstallPlan,
+	PackageHostImpact,
 	PackagePreparationResult,
 	MarketInstallRequest,
+	MarketCatalogFilters,
 	MarketPackageQuery,
 	MarketPackageSummary,
 	MarketPackagePage,

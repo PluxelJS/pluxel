@@ -24,7 +24,9 @@ export class WorkerPlugin extends BasePlugin {
 }
 ```
 
-在终端或 Workbench 日志面板中，该条日志会自动标记插件来源，无需手工在消息文本中拼接插件前缀。
+日志记录带有插件来源。记录是否出现在终端、Workbench 或原生应用的日志中，由宿主配置的输出端和级别决定。
+
+`ctx.logger` 用于插件写日志。Node 或浏览器宿主配置 `coreConfig.logtape` 后，`root.logging` 提供日志策略、缓存查询与订阅、运行状态和 `flush()`。Core 负责安装与关闭。Cloudflare 由应用配置 LogTape 的输出端。日志配置见 [Host logging](../host/configuration.md#host-logging)。
 
 ### 记录异常与堆栈
 

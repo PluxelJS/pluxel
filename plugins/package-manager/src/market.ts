@@ -1,20 +1,21 @@
 import * as v from 'valibot'
-import type {
-	MarketPackagePage,
-	MarketPackageDetail,
-	MarketPackageQuery,
-	MarketReadResult,
-	MarketRelease,
-	MarketReleasePage,
-	MarketReleaseQuery,
-	PackageMarket,
+import { isPackageName } from './package-document.ts'
+import {
+	marketFilterLimit,
+	publicRegistry,
+	type MarketPackagePage,
+	type MarketPackageDetail,
+	type MarketPackageQuery,
+	type MarketCatalogFacets,
+	type MarketCatalogFilters,
+	type MarketReadResult,
+	type MarketRelease,
+	type MarketReleasePage,
+	type MarketReleaseQuery,
+	type PackageMarket,
 } from './market-contracts.ts'
 
-const packageName = v.pipe(
-	v.string(),
-	v.maxLength(214),
-	v.regex(/^(?:@[a-z0-9][a-z0-9._~-]*\/)?[a-z0-9][a-z0-9._~-]*$/),
-)
+const packageName = v.pipe(v.string(), v.check<string>(isPackageName))
 const version = v.pipe(
 	v.string(),
 	v.maxLength(256),
@@ -24,8 +25,8 @@ const version = v.pipe(
 )
 const timestamp = v.pipe(v.number(), v.integer(), v.minValue(0))
 const integrity = v.pipe(v.string(), v.regex(/^sha512-[A-Za-z0-9+/]{86}==$/))
-const publicRegistry = 'https://registry.npmjs.org'
-const registry = v.pipe(
+export const defaultNpmMirrors = ['https://registry.npmmirror.com']
+export const registrySchema = v.pipe(
 	v.string(),
 	v.maxLength(2048),
 	v.check((input) => {
@@ -46,7 +47,19 @@ const registry = v.pipe(
 		}
 	}),
 )
+export const marketInstallRequestSchema = v.object({
+	marketId: v.pipe(v.string(), v.regex(/^[a-zA-Z0-9_-]{1,64}$/)),
+	registry: registrySchema,
+	name: packageName,
+	version,
+})
 const mark = v.pipe(v.string(), v.minLength(1), v.maxLength(64))
+const taxonomySlug = v.pipe(v.string(), v.regex(/^[a-z0-9][a-z0-9-]{0,31}$/))
+const authorId = v.pipe(
+	v.string(),
+	v.regex(/^github:owner\/[a-z0-9](?:[a-z0-9]|-(?=[a-z0-9])){0,38}$/),
+)
+const count = v.pipe(v.number(), v.integer(), v.minValue(0))
 const safeLink = v.pipe(
 	v.string(),
 	v.maxLength(2048),
@@ -59,43 +72,101 @@ const safeLink = v.pipe(
 		}
 	}),
 )
+const avatar = v.pipe(safeLink, v.startsWith('https://avatars.githubusercontent.com/'))
+const authorFields = {
+	id: authorId,
+	name: v.pipe(v.string(), v.regex(/^@[A-Za-z0-9-]{1,39}$/)),
+	kind: v.literal('github'),
+	avatarUrl: v.nullable(avatar),
+}
+function ownerMatchesName({ id, name }: { id: string; name: string }) {
+	return id === 'github:owner/' + name.slice(1).toLowerCase()
+}
+function ownerMatchesRepository(pkg: Pick<MarketPackageDetail, 'author' | 'repository'>) {
+	if (!pkg.author) return true
+	const match = pkg.repository?.match(
+		/^https:\/\/github\.com\/([a-z0-9-]+)\/([a-z0-9_.-]{1,100})$/i,
+	)
+	return Boolean(
+		match &&
+		match[2] !== '.' &&
+		match[2] !== '..' &&
+		pkg.author.id === 'github:owner/' + match[1].toLowerCase(),
+	)
+}
 const packageFields = {
-	registry,
+	registry: registrySchema,
 	name: packageName,
 	description: v.nullable(v.pipe(v.string(), v.maxLength(4096))),
 	repository: v.nullable(safeLink),
 	repositoryStars: v.nullable(v.pipe(v.number(), v.integer(), v.minValue(0))),
 	repositoryObservedAt: v.nullable(timestamp),
-	indexedVersions: v.pipe(v.number(), v.integer(), v.minValue(0)),
+	author: v.nullable(
+		v.pipe(
+			v.object(authorFields),
+			v.check((owner) => ownerMatchesName(owner)),
+		),
+	),
+	indexedVersions: count,
 	observedAt: timestamp,
 	official: v.boolean(),
 	category: v.nullable(mark),
 	tags: v.pipe(v.array(mark), v.maxLength(20)),
 }
+const facetsSchema = v.object({
+	total: count,
+	registries: v.array(v.object({ value: registrySchema, count })),
+	categories: v.array(v.object({ value: taxonomySlug, count })),
+	tags: v.array(v.object({ value: taxonomySlug, count })),
+	authors: v.array(
+		v.pipe(
+			v.object({ ...authorFields, count }),
+			v.check((owner) => ownerMatchesName(owner)),
+		),
+	),
+})
 const readme = v.nullable(
 	v.object({ text: v.pipe(v.string(), v.maxLength(262_144)), truncated: v.boolean() }),
 )
 const license = v.nullable(v.pipe(v.string(), v.maxLength(256)))
 const pageSchema = v.object({
 	packages: v.pipe(
-		v.array(v.object({ ...packageFields, latest: v.nullable(version) })),
+		v.array(
+			v.pipe(
+				v.object({ ...packageFields, latest: v.nullable(version) }),
+				v.check((pkg) => ownerMatchesRepository(pkg)),
+			),
+		),
 		v.maxLength(50),
 	),
 	nextCursor: v.nullable(v.pipe(v.string(), v.maxLength(2048))),
 })
-const packageSchema = v.object({
-	...packageFields,
-	latest: v.nullable(version),
-	distTags: v.record(v.pipe(v.string(), v.maxLength(128)), version),
-	metadataVersion: v.nullable(version),
-	readme,
-	license,
-	coverage: v.literal('indexed-only'),
-})
+const requirementFields = {
+	peerDependencies: v.record(packageName, v.pipe(v.string(), v.maxLength(512))),
+	pluginPackages: v.record(packageName, v.picklist(['required', 'optional'])),
+}
+const packageSchema = v.pipe(
+	v.object({
+		...packageFields,
+		latest: v.nullable(version),
+		distTags: v.record(v.pipe(v.string(), v.maxLength(128)), version),
+		metadataVersion: v.nullable(version),
+		checkedRequirements: v.optional(v.object({ version, ...requirementFields })),
+		readme,
+		license,
+		coverage: v.literal('indexed-only'),
+	}),
+	v.check((pkg) => ownerMatchesRepository(pkg)),
+	v.check(
+		(pkg) =>
+			!pkg.checkedRequirements ||
+			(pkg.indexedVersions > 0 && pkg.checkedRequirements.version === pkg.metadataVersion),
+	),
+)
 const releaseSchema = v.object({
 	name: packageName,
 	version,
-	registry,
+	registry: registrySchema,
 	integrity,
 	checkedAt: timestamp,
 	provenance: v.variant('status', [
@@ -107,22 +178,52 @@ const releaseSchema = v.object({
 			buildUrl: v.nullable(safeLink),
 		}),
 	]),
-	peerDependencies: v.record(packageName, v.pipe(v.string(), v.maxLength(512))),
-	pluginPackages: v.record(packageName, v.picklist(['required', 'optional'])),
+	...requirementFields,
 	readme,
 	license,
 })
-const querySchema = v.strictObject({
+const filterFields = {
 	query: v.optional(v.pipe(v.string(), v.maxLength(100))),
-	registry: v.optional(registry),
+	registries: v.optional(v.pipe(v.array(registrySchema), v.maxLength(marketFilterLimit))),
 	official: v.optional(v.boolean()),
-	category: v.optional(mark),
-	tag: v.optional(mark),
+	categories: v.optional(v.pipe(v.array(taxonomySlug), v.maxLength(marketFilterLimit))),
+	tags: v.optional(v.pipe(v.array(taxonomySlug), v.maxLength(marketFilterLimit))),
+	authors: v.optional(v.pipe(v.array(authorId), v.maxLength(marketFilterLimit))),
+}
+const filterSchema = v.strictObject(filterFields)
+const querySchema = v.strictObject({
+	...filterFields,
 	cursor: v.optional(v.pipe(v.string(), v.maxLength(2048))),
 	limit: v.optional(v.pipe(v.number(), v.integer(), v.minValue(1), v.maxValue(50))),
 })
+
+function catalogParams({
+	query,
+	registries,
+	official,
+	categories,
+	tags,
+	authors,
+	cursor,
+	limit,
+}: MarketPackageQuery) {
+	const params = new URLSearchParams()
+	if (query !== undefined) params.set('query', query)
+	if (official !== undefined) params.set('official', String(official))
+	if (cursor !== undefined) params.set('cursor', cursor)
+	if (limit !== undefined) params.set('limit', String(limit))
+	for (const [key, values] of Object.entries({
+		registry: registries,
+		category: categories,
+		tag: tags,
+		author: authors,
+	})) {
+		for (const value of [...new Set(values)].sort()) params.append(key, value)
+	}
+	return params
+}
 const releaseQuerySchema = v.strictObject({
-	registry: v.optional(registry),
+	registry: v.optional(registrySchema),
 	cursor: v.optional(v.pipe(v.string(), v.maxLength(2048))),
 	limit: v.optional(v.pipe(v.number(), v.integer(), v.minValue(1), v.maxValue(50))),
 })
@@ -177,19 +278,37 @@ export class PackageMarketClient {
 		if (!parsed.success)
 			return rejected(
 				'INVALID_QUERY',
-				'Use a search up to 100 characters, canonical registry, market marks, an issued cursor and limit between 1 and 50',
+				'Use a search up to 100 characters, up to 20 values per filter, an issued cursor and a limit from 1 to 50',
 			)
-		const params = new URLSearchParams()
-		for (const [key, value] of Object.entries(parsed.output))
-			if (value !== undefined) params.set(key, String(value))
-		const result = await this.read(marketId, `/v1/packages?${params}`, pageSchema)
+		const { registries } = parsed.output
+		const result = await this.read(
+			marketId,
+			`/v1/packages?${catalogParams(parsed.output)}`,
+			pageSchema,
+		)
 		if (
 			result.ok &&
-			parsed.output.registry !== undefined &&
-			result.value.packages.some((item) => item.registry !== parsed.output.registry)
+			registries?.length &&
+			result.value.packages.some((item) => !registries.includes(item.registry))
 		)
-			return rejected('INVALID_RESPONSE', 'Market returned packages from a different registry')
+			return rejected(
+				'INVALID_RESPONSE',
+				'Market returned packages outside the selected registries',
+			)
 		return result
+	}
+
+	async facets(
+		marketId: string,
+		filters: MarketCatalogFilters = {},
+	): Promise<MarketReadResult<MarketCatalogFacets>> {
+		const parsed = v.safeParse(filterSchema, filters)
+		if (!parsed.success)
+			return rejected(
+				'INVALID_QUERY',
+				'Use a search up to 100 characters and up to 20 values per filter',
+			)
+		return this.read(marketId, `/v1/facets?${catalogParams(parsed.output)}`, facetsSchema)
 	}
 
 	async package(
@@ -197,7 +316,10 @@ export class PackageMarketClient {
 		name: string,
 		selectedRegistry = publicRegistry,
 	): Promise<MarketReadResult<MarketPackageDetail>> {
-		if (!v.safeParse(packageName, name).success || !v.safeParse(registry, selectedRegistry).success)
+		if (
+			!v.safeParse(packageName, name).success ||
+			!v.safeParse(registrySchema, selectedRegistry).success
+		)
 			return rejected('INVALID_QUERY', 'Select a canonical registry and package name')
 		const params = new URLSearchParams({ registry: selectedRegistry })
 		const result = await this.read(
@@ -219,7 +341,7 @@ export class PackageMarketClient {
 		if (
 			!v.safeParse(packageName, name).success ||
 			!v.safeParse(version, selectedVersion).success ||
-			!v.safeParse(registry, selectedRegistry).success
+			!v.safeParse(registrySchema, selectedRegistry).success
 		)
 			return rejected(
 				'INVALID_QUERY',
@@ -283,22 +405,21 @@ export class PackageMarketClient {
 		try {
 			response = await fetch(market.url + path, {
 				headers: { accept: 'application/json' },
+				credentials: 'omit',
 				redirect: 'error',
 				signal,
 			})
 		} catch {
 			this.lifetime.signal.throwIfAborted()
 			this.signal?.throwIfAborted()
-			return rejected(
-				'MARKET_UNAVAILABLE',
-				'Market request failed or timed out; direct installation remains available',
-			)
+			return rejected('MARKET_UNAVAILABLE', 'Market request failed or timed out')
 		}
 		if (!response.ok) {
 			await response.body?.cancel()
+			const notIndexed = response.status === 404 && path.startsWith('/v1/packages/')
 			return rejected(
-				'MARKET_UNAVAILABLE',
-				response.status === 404
+				notIndexed ? 'NOT_INDEXED' : 'MARKET_UNAVAILABLE',
+				notIndexed
 					? 'This package or release is not indexed by the market'
 					: `Market returned HTTP ${response.status}`,
 			)

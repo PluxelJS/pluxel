@@ -5,10 +5,7 @@ export interface ConfigIssue {
 	path: ConfigIssuePath
 }
 
-export type ConfigValidationErrors = Record<
-	string,
-	Record<string, Array<{ message: string; path: string[] }>>
->
+export type ConfigValidationErrors = Record<string, Record<string, ConfigIssue[]>>
 
 export class ConfigValidationError extends Error {
 	constructor(

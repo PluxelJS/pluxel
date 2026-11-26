@@ -6,6 +6,7 @@ import {
 	type ModuleFederationRuntimePlugin,
 } from '@module-federation/runtime'
 import * as BridgeReact from '@module-federation/bridge-react/v19'
+import { parsePluginNodeAddress } from '@pluxel/core'
 import {
 	WORKBENCH_FEDERATION_RUNTIME_VERSION,
 	WORKBENCH_FEDERATION_SHARED_MODULES,
@@ -32,6 +33,7 @@ import {
 	type WorkbenchOpenedViewHandle,
 } from './client.ts'
 import type { WorkbenchFederatedLayoutEntry, WorkbenchSessionApi } from './client-protocol.ts'
+import { readWorkbenchEntryLink } from './shortcuts.ts'
 import * as WorkbenchReactInternal from './react-internal.tsx'
 import * as WorkbenchReact from './react.tsx'
 import {
@@ -42,6 +44,7 @@ import {
 import type {
 	WorkbenchBridgePayload,
 	WorkbenchConfirmInput,
+	WorkbenchDocumentInput,
 	WorkbenchDocumentTitle,
 	WorkbenchHostFacade,
 	WorkbenchNavigation,
@@ -123,17 +126,9 @@ export class WorkbenchViewHostHandle implements Disposable {
 						this.#assertActive()
 						input.navigation!.navigate(readRelativePath(path))
 					},
-					openDocument: (value: { path: string; title: string; meta?: string }) => {
+					openDocument: (value: WorkbenchDocumentInput) => {
 						this.#assertActive()
-						input.navigation!.openDocument(
-							Object.freeze({
-								path: readRelativePath(value.path),
-								title: readRequiredText(value.title, 'document title', 256),
-								...(value.meta === undefined
-									? {}
-									: { meta: readRequiredText(value.meta, 'document meta', 256) }),
-							}),
-						)
+						input.navigation!.openDocument(readDocumentInput(value))
 					},
 				})
 			: null
@@ -553,6 +548,28 @@ function freezeParams(input: Readonly<Record<string, string>>) {
 		output[key] = value
 	}
 	return Object.freeze(output)
+}
+
+function readDocumentInput(value: WorkbenchDocumentInput): WorkbenchDocumentInput {
+	if (
+		!value ||
+		typeof value !== 'object' ||
+		['entry', 'plugin', 'path'].filter((key) => key in value).length !== 1
+	) {
+		throw new TypeError(
+			'[workbench/federation] document requires exactly one of entry, plugin or path',
+		)
+	}
+	const title = readRequiredText(value.title, 'document title', 256)
+	const display =
+		value.meta === undefined
+			? { title }
+			: { title, meta: readRequiredText(value.meta, 'document meta', 256) }
+	if ('entry' in value)
+		return Object.freeze({ ...display, entry: readWorkbenchEntryLink(value.entry) })
+	if ('plugin' in value)
+		return Object.freeze({ ...display, plugin: parsePluginNodeAddress(value.plugin) })
+	return Object.freeze({ ...display, path: readRelativePath(value.path) })
 }
 
 function readRelativePath(input: string): string {

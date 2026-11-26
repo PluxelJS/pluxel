@@ -8,7 +8,7 @@ describe('source session ownership', () => {
 	it('captures opening changes, preserves overlapping ownership, and rejects late events', async () => {
 		const callbacks: PluginSourceOpenOptions[] = []
 		const closes = [vi.fn(), vi.fn()]
-		const sources: PluginSource[] = closes.map((_, i) => ({ kind: 'file', path: String(i) }))
+		const sources: PluginSource[] = closes.map((_, i) => ({ file: String(i) }))
 		vi.mocked(watchPluginSource).mockImplementation(async (source, options) => {
 			callbacks.push(options)
 			options.onChange({ type: 'add', path: 'late.mjs' })
@@ -16,7 +16,7 @@ describe('source session ownership', () => {
 				entries: async () => ['late.mjs', 'shared.mjs'],
 				covers: (path) => path === 'shared.mjs',
 				close: async () => {
-					closes[Number(source.path)]!()
+					closes[Number(source.file)]!()
 				},
 			}
 		})
@@ -41,7 +41,7 @@ describe('source session ownership', () => {
 	it('closes successful sources when another source cannot open', async () => {
 		const close = vi.fn(async () => {})
 		vi.mocked(watchPluginSource).mockImplementation(async (source) => {
-			if (source.path === 'failed') throw new Error('source failed')
+			if (source.file === 'failed') throw new Error('source failed')
 			return { entries: async () => [], covers: () => false, close }
 		})
 		await expect(
@@ -49,10 +49,7 @@ describe('source session ownership', () => {
 				root: '/',
 				onChange: vi.fn(),
 				onError: vi.fn(),
-				sources: [
-					{ kind: 'file', path: 'good' },
-					{ kind: 'file', path: 'failed' },
-				],
+				sources: [{ file: 'good' }, { file: 'failed' }],
 			}),
 		).rejects.toThrow('source failed')
 		expect(close).toHaveBeenCalledOnce()

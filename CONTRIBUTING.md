@@ -6,7 +6,7 @@
 
 ### 1. 提交 Issue
 
-- 报告 Bug 时，请尽量提供最小复现步骤、Node.js 与 pnpm 版本、操作系统信息以及错误日志。
+- 报告 Bug 时，请尽量提供最小复现步骤、Node.js、Vite+ 与所选包管理器版本、操作系统信息以及错误日志。
 - 提出较大范围的 API 变更或新功能建议前，建议先开启 Issue 讨论设计思路与适用场景。
 - 涉及安全隐患的问题请参阅 [安全策略](./SECURITY.md) 私下联络，请勿直接公开在 Issue 中。
 
@@ -16,14 +16,12 @@
 
 ## 本地环境搭建
 
-本项目通过 mise 统一管理 Node.js、pnpm、Vite+、hk 与 Pitchfork。请先参考[工作区工具链](./docs/development/workspace-toolchain.md)安装并启用 mise，然后在仓库根目录运行：
+准备全局 Vite+、Node.js 24+、hk 与 Pitchfork，安装方式见[工作区工具链](./docs/development/workspace-toolchain.md)。在仓库根目录运行：
 
 ```sh
 git clone https://github.com/PluxelJS/pluxel.git
 cd pluxel
-mise trust
-mise install
-mise exec -- vp install --frozen-lockfile
+vp install --frozen-lockfile
 vp run @pluxel/cli#compile
 vp run hooks:install
 vp run verify

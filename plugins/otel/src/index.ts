@@ -1,6 +1,7 @@
+import type { Workbench } from '@pluxel/workbench'
 import { ElysiaApp } from '@pluxel/services/elysia'
 import type { Logger, Meter, Tracer } from '@opentelemetry/api'
-import { BasePlugin, formatPluginNodeReference, Plugin } from '@pluxel/core'
+import { BasePlugin, formatPluginNodeReference, Plugin, defineServiceRef } from '@pluxel/core'
 import { OtelConfig, type OtelSignal } from './config.ts'
 import { safeErrorType } from './diagnostics.ts'
 import type { OtlpExportState } from './otlp.ts'
@@ -8,6 +9,7 @@ import type { PrometheusPullReader } from './prometheus.ts'
 import type { OtelProviders, OtelRuntime } from './sdk.ts'
 import { OtelWorkbench, type OtelWorkbenchStatus } from './workbench.ts'
 
+const WorkbenchRef = defineServiceRef<Workbench>()
 export { OtelConfig } from './config.ts'
 export type { OtelPluginConfig, OtelSignal } from './config.ts'
 export type { OtelProviders } from './sdk.ts'
@@ -156,7 +158,7 @@ export abstract class Otel extends BasePlugin {
 	}
 
 	private mountPrometheus(reader: PrometheusPullReader, path: string): void {
-		this.ctx.require(ElysiaApp).get(path, () => this.scrapePrometheus(reader))
+		this.ctx.service(ElysiaApp).get(path, () => this.scrapePrometheus(reader))
 	}
 
 	private async scrapePrometheus(reader: PrometheusPullReader): Promise<Response> {
@@ -245,13 +247,13 @@ export abstract class Otel extends BasePlugin {
 }
 
 /** Optional OTLP/Prometheus preset configured through OtelConfig and standard OTEL_* inputs. */
-@Plugin(Otel)
+@Plugin(Otel, { displayName: 'OpenTelemetry' })
 export class OtelPlugin extends Otel {
 	private readonly config = this.configs.use(OtelConfig)
 
 	protected override async init(): Promise<void> {
 		await super.init()
-		this.ctx.workbench?.publish(OtelWorkbench, {
+		this.ctx.service(WorkbenchRef)?.publish(OtelWorkbench, {
 			operations: () => this.workbenchOperations(),
 		})
 	}

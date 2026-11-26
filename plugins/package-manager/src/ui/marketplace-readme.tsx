@@ -1,26 +1,43 @@
-import { createElement, Fragment, useMemo, type ReactNode } from 'react'
+import { createElement, Fragment, useId, useMemo, type ReactNode } from 'react'
 import { fromMarkdown } from 'mdast-util-from-markdown'
 import { gfmFromMarkdown } from 'mdast-util-gfm'
 import { gfm } from 'micromark-extension-gfm'
 import type { Definition, Nodes, Table } from 'mdast'
 import type { MarketRelease } from '../market-contracts.ts'
+import { ReadmeCode } from './marketplace-readme-code.tsx'
 
-/** Render registry/archive Markdown as React elements; package HTML is always text. */
+type ReadmeHeading = Readonly<{ id: string; label: string; depth: number }>
+
 export function Readme({ value }: Readonly<{ value: MarketRelease['readme'] }>) {
-	const text = value?.text ?? ''
-	const content = useMemo(() => renderMarkdown(text), [text])
-	if (!value) return <p className="pm-muted">No README is available.</p>
-	return (
-		<div className="pm-stack">
-			<div className="pm-readme">{content}</div>
-			{value.truncated ? (
-				<p className="pm-small pm-muted">This README was truncated by the market.</p>
-			) : null}
-		</div>
-	)
+	return useReadme(value).body
 }
 
-function renderMarkdown(text: string): ReactNode {
+export function useReadme(value: MarketRelease['readme'] | undefined) {
+	const prefix = useId()
+	const text = value?.text ?? ''
+	const markdown = useMemo(() => renderMarkdown(text, prefix), [text, prefix])
+	const body = value ? (
+		<div className="pm-stack">
+			<div className="pm-readme">{markdown.content}</div>
+			{value.truncated ? (
+				<p className="pm-small pm-muted">Showing the first part of this README.</p>
+			) : null}
+		</div>
+	) : (
+		<p className="pm-muted">No README is available.</p>
+	)
+	return { body, headings: markdown.headings }
+}
+
+function headingLabel(node: Nodes): string {
+	if ('children' in node) return node.children.map(headingLabel).join('')
+	if ('alt' in node) return node.alt ?? ''
+	return 'value' in node ? node.value : ''
+}
+
+/** Render package HTML as text. Each README owns its heading targets inside the host page. */
+function renderMarkdown(text: string, prefix: string) {
+	const headings: ReadmeHeading[] = []
 	const tree = fromMarkdown(text, {
 		extensions: [gfm()],
 		mdastExtensions: [gfmFromMarkdown()],
@@ -91,8 +108,17 @@ function renderMarkdown(text: string): ReactNode {
 				return node.value
 			case 'paragraph':
 				return <p>{children(node.children)}</p>
-			case 'heading':
-				return createElement('h' + node.depth, null, children(node.children))
+			case 'heading': {
+				const label = headingLabel(node).trim()
+				const id = prefix + '-section-' + headings.length
+				const listed = (node.depth === 2 || node.depth === 3) && Boolean(label)
+				if (listed) headings.push({ id, label, depth: node.depth })
+				return createElement(
+					'h' + node.depth,
+					listed ? { id, tabIndex: -1 } : null,
+					children(node.children),
+				)
+			}
 			case 'strong':
 				return <strong>{children(node.children)}</strong>
 			case 'emphasis':
@@ -102,11 +128,7 @@ function renderMarkdown(text: string): ReactNode {
 			case 'inlineCode':
 				return <code>{node.value}</code>
 			case 'code':
-				return (
-					<pre>
-						<code>{node.value}</code>
-					</pre>
-				)
+				return <ReadmeCode code={node.value} language={node.lang} />
 			case 'blockquote':
 				return <blockquote>{children(node.children)}</blockquote>
 			case 'list':
@@ -163,7 +185,7 @@ function renderMarkdown(text: string): ReactNode {
 				return 'children' in node ? children(node.children) : null
 		}
 	}
-	return children(tree.children)
+	return { content: children(tree.children), headings }
 }
 
 // Relative links remain readable text: a package README must never navigate this host by accident.

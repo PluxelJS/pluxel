@@ -43,7 +43,7 @@ describe('carrier command handlers', () => {
 		class Carrier extends BasePlugin {
 			private mount!: CommandMount<RequestContext>
 			override init() {
-				this.mount = this.ctx.require(Commands).createMount<RequestContext>()
+				this.mount = this.ctx.service(Commands).createMount<RequestContext>()
 			}
 			publish(definition: DirectCommand<{}, string, BusinessContext>) {
 				return this.mount.bind(definition, {
@@ -105,7 +105,7 @@ describe('carrier command handlers', () => {
 
 	it('isolates trusted contexts, protects presentation after withdrawal, and rejects re-mounting', async () => {
 		await using host = await createServiceInternalTestHarness({ workbench: false })
-		const mount = host.ctx.require(Commands).createMount<RequestContext>()
+		const mount = host.ctx.service(Commands).createMount<RequestContext>()
 		const started = Promise.withResolvers<void>()
 		const release = Promise.withResolvers<void>()
 		let endpoint!: MountedCommand<{}, string, RequestContext>
@@ -155,7 +155,7 @@ describe('carrier command handlers', () => {
 	})
 	it('supervises invalid handler results and distinguishes cancellation from unrelated faults', async () => {
 		await using host = await createServiceInternalTestHarness({ workbench: false })
-		const mount = host.ctx.require(Commands).createMount<RequestContext>()
+		const mount = host.ctx.service(Commands).createMount<RequestContext>()
 		let endpoint!: MountedCommand<{}, unknown, RequestContext>
 		const failure = new Error('presentation failed')
 		const abort = new AbortController()

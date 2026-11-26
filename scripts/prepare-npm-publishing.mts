@@ -2,7 +2,11 @@ import { spawnSync } from 'node:child_process'
 import { readFile } from 'node:fs/promises'
 import { setTimeout } from 'node:timers/promises'
 import { parse } from 'yaml'
-import { isPublishablePackage, repositoryPackages, repositoryRoot } from './repository-packages.mjs'
+import {
+	isFrameworkReleasePackage,
+	repositoryPackages,
+	repositoryRoot,
+} from './repository-packages.mjs'
 
 const repository = 'PluxelJS/pluxel'
 const workflow = 'release.yml'
@@ -81,7 +85,7 @@ export async function preparePublishing(
 	const version = execute('npm', ['--version'], true).trim()
 	const match = /^(\d+)\.(\d+)\.(\d+)$/.exec(version)
 	if (!match || Number(match[1]) < 11 || (Number(match[1]) === 11 && Number(match[2]) < 15)) {
-		throw new Error('npm >= 11.15.0 is required; run through mise exec.')
+		throw new Error('npm >= 11.15.0 is required; update the npm available on PATH.')
 	}
 	if (apply) execute('npm', ['whoami'])
 	log(
@@ -130,11 +134,11 @@ if (import.meta.main) {
 			(args.length === 1 && args[0] !== '--apply' && args[0] !== '--dry-run')
 		) {
 			throw new Error(
-				'Usage: mise exec -- node scripts/prepare-npm-publishing.mts [--dry-run | --apply]',
+				'Usage: vp exec node scripts/prepare-npm-publishing.mts [--dry-run | --apply]',
 			)
 		}
 		const names = repositoryPackages
-			.filter(isPublishablePackage)
+			.filter(isFrameworkReleasePackage)
 			.map(({ manifest }) => manifest.name)
 		const lock = parse(await readFile(`${repositoryRoot}/.tegami/publish-lock.yaml`, 'utf8'))
 		await preparePublishing(args[0] === '--apply', names, lock)

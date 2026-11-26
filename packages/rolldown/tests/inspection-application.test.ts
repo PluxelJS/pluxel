@@ -1,13 +1,20 @@
 import { dirname, resolve } from 'node:path'
+import { renderPluginDescriptors } from '@pluxel/core/internal/control-manifest'
 import { describe, expect, it } from 'vitest'
 import { inspectApplicationInputs } from '../src/inspect/application'
 
-const prefix = `import { defineHostApplication, envBinding, fileBinding } from '@pluxel/host'
+const prefix = `import { defineHostApplication } from '@pluxel/host/application'
+import { envBinding, fileBinding } from '@pluxel/host/bindings'
 import { P, Q, Schema } from './plugins.ts'
 throw new Error('entry must never execute')
 `
 const application = (body: string) =>
 	`${prefix}\nexport default defineHostApplication(() => ({${body}}))`
+const node = (fields: string) => application(`plugins:[{plugin:P,${fields}}]`)
+const definition = {
+	entry: { kind: 'package-root', packageName: '@fixture/plugins' },
+	exportName: 'P',
+} as const
 const plugins = `throw new Error('schema must never execute'); export class P {} export class Q {} export const Schema = makeSchema(() => { throw new Error('callback must never execute') })`
 function inspect(
 	code: string,
@@ -19,6 +26,7 @@ function inspect(
 	const reads: string[] = []
 	const result = inspectApplicationInputs({
 		application: { root: '/project', entry, sourceSpaces: [{ name: 'app', root: '/project' }] },
+		definition,
 		async read(id) {
 			reads.push(id)
 			if (!(id in files)) throw new Error(`unexpected file read: ${id}`)
@@ -45,14 +53,14 @@ function inspect(
 describe('application input declaration navigation', () => {
 	it('navigates disjoint mappings and multiple unread config files for one owner', async () => {
 		const report = await inspect(
-			application(`
+			node(`
 			envBindings: [
-				envBinding(P, {config: {schema: Schema, mapping: {nested: {one: 'FIRST'}}}}),
-				envBinding(P, {config: {schema: Schema, mapping: {nested: {two: 'SECOND'}}}}),
+				envBinding({config: {schema: Schema, mapping: {nested: {one: 'FIRST'}}}}),
+				envBinding({config: {schema: Schema, mapping: {nested: {two: 'SECOND'}}}}),
 			],
 			fileBindings: [
-				fileBinding(P, {config: {schema: Schema, path: './one.json'}}),
-				fileBinding(P, {config: {schema: Schema, path: './two.json'}}),
+				fileBinding({config: {schema: Schema, path: './one.json'}}),
+				fileBinding({config: {schema: Schema, path: './two.json'}}),
 			],
 		`),
 		).result
@@ -68,9 +76,9 @@ describe('application input declaration navigation', () => {
 
 	it('reports ancestor mapping overlaps without guessing file contents', async () => {
 		const report = await inspect(
-			application(`envBindings: [
-			envBinding(P, {config: {schema: Schema, mapping: {nested: {one: 'FIRST'}}}}),
-			envBinding(P, {config: {schema: Schema, mapping: {nested: 'SECOND'}}}),
+			node(`envBindings: [
+			envBinding({config: {schema: Schema, mapping: {nested: {one: 'FIRST'}}}}),
+			envBinding({config: {schema: Schema, mapping: {nested: 'SECOND'}}}),
 		]`),
 		).result
 		expect(report.status).toBe('partial')
@@ -81,11 +89,15 @@ describe('application input declaration navigation', () => {
 
 	it('keeps default and literal fork binding targets distinct without executing nodeAddress', async () => {
 		const report = await inspect(
-			application(`
+			node(`
 			envBindings: [
-				envBinding(P, {config: {schema: Schema, mapping: {endpoint: 'DEFAULT_ENDPOINT'}}}),
-				envBinding(P.nodeAddress('east'), {config: {schema: Schema, mapping: {endpoint: 'EAST_ENDPOINT'}}}),
+				envBinding({config: {schema: Schema, mapping: {endpoint: 'DEFAULT_ENDPOINT'}}}),
 			],
+			forks: {
+				east: { envBindings: [
+					envBinding({config: {schema: Schema, mapping: {endpoint: 'EAST_ENDPOINT'}}}),
+				] },
+			},
 		`),
 		).result
 		expect(report.status).toBe('complete')
@@ -97,11 +109,57 @@ describe('application input declaration navigation', () => {
 		expect(report.value.bindings[0]).not.toHaveProperty('forkId')
 	})
 
+	it('locates a predeclared fork using a generated control address without loading the implementation', async () => {
+		const { result } = inspect(
+			`${prefix}
+			import { Dynamic } from './control.mjs'
+			export default defineHostApplication(() => ({
+				sources: directories.map(directory => ({directory, include:['*.mjs']})),
+				pluginNodes: [{
+					definition: Dynamic.address(),
+					config: { endpoint: 'https://example.test' },
+					forks: {
+						east: { envBindings: [envBinding({config:{schema:Schema,mapping:{endpoint:'EAST'}}})] },
+					},
+				}],
+			}))`,
+			undefined,
+			{
+				'/project/control.mjs': renderPluginDescriptors([
+					{
+						exportName: 'Dynamic',
+						descriptor: {
+							format: 2,
+							definition,
+							contracts: { config: null, instance: `sha256:${'a'.repeat(64)}` },
+						},
+					},
+				]),
+			},
+			{
+				async matchesPlugin() {
+					throw new Error('the control module should provide the identity')
+				},
+			},
+		)
+		const report = await result
+		expect(report).toMatchObject({
+			status: 'complete',
+			value: {
+				config: { file: '/project/a.ts' },
+				bindings: [{ forkId: 'east', source: { name: 'EAST' } }],
+			},
+		})
+	})
+
 	it('keeps two entry bindings separate and locates config without evaluating application, schemas or reading inputs', async () => {
 		const code = (name: string) =>
-			application(`config: makeRecords(), services: install(), sources: discover(),
-   envBindings: [envBinding(P, {config: {schema: Schema, mapping: {endpoint: '${name}'}}})],
-   fileBindings: [fileBinding(P, {config: {schema: Schema, path: './secret.json'}})]`)
+			application(`services: install(), sources: discover(), plugins: [{
+   plugin: P,
+   config: computeConfig(),
+   envBindings: [envBinding({config: {schema: Schema, mapping: {endpoint: '${name}'}}})],
+   fileBindings: [fileBinding({config: {schema: Schema, path: './secret.json'}})],
+   }]`)
 		const a = inspect(code('FIRST'), '/project/a.ts')
 		const b = inspect(code('SECOND'), '/project/b.ts')
 		const first = await a.result
@@ -124,10 +182,10 @@ describe('application input declaration navigation', () => {
 	})
 	it('preserves known mapping leaves and independent bindings when expressions and targets are dynamic', async () => {
 		const { result } = inspect(
-			application(`envBindings: [
-   envBinding(P, {config:{schema:Schema,mapping:{ known:'KNOWN', dynamic: chooseName() }}}),
-   envBinding(choosePlugin(), {config:{schema:Schema,mapping:'MAYBE'}}),
-   envBinding(Q, {config:{schema:missing,mapping:dynamic()}})
+			application(`plugins: [
+   {plugin: P, envBindings:[envBinding({config:{schema:Schema,mapping:{ known:'KNOWN', dynamic: chooseName() }}})]},
+   {plugin: choosePlugin(), envBindings:[envBinding({config:{schema:Schema,mapping:'MAYBE'}})]},
+   {plugin: Q, envBindings:[envBinding({config:{schema:missing,mapping:dynamic()}})]},
   ]`),
 		)
 		const report = await result
@@ -140,7 +198,7 @@ describe('application input declaration navigation', () => {
 	})
 	it('keeps binding names even when schema reference is unresolved', async () => {
 		const report = await inspect(
-			application(`envBindings:[envBinding(P,{config:{schema:Missing,mapping:'NAME'}})]`),
+			node(`envBindings:[envBinding({config:{schema:Missing,mapping:'NAME'}})]`),
 		).result
 		expect(report.status).toBe('partial')
 		if (report.status !== 'partial') throw new Error('not partial')
@@ -148,14 +206,14 @@ describe('application input declaration navigation', () => {
 		expect(report.value.bindings[0]!.source).toMatchObject({ name: 'NAME' })
 		expect(report.gaps[0]!.code).toBe('unresolved_symbol')
 	})
-	it('does not report bindings as absent when application spread can override them or records', async () => {
-		const report = await inspect(application(`config: records(), ...unknown`)).result
+	it('does not report bindings as absent when application spread can override declarations', async () => {
+		const report = await inspect(application(`plugins: [], ...unknown`)).result
 		expect(report.status).toBe('unavailable')
 	})
 	it('rejects duplicate mapping keys instead of selecting one value', async () => {
 		const report = await inspect(
-			application(
-				`envBindings:[envBinding(P,{config:{schema:Schema,mapping:{endpoint:'ONE',endpoint:'TWO'}}})]`,
+			node(
+				`envBindings:[envBinding({config:{schema:Schema,mapping:{endpoint:'ONE',endpoint:'TWO'}}})]`,
 			),
 		).result
 		expect(report.status).toBe('partial')
@@ -176,7 +234,7 @@ describe('application input declaration navigation', () => {
 	})
 	it('does not resolve a shadowed Plugin or helper as a module import', async () => {
 		const report = await inspect(
-			`${prefix}\nexport default defineHostApplication((P) => ({envBindings:[envBinding(P,{config:{schema:Schema,mapping:'WRONG'}})]}))`,
+			`${prefix}\nexport default defineHostApplication((P) => ({plugins:[{plugin:P,envBindings:[envBinding({config:{schema:Schema,mapping:'WRONG'}})]}]}))`,
 		).result
 		expect(report.status).toBe('partial')
 		if (report.status !== 'partial') throw new Error('not partial')
@@ -185,9 +243,9 @@ describe('application input declaration navigation', () => {
 	})
 	it('reports invalid environment names and duplicate targets with declaration diagnostics', async () => {
 		const report = await inspect(
-			application(`envBindings:[
-   envBinding(P,{config:{schema:Schema,mapping:{valid:'VALID',invalid:'bad-name'}}}),
-   envBinding(P,{config:{schema:Schema,mapping:'SECOND'}})
+			node(`envBindings:[
+   envBinding({config:{schema:Schema,mapping:{valid:'VALID',invalid:'bad-name'}}}),
+   envBinding({config:{schema:Schema,mapping:'SECOND'}})
   ]`),
 		).result
 		expect(report.status).toBe('partial')
@@ -200,7 +258,7 @@ describe('application input declaration navigation', () => {
 	it('propagates query failures through the source resolver instead of downgrading them to gaps', async () => {
 		const failure = Object.assign(new Error('budget exhausted'), { code: 'analysis_unavailable' })
 		const report = inspect(
-			application(`envBindings:[envBinding(P,{config:{schema:Schema,mapping:'NAME'}})]`),
+			node(`envBindings:[envBinding({config:{schema:Schema,mapping:'NAME'}})]`),
 			undefined,
 			{},
 			{
@@ -212,7 +270,7 @@ describe('application input declaration navigation', () => {
 		await expect(report).rejects.toBe(failure)
 	})
 	it('keeps unconfirmed target identities as gaps, while identity conflicts reject the query', async () => {
-		const code = application(`envBindings:[envBinding(P,{config:{schema:Schema,mapping:'NAME'}})]`)
+		const code = node(`envBindings:[envBinding({config:{schema:Schema,mapping:'NAME'}})]`)
 		const unresolved = await inspect(
 			code,
 			undefined,

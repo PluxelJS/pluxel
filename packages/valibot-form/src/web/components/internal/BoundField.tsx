@@ -57,6 +57,8 @@ function BoundControl({ field, ...props }: BoundFieldProps & { field: AnyFieldAp
 	const readOnly = Boolean(props.readOnly || node.meta.readOnly)
 	const errors = field.state.meta.errors as FieldError[]
 	const locked = disabled || readOnly
+	const descriptionId = scalarDescriptionId(node, id)
+	const errorId = `${id}-errors`
 	const beforeChange = () => {
 		initializeUnion?.()
 		if (field.state.meta.errorMap.onServer !== undefined) {
@@ -74,9 +76,12 @@ function BoundControl({ field, ...props }: BoundFieldProps & { field: AnyFieldAp
 		inputProps: {
 			name: field.name,
 			id,
-			errorId: `${id}-errors`,
+			errorId,
+			descriptionId,
 			'aria-invalid': errors.length > 0,
-			'aria-describedby': errors.length > 0 ? `${id}-errors` : undefined,
+			'aria-describedby':
+				[descriptionId, errors.length > 0 ? errorId : undefined].filter(Boolean).join(' ') ||
+				undefined,
 			disabled,
 			readOnly,
 			onChange: (value) => {
@@ -132,6 +137,7 @@ function LiteralField(props: BoundFieldProps) {
 	const disabled = Boolean(props.disabled || props.node.meta.disabled)
 	const readOnly = ancestor === undefined || Boolean(props.readOnly || props.node.meta.readOnly)
 	const locked = disabled || readOnly
+	const descriptionId = scalarDescriptionId(props.node, id)
 	const update = (next: unknown) => {
 		if (locked || ancestor === undefined) return
 		initializeUnion?.()
@@ -172,6 +178,8 @@ function LiteralField(props: BoundFieldProps) {
 						name: id,
 						id,
 						errorId: `${id}-errors`,
+						descriptionId,
+						'aria-describedby': descriptionId,
 						disabled,
 						readOnly,
 						onChange: update,
@@ -202,4 +210,14 @@ function LiteralField(props: BoundFieldProps) {
 			}}
 		</form.Subscribe>
 	)
+}
+
+function scalarDescriptionId(node: FieldNode, id: string): string | undefined {
+	return node.meta.description &&
+		(node.kind === 'string' ||
+			node.kind === 'number' ||
+			node.kind === 'boolean' ||
+			node.kind === 'picklist')
+		? `${id}-description`
+		: undefined
 }

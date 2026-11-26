@@ -4,6 +4,7 @@ export {
 	type PluginLoweringErrorCode,
 	type PluginLoweringHeader,
 } from './plugins/runtime/lowering-abi.ts'
+export { isStartTimeoutMs } from './context/plugin-execution'
 export {
 	__definePluginRef,
 	__setPluginConfig,
@@ -22,3 +23,10 @@ export {
 	type PluginPartRequiresLoweringPayload,
 	type PluginPartsLoweringPayload,
 } from './plugins/runtime/part-definition.ts'
+
+export {
+	__defineServiceDefinition,
+	__defineServiceRef,
+	type ServiceDefinitionLoweringPayload,
+	type ServiceRefLoweringPayload,
+} from './services/definition'

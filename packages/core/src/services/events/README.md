@@ -6,6 +6,8 @@ Core 提供两条语义不同的事件路径：
   持有普通 service view，订阅绑定自己的 effects。
 - `EvtChannel` 是 Plugin 公开属性上的具名 capability，适合 dependency edge 上的显式协议；consumer 订阅绑定 caller effects。
 
+监听实际移除时同步撤销 effects 登记，包括手工退订、按 listener 移除、信号触发、channel 清空和有限次监听完成。`waitFor` 的结果结算时撤销登记，owner 停止仍会取消未结算的等待。
+
 两条路径都不使用 Proxy 或动态 Context provider。ambient 类型增强不会建立 Plugin graph dependency；需要 provider ordering、
 availability 或 replacement 传播时必须使用真实 Plugin dependency。事件名称确实由业务数据动态定义时，由所属 capability
 自己建立局部 registry，不把任意运行时字符串加入 ambient bus。

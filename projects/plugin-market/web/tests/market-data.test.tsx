@@ -1,13 +1,13 @@
 // @vitest-environment jsdom
-import type {
-	MarketPackageDetail,
-	MarketPackageIdentity,
-	MarketplaceRead,
+import {
+	createMarketplaceData,
+	type MarketPackageDetail,
+	type MarketPackageIdentity,
+	type MarketplaceRead,
 } from '@pluxel/plugin-package-manager/marketplace'
 import { act, createElement } from 'react'
 import { createRoot, type Root } from 'react-dom/client'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import { createMarketplaceData } from '../market-data'
 
 type Request = { url: string; signal: AbortSignal; resolve(value: Response): void }
 const publicRegistry = 'https://registry.npmjs.org'
@@ -23,6 +23,7 @@ function detail(registry: string, description = registry): MarketPackageDetail {
 		repository: null,
 		repositoryStars: null,
 		repositoryObservedAt: null,
+		author: null,
 		indexedVersions: 0,
 		observedAt: 1,
 		official: false,
@@ -79,6 +80,7 @@ describe('public page HTTP hook ownership', () => {
 			root.render(createElement(Probe, { identity: { registry: publicRegistry, name } })),
 		)
 		expect(requests).toHaveLength(1)
+		expect(vi.mocked(globalThis.fetch).mock.calls[0]?.[1]?.credentials).toBe('omit')
 		expect(new URL(requests[0].url).searchParams.get('registry')).toBe(publicRegistry)
 		await act(() =>
 			root.render(createElement(Probe, { identity: { registry: privateRegistry, name } })),

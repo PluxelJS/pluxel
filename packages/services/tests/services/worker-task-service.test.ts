@@ -1,5 +1,3 @@
-import { elysia } from '@pluxel/services/elysia'
-import { commands } from '@pluxel/services/commands'
 import { nodeModules } from '@pluxel/services/node'
 import {
 	workers,
@@ -10,7 +8,6 @@ import {
 } from '@pluxel/services/workers'
 import { NodeModuleHost } from '../../src/node/token'
 
-import { dirname } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { afterAll, beforeAll, describe, expect, it } from 'vitest'
 
@@ -47,27 +44,27 @@ const transferDeclaration = (defineWorkerTask as unknown as (...args: unknown[])
 	'./fixtures/worker-transfer.mjs',
 	'worker-transfer',
 ) as ReturnType<typeof defineWorkerTask<TransferTaskInput, TransferTaskOutput>>
-const artifactRoot = dirname(fileURLToPath(new URL('./fixtures/worker-task.mjs', import.meta.url)))
+const artifactRoot = fileURLToPath(new URL('./fixtures/', import.meta.url))
 
 @Plugin()
 class WorkerTaskConsumerA extends BasePlugin {
 	workerView() {
-		return this.ctx.require(Workers)
+		return this.ctx.service(Workers)
 	}
 
 	run(input: TaskInput, signal?: AbortSignal): Promise<TaskOutput> {
-		return this.ctx.require(Workers).run(declaration, input, { signal })
+		return this.ctx.service(Workers).run(declaration, input, { signal })
 	}
 
 	borrow(input: TaskInput): Promise<TaskOutput> {
-		return this.ctx.require(Workers).run(declaration, input, { inputOwnership: 'borrowed' })
+		return this.ctx.service(Workers).run(declaration, input, { inputOwnership: 'borrowed' })
 	}
 
 	prepare(
 		prepare: (signal: AbortSignal) => TaskInput | Promise<TaskInput>,
 		signal?: AbortSignal,
 	): Promise<TaskOutput> {
-		return this.ctx.require(Workers).runPrepared(declaration, prepare, {
+		return this.ctx.service(Workers).runPrepared(declaration, prepare, {
 			signal,
 			inputOwnership: 'borrowed',
 		})
@@ -75,7 +72,7 @@ class WorkerTaskConsumerA extends BasePlugin {
 
 	prepareWithTransfer(): Promise<TaskOutput> {
 		return this.ctx
-			.require(Workers)
+			.service(Workers)
 			.runPrepared(declaration, async () => ({ label: 'invalid', delay: 0 }), {
 				transfer: [],
 			} as never)
@@ -85,25 +82,25 @@ class WorkerTaskConsumerA extends BasePlugin {
 		input: TransferTaskInput,
 		transfer: readonly ArrayBuffer[],
 	): Promise<TransferTaskOutput> {
-		return this.ctx.require(Workers).run(transferDeclaration, input, { transfer })
+		return this.ctx.service(Workers).run(transferDeclaration, input, { transfer })
 	}
 }
 
 @Plugin()
 class WorkerTaskConsumerB extends BasePlugin {
 	workerView() {
-		return this.ctx.require(Workers)
+		return this.ctx.service(Workers)
 	}
 
 	run(input: TaskInput): Promise<TaskOutput> {
-		return this.ctx.require(Workers).run(declaration, input)
+		return this.ctx.service(Workers).run(declaration, input)
 	}
 }
 
 async function createWorkerHost(workerOptions: WorkersConfig = {}) {
 	return await createServiceInternalTestHarness({
 		workbench: false,
-		services: [elysia(), commands(), nodeModules({ root: artifactRoot }), workers(workerOptions)],
+		services: [nodeModules({ root: artifactRoot }), workers(workerOptions)],
 	})
 }
 
@@ -124,18 +121,20 @@ type WorkerTaskRootStateProbe = {
 
 function holdCurrentWorkerTermination(host: ServiceInternalTestHarness): Readonly<{
 	state: WorkerTaskRootStateProbe
+	terminating: Promise<void>
 	release(): void
 }> {
-	const state = (host.ctx.require(Workers) as unknown as { state: WorkerTaskRootStateProbe }).state
+	const state = (host.ctx.service(Workers) as unknown as { state: WorkerTaskRootStateProbe }).state
 	const worker = [...state.pool.slots][0]!.worker
 	const terminate = worker.terminate.bind(worker)
-	let release!: () => void
-	const gate = new Promise<void>((resolve) => void (release = resolve))
+	const terminating = Promise.withResolvers<void>()
+	const gate = Promise.withResolvers<void>()
 	worker.terminate = async () => {
-		await gate
+		terminating.resolve()
+		await gate.promise
 		return terminate()
 	}
-	return { state, release }
+	return { state, terminating: terminating.promise, release: gate.resolve }
 }
 
 describe('WorkerTaskService', () => {
@@ -157,7 +156,7 @@ describe('WorkerTaskService', () => {
 		host.start(WorkerTaskConsumerB)
 		await host.commit()
 
-		const rootView = host.ctx.require(Workers)
+		const rootView = host.ctx.service(Workers)
 		const a = host.require(WorkerTaskConsumerA)
 		const b = host.require(WorkerTaskConsumerB)
 		const aView = a.workerView()
@@ -176,7 +175,7 @@ describe('WorkerTaskService', () => {
 	it('lazily runs cloneable task data in a worker thread', async () => {
 		await using host = await createWorkerHost({ maxThreads: 1 })
 
-		const rootWorkers = host.ctx.require(Workers) as unknown as {
+		const rootWorkers = host.ctx.service(Workers) as unknown as {
 			state?: { pool?: unknown }
 		}
 		expect(rootWorkers.state?.pool).toBeUndefined()
@@ -341,7 +340,7 @@ describe('WorkerTaskService', () => {
 		})
 		let releaseRoute!: () => void
 		const routeGate = new Promise<void>((resolve) => void (releaseRoute = resolve))
-		const detach = host.ctx.require(NodeModuleHost).attachSourceBinder(async () => {
+		const detach = host.ctx.service(NodeModuleHost).attachSourceBinder(async () => {
 			await routeGate
 			return {
 				url: new URL('./fixtures/worker-task.mjs', import.meta.url),
@@ -609,7 +608,8 @@ describe('WorkerTaskService', () => {
 				)
 			host.remove(WorkerTaskConsumerA)
 			const committing = host.commit()
-			await new Promise((resolve) => setTimeout(resolve, 20))
+			await held.terminating
+			await new Promise<void>((resolve) => setImmediate(resolve))
 			expect(settled).toBe(false)
 			releaseTermination()
 			expect(await observed).toMatchObject({ code: 'NOT_RUNNING' })
@@ -630,7 +630,7 @@ describe('WorkerTaskService', () => {
 			const view = host.require(WorkerTaskConsumerA).workerView()
 			await view.run(declaration, { label: 'warm', delay: 0 })
 			const state = (
-				host.ctx.require(Workers) as unknown as {
+				host.ctx.service(Workers) as unknown as {
 					state: {
 						pool: {
 							run: (...args: unknown[]) => { result: Promise<unknown>; settled: Promise<void> }

@@ -4,7 +4,7 @@ import type { MarketAdmin } from '../src/admin.ts'
 import {
 	object,
 	registry as npmRegistry,
-	type MarketMetadata,
+	type MarketCuration,
 	type NotificationQuery,
 } from '../src/protocol.ts'
 import { readSession } from '../dev/session.ts'
@@ -15,7 +15,7 @@ const { values, positionals } = parseArgs({
 })
 const [command, name, argument] = positionals
 if (positionals.length > 3) throw new Error('Too many command arguments')
-if (values.registry && ['process', 'receipt', 'retry', 'facets'].includes(command))
+if (values.registry && ['process', 'receipt', 'retry'].includes(command))
 	throw new Error(`${command} does not take a registry filter`)
 const local = process.env.MARKET_URL ? undefined : await readSession()
 const marketUrl = process.env.MARKET_URL ?? local!.marketUrl
@@ -67,14 +67,14 @@ switch (command) {
 	case 'metadata': {
 		if (!name || !argument)
 			throw new Error(
-				'metadata <package> <JSON with expectedRevision, official, category, tags> [--registry <base>]',
+				'metadata <package> <JSON with expectedRevision, official, category and tags> [--registry <base>]',
 			)
 		const input = jsonInput(argument, [
 			'expectedRevision',
 			'official',
 			'category',
 			'tags',
-		]) as MarketMetadata & { expectedRevision: number }
+		]) as MarketCuration & { expectedRevision: number }
 		result = await admin.setMetadata({ registry, name, ...input })
 		break
 	}
@@ -107,18 +107,30 @@ switch (command) {
 		break
 	case 'catalog':
 	case 'facets': {
-		if (command === 'facets' && (name || values.registry))
-			throw new Error('facets takes no filters and returns all readable sources')
-		const url = new URL(command === 'catalog' ? '/v1/packages' : '/v1/facets', marketUrl)
-		if (command === 'catalog') {
-			const input = jsonInput(name, ['query', 'official', 'category', 'tag', 'cursor', 'limit'])
-			for (const [key, value] of Object.entries(input)) {
+		if (argument) throw new Error(command + ' takes one JSON filter object')
+		const paged = command === 'catalog'
+		const url = new URL(paged ? '/v1/packages' : '/v1/facets', marketUrl)
+		const lists = { registries: 'registry', categories: 'category', tags: 'tag', authors: 'author' }
+		const input = jsonInput(name, [
+			'query',
+			'official',
+			...Object.keys(lists),
+			...(paged ? ['cursor', 'limit'] : []),
+		])
+		if (values.registry && input.registries !== undefined)
+			throw new TypeError('Use either --registry or the registries filter')
+		for (const [key, value] of Object.entries(input)) {
+			if (Object.hasOwn(lists, key)) {
+				if (!Array.isArray(value) || value.some((item) => typeof item !== 'string'))
+					throw new TypeError(`Invalid catalog filter: ${key}`)
+				for (const item of value) url.searchParams.append(lists[key as keyof typeof lists], item)
+			} else {
 				const expected = key === 'limit' ? 'number' : key === 'official' ? 'boolean' : 'string'
 				if (typeof value !== expected) throw new TypeError(`Invalid catalog filter: ${key}`)
 				url.searchParams.set(key, String(value))
 			}
-			if (values.registry) url.searchParams.set('registry', registry)
 		}
+		if (values.registry) url.searchParams.set('registry', registry)
 		const response = await fetch(url, {
 			headers: { Authorization: `Bearer ${token}` },
 			signal: AbortSignal.timeout(30_000),

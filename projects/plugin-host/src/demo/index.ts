@@ -7,6 +7,7 @@ export * from './PluginContributionFontDemo'
 export * from './PluginEventsDemo'
 export * from './PluginHttpRoutesDemo'
 export * from './PluginHttpWorkerDemo'
+export * from './PluginOutboundHttpDemo'
 export * from './PluginWithUI'
 
 // Capability-specific demos.

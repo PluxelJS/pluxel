@@ -1,0 +1,10 @@
+{
+	"extends": "../../tsconfig.json",
+	"compilerOptions": {
+		"experimentalDecorators": true,
+		"lib": ["ES2024", "ESNext.Disposable", "DOM", "DOM.Iterable", "WebWorker"],
+		"types": ["node", "vite/client"]
+	},
+	"include": ["src", "*.config.ts"],
+	"exclude": ["src/cloudflare"]
+}

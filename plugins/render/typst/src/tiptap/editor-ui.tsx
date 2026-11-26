@@ -21,8 +21,6 @@ export interface EditorUiContext {
 	prepareDuplicate?: (editor: Editor, position: number) => Transaction | undefined
 	onReference?: (documentId: string, position: number) => void
 	referenceTargets?: () => EditorReferenceTarget[]
-	/** Semantic document views resolve opaque IDs to titles and never expose source labels. */
-	documentReferences?: boolean
 	onReveal?: (position: number) => void
 	composing: boolean
 	editable: boolean

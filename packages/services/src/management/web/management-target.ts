@@ -1,4 +1,4 @@
-import type { HostConfigState, HostPolicyInput, HostPolicyField } from '@pluxel/host'
+import type { HostConfigState, HostPolicyPatch, HostPolicyResetTarget } from '@pluxel/host'
 import { type RuntimeUpdateSnapshot } from '@pluxel/host/internal/protocol'
 import {
 	type PluginDefinitionAddress,
@@ -21,6 +21,9 @@ import {
 	type PolicyResult,
 	type EnsureForkResult,
 	type LoggingHandleApi,
+	type OutboundHttpHandleApi,
+	type OutboundHttpSaveResult,
+	type OutboundHttpSettings,
 	type PluginDependencyGraphSnapshot,
 	type PluginConsumerRequirementsInspectionResult,
 	type PluginDependencyMutationResult,
@@ -36,13 +39,21 @@ import {
 	type RuntimeMeta,
 	type VaultKeyPair,
 } from './protocol'
-import type { VaultAdminState } from '../../vault'
+import type { VaultAdminState } from '@pluxel/core/vault'
+import type {
+	PluginControlManifestIndex,
+	PluginControlManifestRequest,
+	PluginControlFileRequest,
+	PluginControlFileChunk,
+} from '@pluxel/host/internal/agent/runtime'
+import type { ScriptControlResponse } from '@pluxel/host/internal/agent/transport'
 
 export type RuntimeLogStreamsIndex = Readonly<{ streams: readonly LogStreamMeta[] }>
 
 export type RuntimeLogRangeQuery = Readonly<{
 	epoch: number
-	fromSeq: string
+	/** Omit to read the most recent matching records. */
+	fromSeq?: string
 	limit?: number
 	filter?: LogFilter
 }>
@@ -53,6 +64,10 @@ export type RuntimeLogFollowInput = Readonly<{
 }>
 
 export type RuntimeLogObserver = (event: unknown) => Promise<void>
+
+export type RuntimeOutboundHttpSaveDto =
+	| Readonly<{ ok: true; value: OutboundHttpSaveResult }>
+	| Readonly<{ ok: false; code: 'revision_conflict' | 'management_disabled'; error: string }>
 
 /** Disposal is the only cancellation operation for a live Management subscription. */
 export interface RuntimeSubscriptionTarget extends RpcTarget {}
@@ -69,6 +84,12 @@ export interface RuntimeManagementTarget extends RpcTarget {
 		observer: (snapshot: unknown) => Promise<void>,
 	) => RuntimeSubscriptionTarget
 	pluginCatalogDto: () => Promise<PluginCatalogSnapshot>
+	pluginControlManifestDto: (
+		input?: PluginControlManifestRequest,
+	) => Promise<ScriptControlResponse<PluginControlManifestIndex>>
+	pluginControlFileDto: (
+		input: PluginControlFileRequest,
+	) => ScriptControlResponse<PluginControlFileChunk>
 	updatePluginCatalogLayoutDto: (
 		input: PluginCatalogLayoutInput,
 	) => Promise<PluginCatalogLayoutMutationResult>
@@ -76,13 +97,13 @@ export interface RuntimeManagementTarget extends RpcTarget {
 	pluginConfigPresentationDto: (owner: PluginNodeAddress) => Promise<ConfigPresentationResult>
 	configStateDto: () => HostConfigState
 	hostPolicyDto: () => Promise<PolicyResult>
-	validateHostPolicyDto: (values: HostPolicyInput) => Promise<PolicyResult>
+	validateHostPolicyDto: (values: HostPolicyPatch) => Promise<PolicyResult>
 	patchHostPolicyDto: (
-		values: HostPolicyInput,
+		values: HostPolicyPatch,
 		options?: ManagedInputMutationOptions,
 	) => Promise<PolicyResult>
 	resetHostPolicyDto: (
-		keys?: readonly HostPolicyField[],
+		targets?: readonly HostPolicyResetTarget[],
 		options?: ManagedInputMutationOptions,
 	) => Promise<PolicyResult>
 	pluginConfigDto: (owner: PluginNodeAddress) => Promise<ConfigResult>
@@ -157,6 +178,12 @@ export interface RuntimeManagementTarget extends RpcTarget {
 	setPluginLogLevelDto: LoggingHandleApi['setPluginLevel']
 	clearPluginLogLevelDto: LoggingHandleApi['clearPluginLevel']
 	resetLogPolicyDto: LoggingHandleApi['resetPolicy']
+	getOutboundHttpDto: OutboundHttpHandleApi['get']
+	saveOutboundHttpDto: (
+		owner: PluginNodeAddress | null,
+		expectedRevision: number,
+		settings: OutboundHttpSettings | null,
+	) => Promise<RuntimeOutboundHttpSaveDto>
 	logStreamsDto: () => RuntimeLogStreamsIndex | Promise<RuntimeLogStreamsIndex>
 	logMetaDto: (streamId: unknown) => LogStreamMeta | Promise<LogStreamMeta>
 	logRangeDto: (streamId: unknown, query: unknown) => LogRangeResult | Promise<LogRangeResult>

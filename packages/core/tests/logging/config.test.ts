@@ -1,17 +1,27 @@
+import {
+	type LoggingOptions,
+	type PluginLogPolicySnapshot,
+	type RuntimeLoggingInput,
+} from '@pluxel/core/logging'
 import { AsyncLocalStorage } from 'node:async_hooks'
 import { getConfig, type Config, type LogRecord } from '@logtape/logtape'
 import { describe, expect, it } from 'vitest'
-import { logtape } from '@pluxel/core/config'
-import { resolveLogTapeConfig } from '../../src/config/logtape'
+import { resolveLogTapeConfig } from '../../src/logging/config'
 import { createCoreTestHost, getCoreTestHostContext } from '../../src/internal-test'
 import { prepareCoreContext } from '@pluxel/core/host'
-import type {
-	LoggingOptions,
-	PluginLogPolicySnapshot,
-	RuntimeLoggingInput,
-} from '@pluxel/core/logging'
 
 describe('Core native LogTape declarations', () => {
+	it('provides a bounded default store for empty and options-only declarations', async () => {
+		for (const logtape of [{}, { options: { profile: 'options-only' } }]) {
+			await using host = createCoreTestHost({ logtape })
+			const root = getCoreTestHostContext(host)
+			await prepareCoreContext(root)
+			root.logger.debug('stored by default')
+			await root.logging!.flush()
+			expect(root.logging!.stores.get('default')!.tailWindow(1)[0]?.msg).toBe('stored by default')
+		}
+	})
+
 	it('accepts native configs and structural factory declarations without a helper brand', async () => {
 		const records: LogRecord[] = []
 		const native: Config<string, string> = {
@@ -79,12 +89,15 @@ describe('Core native LogTape declarations', () => {
 			configFactories++
 			return { sinks: { native: sink }, loggers: [] }
 		}
-		const declaration = logtape(input, {
-			policyStore() {
-				policyFactories++
-				throw new Error('policy factory must wait for preparation')
+		const declaration = resolveLogTapeConfig({
+			input,
+			options: {
+				policyStore() {
+					policyFactories++
+					throw new Error('policy factory must wait for preparation')
+				},
 			},
-		})
+		})!
 		expect(resolveLogTapeConfig(declaration)).toEqual(declaration)
 		expect(declaration.input).toBe(input)
 		expect(declaration.options.profile).toBe('pluxel')
@@ -119,7 +132,7 @@ describe('Core native LogTape declarations', () => {
 			profile: 'production',
 			initialPluginPolicy,
 		}
-		const declaration = logtape(input, options)
+		const declaration = resolveLogTapeConfig({ input, options })!
 		input.sinks.native = (): void => undefined
 		input.filters!.native = 'fatal'
 		input.loggers[0]!.sinks!.push('later')
@@ -151,7 +164,7 @@ describe('Core native LogTape declarations', () => {
 		expect(() => resolveLogTapeConfig({ rootId: 'old-input' } as never)).toThrow(
 			'[core.logtape] config.sinks must be an object',
 		)
-		expect(() => logtape({ sinks: {}, loggers: [], reset: true })).toThrow(
+		expect(() => resolveLogTapeConfig({ sinks: {}, loggers: [], reset: true })).toThrow(
 			'reset:true is not allowed',
 		)
 		const invalidOptions: unknown[] = [
@@ -164,7 +177,9 @@ describe('Core native LogTape declarations', () => {
 			{ policyStore: true },
 		]
 		for (const options of invalidOptions)
-			expect(() => logtape({ sinks: {}, loggers: [] }, options as never)).toThrow('[core.logtape]')
+			expect(() =>
+				resolveLogTapeConfig({ input: { sinks: {}, loggers: [] }, options: options as never }),
+			).toThrow('[core.logtape]')
 		expect(getConfig()).toBeNull()
 	})
 })

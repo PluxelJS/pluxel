@@ -5,6 +5,7 @@
 		"index",
 		"workspace-toolchain",
 		"inspection",
+		"scripts",
 		"dev-console",
 		"starter-monorepo",
 		"tooling",

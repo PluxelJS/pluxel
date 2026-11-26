@@ -1,8 +1,8 @@
 import { existsSync, readFileSync, realpathSync } from 'node:fs'
-import { createRequire, registerHooks } from 'node:module'
 import { dirname, isAbsolute, join } from 'node:path'
-import { fileURLToPath, pathToFileURL } from 'node:url'
+import { fileURLToPath } from 'node:url'
 import { satisfies } from 'semver'
+export { resolveNativeImport } from './native-import'
 
 const hostDirectory = dirname(fileURLToPath(import.meta.url))
 const requiredPackages = ['@pluxel/core', '@pluxel/host'] as const
@@ -24,7 +24,7 @@ export function hostSharedPackages(options: {
 			throw new TypeError(`[host] sharedPackages requires package names: ${String(name)}`)
 		if (name === 'tinybase' || name === 'capnweb')
 			throw new TypeError(
-				`[host] ${name} uses capability-scoped exact-version admission; its owner is ${name === 'tinybase' ? '@pluxel/core' : '@pluxel/workbench'}, not a global shared-package override`,
+				`[host] ${name} uses capability-scoped exact-version admission; its owner is ${name === 'tinybase' ? '@pluxel/core' : '@pluxel/host'}, not a global shared-package override`,
 			)
 		if (!packages.has(name)) packages.set(name, options.root)
 	}
@@ -37,23 +37,6 @@ export function importPackageName(specifier: string): string {
 		: specifier.split('/')[0]!
 }
 
-/** Node's own exports resolver, forced to ESM conditions, also supports import-only entries. */
-export function resolveNativeImport(root: string, specifier: string): string {
-	const parentURL = pathToFileURL(join(root, '__pluxel_resolve__.mjs')).href
-	const hook = registerHooks({
-		resolve(source, context, next) {
-			return source === specifier && context.parentURL === parentURL
-				? next(source, { ...context, conditions: ['node', 'import', 'default'] })
-				: next(source, context)
-		},
-	})
-	try {
-		return realpathSync(createRequire(parentURL).resolve(specifier))
-	} finally {
-		hook.deregister()
-	}
-}
-
 type InstalledPackageManifest = Readonly<{
 	name?: unknown
 	version?: unknown
@@ -61,6 +44,7 @@ type InstalledPackageManifest = Readonly<{
 	dependencies?: Readonly<Record<string, unknown>>
 	optionalDependencies?: Readonly<Record<string, unknown>>
 	pluxel?: Readonly<{
+		control?: unknown
 		artifactRoot?: unknown
 		nodeArtifacts?: unknown
 		workbenchArtifacts?: unknown

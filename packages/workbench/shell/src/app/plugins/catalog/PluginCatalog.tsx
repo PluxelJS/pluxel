@@ -2,6 +2,8 @@
 
 import { ActionIcon, Box, Group, Skeleton, Stack } from '@mantine/core'
 import { pluginNodeIndexKey } from '@pluxel/core'
+import type { HostAutoStartChoice, HostPolicyResetTarget } from '@pluxel/host'
+import { pluginApplyReportOutcome } from '@pluxel/host/internal/protocol'
 import {
 	IconCornerUpLeft,
 	IconKeyboard,
@@ -18,9 +20,10 @@ import { notifyAndRecord } from '../../notifications/notifyBridge'
 import { RouterLinkAdapter } from '../../router/RouterLinkAdapter'
 import { PLUGIN_SEARCH_EVENT, PLUGIN_SEARCH_KEY } from '../../constants'
 import { setPluginAutoStarts } from '../pluginStatusActions'
+import { describePluginControlBatchFailure } from '../pluginControlBatchPresentation'
 import { usePluginOverview } from '../pluginOverview'
-import { canWritePluginState, type PluginOverview } from '../pluginOverviewModel'
-import { managementQueryKeys } from '../../managementQuery'
+import { readPluginPolicyTarget } from '../pluginOverviewModel'
+import { refreshPluginReadModels } from '../pluginReadModels'
 import { runtimeErrorMessage, useRuntimeManagementClient } from '../../../runtime'
 import {
 	EMPTY_OVERVIEW,
@@ -165,7 +168,7 @@ export function PluginCatalog({ activeId }: { activeId?: string } = {}) {
 	const [organizerResetToken, setOrganizerResetToken] = useState(0)
 
 	const overviewState = usePluginOverview()
-	const canChangeAutoStart = canWritePluginState(overviewState.overview?.statePolicy, 'autoStart')
+	const statePolicy = overviewState.overview?.statePolicy
 	const refetchOverview = overviewState.refetch
 
 	const overview = useMemo<OverviewSnapshot>(() => {
@@ -184,6 +187,13 @@ export function PluginCatalog({ activeId }: { activeId?: string } = {}) {
 		overviewState.overview?.status?.statuses,
 		overviewState.overview?.status?.summary,
 	])
+	const canChangeAutoStart = selectedIds.every((id) => {
+		const status = overview.statuses[id]
+		return (
+			status &&
+			readPluginPolicyTarget(statePolicy, { field: 'autoStart', node: status.address })?.canWrite
+		)
+	})
 
 	useEffect(() => {
 		if (draftGroups) {
@@ -319,7 +329,6 @@ export function PluginCatalog({ activeId }: { activeId?: string } = {}) {
 
 	const handleBulkAutoStart = useCallback(
 		async (autoStart: boolean) => {
-			const statePolicy = overviewState.overview?.statePolicy
 			if (selectedIds.length === 0 || !canChangeAutoStart || !statePolicy) return
 			const batch = selectedIds.map((id) => {
 				const status = overview.statuses[id]
@@ -329,28 +338,32 @@ export function PluginCatalog({ activeId }: { activeId?: string } = {}) {
 			const displayNameByAddress = new Map(
 				batch.map((status) => [pluginNodeIndexKey(status.address), status.name ?? status.id]),
 			)
+			const previous: HostAutoStartChoice[] = []
+			const reset: HostPolicyResetTarget[] = []
+			for (const { address, autoStart: previousAutoStart } of batch) {
+				const target = { field: 'autoStart' as const, node: address }
+				// In a writable target, a saved record always supplies the effective value.
+				if (readPluginPolicyTarget(statePolicy, target)?.source === 'saved')
+					previous.push({ node: address, autoStart: previousAutoStart })
+				else reset.push(target)
+			}
 			setBulkBusy(true)
 			try {
-				const results = await setPluginAutoStarts(
+				const result = await setPluginAutoStarts(
 					management,
 					queryClient,
 					batch.map(({ address }) => ({ address, autoStart })),
 					statePolicy.managedRevision,
 				)
-				const undoRevision = queryClient.getQueryData<PluginOverview>(
-					managementQueryKeys.pluginOverview(),
-				)?.statePolicy.managedRevision
-				const failed = results.filter((r) => !r.ok)
-				if (failed.length > 0) {
-					notifyAndRecord({
-						title: '操作完成但部分失败',
-						message:
-							failed
-								.map((result) => displayNameByAddress.get(pluginNodeIndexKey(result.address)))
-								.filter(Boolean)
-								.join('，') || '操作失败',
-						color: 'red',
-					})
+				const undoRevision = result.managedRevision
+				if (result.ok === false) {
+					notifyAndRecord(
+						describePluginControlBatchFailure(
+							'auto-start',
+							result,
+							(address) => displayNameByAddress.get(pluginNodeIndexKey(address)) ?? 'Plugin',
+						),
+					)
 				} else {
 					notifyAndRecord({
 						title: autoStart ? '已批量开启自动启动' : '已批量关闭自动启动',
@@ -366,34 +379,38 @@ export function PluginCatalog({ activeId }: { activeId?: string } = {}) {
 										void (async () => {
 											setBulkBusy(true)
 											try {
-												if (!undoRevision) throw new Error('运行策略尚未重新加载，无法恢复')
-												const undoResults = await setPluginAutoStarts(
-													management,
-													queryClient,
-													batch.map(({ address, autoStart: previousAutoStart }) => ({
-														address,
-														autoStart: previousAutoStart,
-													})),
-													undoRevision,
+												if (!undoRevision) throw new Error('原操作未返回策略版本，无法恢复')
+												const undoResult = await management.policy.patch(
+													{ autoStart: previous, reset },
+													{ expectedManagedRevision: undoRevision },
 												)
-												const undoFailed = undoResults.filter((result) => !result.ok)
-												if (undoFailed.length > 0) {
+												const diagnosticText = JSON.stringify(undoResult, null, 2)
+												if (undoResult.ok === false) {
 													notifyAndRecord({
-														title: '部分策略恢复失败',
-														message:
-															undoFailed
-																.map((result) =>
-																	displayNameByAddress.get(pluginNodeIndexKey(result.address)),
-																)
-																.filter(Boolean)
-																.join('，') || '恢复失败',
-														color: 'red',
+														title:
+															undoResult.state === 'unknown'
+																? '策略恢复结果待核对'
+																: '策略恢复被拒绝',
+														message: undoResult.message,
+														color: undoResult.state === 'unknown' ? 'yellow' : 'red',
+														autoClose: false,
+														diagnosticText,
 													})
 												} else {
+													const outcome = undoResult.report
+														? pluginApplyReportOutcome(undoResult.report)
+														: undefined
+													const appliedWithIssues =
+														outcome !== undefined && outcome.status !== 'applied'
 													notifyAndRecord({
-														title: '已恢复原策略',
-														message: `${batch.length} 个 Plugin 的自动启动策略已恢复`,
-														color: 'green',
+														title: appliedWithIssues
+															? '原策略已恢复，运行协调存在问题'
+															: '已恢复原策略',
+														message: appliedWithIssues
+															? outcome.message
+															: `${batch.length} 个 Plugin 的自动启动策略已恢复`,
+														color: appliedWithIssues ? 'red' : 'green',
+														diagnosticText,
 													})
 												}
 											} catch (error: unknown) {
@@ -403,6 +420,7 @@ export function PluginCatalog({ activeId }: { activeId?: string } = {}) {
 													color: 'red',
 												})
 											} finally {
+												await refreshPluginReadModels(queryClient)
 												setBulkBusy(false)
 											}
 										})()
@@ -413,6 +431,7 @@ export function PluginCatalog({ activeId }: { activeId?: string } = {}) {
 							</Group>
 						),
 						color: 'green',
+						diagnosticText: JSON.stringify(result, null, 2),
 						autoClose: 5000,
 					})
 				}
@@ -426,14 +445,7 @@ export function PluginCatalog({ activeId }: { activeId?: string } = {}) {
 				setBulkBusy(false)
 			}
 		},
-		[
-			canChangeAutoStart,
-			management,
-			selectedIds,
-			overview.statuses,
-			overviewState.overview?.statePolicy,
-			queryClient,
-		],
+		[canChangeAutoStart, management, selectedIds, overview.statuses, statePolicy, queryClient],
 	)
 
 	const handleBulkAction = useCallback(

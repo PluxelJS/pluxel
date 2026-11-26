@@ -7,13 +7,13 @@ describe('TodoPlugin', () => {
 	it('uses validated config and attaches an optional Plugin when available', async () => {
 		await using host = await createTestHost({ services: [] })
 		await host.commit((change) => {
-			change.start(AuditPlugin)
-			change.start(TodoPlugin, {
+			change.start(AuditPlugin.nodeAddress())
+			change.start(TodoPlugin.nodeAddress(), {
 				initialConfig: { maxItems: 2, seedTitle: 'Read the docs' },
 			})
 		})
 
-		const todos = host.require(TodoPlugin)
+		const todos = host.require(TodoPlugin.nodeAddress())
 		expect(todos.add('Build a Plugin')).toMatchObject({ ok: true })
 		expect(todos.add('This exceeds the configured limit')).toEqual({
 			ok: false,
@@ -23,7 +23,7 @@ describe('TodoPlugin', () => {
 		expect(todos.snapshot()).toMatchObject({ maxItems: 2, auditEnabled: true })
 		expect(
 			host
-				.require(AuditPlugin)
+				.require(AuditPlugin.nodeAddress())
 				.entries()
 				.map((entry) => entry.message),
 		).toEqual(['todo.added:todo-2', 'todo.completed:todo-1:true'])
@@ -32,36 +32,36 @@ describe('TodoPlugin', () => {
 	it('keeps the optional integration absent-safe', async () => {
 		await using host = await createTestHost({ services: [] })
 
-		const todos = await host.start(TodoPlugin)
+		const todos = await host.start(TodoPlugin.nodeAddress())
 		expect(todos.snapshot().auditEnabled).toBe(false)
 	})
 	it('restores changes and keeps an empty collection empty without replaying the seed', async () => {
 		await using host = await createTestHost({ services: [] })
-		let todos = await host.start(TodoPlugin)
+		let todos = await host.start(TodoPlugin.nodeAddress())
 		expect(todos.add('Remember this task')).toMatchObject({ ok: true })
 		todos.setCompleted('todo-2', true)
 		todos.remove('todo-1')
-		await host.restart(TodoPlugin)
-		todos = host.require(TodoPlugin)
+		await host.restart(TodoPlugin.nodeAddress())
+		todos = host.require(TodoPlugin.nodeAddress())
 		expect(todos.snapshot().items).toEqual([
 			{ id: 'todo-2', title: 'Remember this task', completed: true },
 		])
 		todos.remove('todo-2')
-		await host.restart(TodoPlugin)
-		todos = host.require(TodoPlugin)
+		await host.restart(TodoPlugin.nodeAddress())
+		todos = host.require(TodoPlugin.nodeAddress())
 		expect(todos.snapshot().items).toEqual([])
 		expect(todos.add('Next task')).toMatchObject({ ok: true, item: { id: 'todo-3' } })
 	})
 
 	it('rejects corrupted restored rows before exposing Todo methods', async () => {
 		await using host = await createTestHost({ services: [] })
-		const todos = await host.start(TodoPlugin)
+		const todos = await host.start(TodoPlugin.nodeAddress())
 		const state = todos.ctx.tinybase
 		const store = await state.open()
 		store.setCell('todos', 'todo-1', 'completed', 'invalid')
 		await state.flush()
-		await host.stop(TodoPlugin)
-		const failure = await host.commitExpectFail((change) => change.start(TodoPlugin))
+		await host.stop(TodoPlugin.nodeAddress())
+		const failure = await host.commitExpectFail((change) => change.start(TodoPlugin.nodeAddress()))
 		expect(failure.lifecycleReport.issues).toContainEqual(
 			expect.objectContaining({ kind: 'start-failed' }),
 		)
@@ -69,11 +69,11 @@ describe('TodoPlugin', () => {
 
 	it('does not replace a valid empty snapshot with its initial seed', async () => {
 		await using host = await createTestHost({ services: [] })
-		const todos = await host.start(TodoPlugin)
+		const todos = await host.start(TodoPlugin.nodeAddress())
 		const state = todos.ctx.tinybase
 		;(await state.open()).setContent([{}, {}])
 		await state.flush()
-		await host.restart(TodoPlugin)
-		expect(host.require(TodoPlugin).snapshot().items).toEqual([])
+		await host.restart(TodoPlugin.nodeAddress())
+		expect(host.require(TodoPlugin.nodeAddress()).snapshot().items).toEqual([])
 	})
 })
