@@ -1,0 +1,9 @@
+{
+	"extends": "./packages/rolldown/tsconfig.json",
+	"include": [
+		"packages/rolldown/src",
+		"packages/workbench/src/workbench/shared-transport.ts",
+		"packages/host/src/shared-runtime.ts"
+	],
+	"exclude": ["packages/rolldown/src/service-build.ts"]
+}

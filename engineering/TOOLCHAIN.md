@@ -96,7 +96,7 @@ source conditions 添加 @pluxel/hmr/@pluxel/source，其余遵循 Vite client/s
 
 production macro evaluator 只用于 Rolldown。当前 unplugin-macros serve adapter 安装进程级 sourcemap handler，会覆盖 `ModuleRunner` 映射；evaluator 隔离或上游有 cleanup 前，不装入开发服务。
 
-根 tsconfig 维护共用 noEmit 选项；包配置包含 src/tests/benchmark/config，工作区 vite 配置/helper 由 scripts/tsconfig 检查。框架实现以 `@pluxel/source` 检查源码，具体插件默认 `@pluxel/hmr`，仅将其他插件切到源码，Core/Host/toolchain 用公开 dist 声明。不同环境、严格度或声明输入才拆包内配置；CLI 内联 pncat 的 native emitter 需要配置目录为 rootDir，独用根 tsconfig.cli-build.json。构建顺序归 Vite Task。
+根 tsconfig 维护共用 noEmit 选项；包配置包含 src/tests/benchmark/config，工作区 vite 配置/helper 由 scripts/tsconfig 检查。框架实现以 `@pluxel/source` 检查源码，具体插件默认 `@pluxel/hmr`，仅将其他插件切到源码，Core/Host/toolchain 用公开 dist 声明。不同环境、严格度或声明输入才拆包内配置；CLI 内联 pncat、Rolldown 内联 Workbench transport 与 Host shared-runtime 时，native 声明编译器以配置目录为 rootDir，各用仓库根的 tsconfig.cli-build.json 和 tsconfig.rolldown-build.json。构建顺序归 Vite Task。
 
 tsdown entry 是 subpath 的作者输入。framework 的 exports.devExports 为 `@pluxel/source`，`pluginPackage` 为 `@pluxel/hmr`，框架无关源码库用 development。成功构建生成 main/module/types/exports 与无源码条件的 publishConfig.exports，提交可审查生成物。开发解析顺序为 `@pluxel/hmr`、development、`@pluxel/source`；production external resolution 保留发布入口。
 

@@ -54,7 +54,7 @@ export default defineConfig({
 	},
 	copy: ['schemas'],
 	dts: {
-		tsconfig: './tsconfig.build.json',
+		tsconfig: '../../tsconfig.rolldown-build.json',
 		sourcemap: true,
 		eager: true,
 	},

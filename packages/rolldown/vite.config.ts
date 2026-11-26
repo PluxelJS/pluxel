@@ -23,6 +23,7 @@ export default defineConfig({
 				dependsOn: ['@pluxel/host#compile', 'valibot-form#compile'],
 				cache: {
 					input: [
+						'tsconfig.rolldown-build.json',
 						'packages/workbench/package.json',
 						'packages/host/package.json',
 						'packages/host/src/shared-runtime.ts',
