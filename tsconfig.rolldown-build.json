@@ -1,5 +1,13 @@
 {
 	"extends": "./packages/rolldown/tsconfig.json",
+	"compilerOptions": {
+		"paths": {
+			"@pluxel/workbench/internal/transport": [
+				"./packages/workbench/src/workbench/shared-transport.ts"
+			],
+			"@pluxel/host/internal/shared-runtime": ["./packages/host/src/shared-runtime.ts"]
+		}
+	},
 	"include": [
 		"packages/rolldown/src",
 		"packages/workbench/src/workbench/shared-transport.ts",
