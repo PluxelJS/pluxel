@@ -1,6 +1,6 @@
 import { createCoreContextHost, getContextLoggerRootId, installOwnerViewService } from '../src/host'
 import { type Context, type RootContext } from '../src'
-import { describe, expect, expectTypeOf, it } from 'vitest'
+import { describe, expect, expectTypeOf, it, vi } from 'vitest'
 import { BasePlugin, Plugin } from '@pluxel/core'
 import { createCallerContextView, createGenerationContext } from '../src/context/context-factory'
 import { createCoreRootContext } from '../src/context/zenfs-plan'
@@ -16,6 +16,8 @@ import {
 	snapshotWorkerCoreFacilitiesConfig,
 } from '../src/internal'
 import { ConfigService } from '../src/services/config/ConfigService'
+import { snapshotCoreFacilities } from '../src/context/core-facilities'
+import { createMemoryStorage } from '../src/storage/memory'
 abstract class ExampleService {}
 interface ExampleService {
 	readonly owner: Context
@@ -75,7 +77,9 @@ describe('Core Context integration', () => {
 				return {}
 			},
 		}
-		const host = createCoreContextHost(config)
+		const storage = vi.fn(createMemoryStorage)
+		const facilities = snapshotCoreFacilities({}, () => storage, undefined)
+		const host = createCoreContextHostWithFacilities(config, facilities)
 		config.createConfigService = () => {
 			throw new Error('mutated configuration factory')
 		}
@@ -96,6 +100,7 @@ describe('Core Context integration', () => {
 			const stop = registry.beginUpdate()
 			stop.dematerializeNode(node)
 			expect(await stop.commit()).toMatchObject({ ok: true })
+			expect(storage).not.toHaveBeenCalled()
 			expect(configCreations).toBe(0)
 			expect(requireConfigService(first)).toBe(requireConfigService(first))
 			expect(requirePluginService(first)).toBe(requirePluginService(first))

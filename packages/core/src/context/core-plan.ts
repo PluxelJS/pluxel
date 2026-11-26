@@ -69,10 +69,17 @@ function createCoreRuntime(
 	execution: CorePluginExecutionBinding,
 ): CoreRuntime {
 	const storage = lazy('storage', () => inputs.createStorage(root))
-	const tinybase = lazy(
-		'TinyBase',
-		() => new TinyBaseRuntime(root, storage(), inputs.tinybase.maxSnapshotBytes),
-	)
+	const published = new WeakSet<Context>()
+	let tinybaseRuntime: TinyBaseRuntime | undefined
+	const tinybase = lazy('TinyBase', () => {
+		tinybaseRuntime = new TinyBaseRuntime(
+			root,
+			storage(),
+			inputs.tinybase.maxSnapshotBytes,
+			published,
+		)
+		return tinybaseRuntime
+	})
 	const vault = lazy(
 		'Vault',
 		() => new VaultRuntime(root, inputs.vault, () => requireCoreFilesystem(root)),
@@ -87,16 +94,19 @@ function createCoreRuntime(
 		: undefined
 	const plugins = lazy('Plugin runtime', () => {
 		const executionConfig = execution.read()
-		const builtin = tinybase().lifecycle
 		const hooks = freezeCorePluginLifecycleHooks(config.createLifecycleHooks?.(root))
 		return new PluginService(root, executionConfig, {
 			...hooks,
-			async prepareCommit(publication) {
-				await builtin.prepareCommit?.(publication)
-				await hooks.prepareCommit?.(publication)
+			prepareCommit(publication) {
+				tinybaseRuntime?.preparePublication(publication.started)
+				return hooks.prepareCommit?.(publication)
 			},
 			publishCommit(publication) {
-				builtin.publishCommit?.(publication)
+				// A generation may first access its Store long after publication.
+				for (const ctx of publication.started) {
+					published.add(ctx)
+					tinybaseRuntime?.publish(ctx)
+				}
 				return hooks.publishCommit?.(publication)
 			},
 		})

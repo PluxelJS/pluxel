@@ -1,6 +1,5 @@
 import { pluginNodeIndexKey, type PluginNodeAddress } from '../plugins/runtime/identity'
 import type { Context, PluginContext, RootContext } from '../context/Context'
-import type { CorePluginLifecycleHooks } from '../plugins/runtime/plugin-service/HostLifecycle'
 import type { CoreStorage, CoreDocumentStorage } from '../storage/documents'
 import { pluginNodePhysicalKey } from '../internal/plugin-address'
 import { TinyBaseError } from './error'
@@ -8,9 +7,7 @@ import { StoreWriter, runOperation } from './writer'
 import type { TinyBaseHostService, TinyBaseService, TinyBaseStatus } from './types'
 
 export class TinyBaseRuntime implements TinyBaseHostService {
-	readonly lifecycle: CorePluginLifecycleHooks
 	private readonly owners = new WeakMap<Context, StoreWriter>()
-	private readonly published = new WeakSet<Context>()
 	private readonly writers = new Map<string, StoreWriter>()
 	private readonly nodeBacking: CoreDocumentStorage
 	private readonly retention: ReturnType<CoreStorage['documents']['documentRetention']>
@@ -20,23 +17,20 @@ export class TinyBaseRuntime implements TinyBaseHostService {
 		private readonly root: RootContext,
 		storage: CoreStorage,
 		private readonly maxBytes: number,
+		private readonly published: WeakSet<Context>,
 	) {
 		const directory = 'services/tinybase/nodes'
 		this.nodeBacking = storage.documents.documents(directory, maxBytes)
 		this.retention = storage.documents.documentRetention(directory)
-		this.lifecycle = {
-			prepareCommit: ({ started }) => {
-				for (const ctx of started) this.owners.get(ctx)?.preparePublication()
-			},
-			publishCommit: ({ started }) => {
-				for (const ctx of started) {
-					this.published.add(ctx)
-					this.owners.get(ctx)?.publish()
-				}
-				return undefined
-			},
-		}
 		root.effects.defer(() => this.close(), { tag: 'TinyBase', phase: 'final' })
+	}
+
+	preparePublication(started: readonly PluginContext[]): void {
+		for (const ctx of started) this.owners.get(ctx)?.preparePublication()
+	}
+
+	publish(ctx: PluginContext): void {
+		this.owners.get(ctx)?.publish()
 	}
 
 	forOwner(ctx: Context): TinyBaseService {

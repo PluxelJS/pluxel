@@ -14,6 +14,8 @@ TinyBase 在装配时从文档适配器读取快照目录 `services/tinybase/nod
 
 ## 原生实例与恢复
 
+Core 在首次访问 TinyBase 时构造运行时并取得文档后端。Plugin 提交时记录已发布的 generation，使启动后才首次打开的 Store 也能自动保存。
+
 `open()` 创建 Store，`open(store)` 保留传入实例和类型。并发/重复 open 共用恢复任务与取消信号，同 generation 换实例报 OPEN_CONFLICT。实例须全新、未绑定其他 Host/generation，无 listener、Persister、Synchronizer 或未完成 transaction，且不能是 MergeableStore。Core 以 listener 统计检查可见资源，dormant persister 仍靠 caller 遵守约定。
 
 首次 await 前登记 writer/cleanup，防止晚到恢复逃逸。只有缺失 backing 才保留调用方初值；既有快照完整替换 Tables/Values，合法空内容也替换。恢复先校验格式/身份，再 setContent 并比较原始内容；schema 丢字段或补默认造成变化即失败，原文件保留。恢复期间 caller 不读写或公开 Store，成功后才安装 Queries/listener 并登记 effects。原生 API 不代理。
