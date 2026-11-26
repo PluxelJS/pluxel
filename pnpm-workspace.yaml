@@ -63,6 +63,7 @@ catalogs:
     '@libsql/client': ^0.18.0
     drizzle-kit: ^0.31.11
     drizzle-orm: ^0.45.4
+    libpg-query: 18.2.4
     pg: ^8.23.1
     redis: ^6.4.0
   build:

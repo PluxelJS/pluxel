@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict'
-import { mkdir, symlink, writeFile } from 'node:fs/promises'
+import { mkdir, readFile, symlink, writeFile } from 'node:fs/promises'
 import { resolve } from 'node:path'
 import { setTimeout as delay } from 'node:timers/promises'
 import { fileURLToPath } from 'node:url'
@@ -91,11 +91,16 @@ export async function openWorkbenchFixture(root: string) {
 		'dir',
 	)
 	await mkdir(resolve(root, 'src'), { recursive: true })
+	const { version: capnwebVersion } = JSON.parse(
+		await readFile(new URL('../../node_modules/capnweb/package.json', import.meta.url), 'utf8'),
+	) as { version: string }
 	const files = {
 		'package.json': JSON.stringify({
 			name: '@fixture/workbench-hmr',
 			type: 'module',
 			exports: { '.': './src/index.ts' },
+			dependencies: { capnweb: capnwebVersion },
+			peerDependencies: { capnweb: capnwebVersion },
 		}),
 		'pluxel.static.ts': applicationSource,
 		'src/index.ts': ownerSource,

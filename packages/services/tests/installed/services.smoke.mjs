@@ -15,7 +15,7 @@ const UNSELECTED_BACKEND_LOAD_PATTERN =
 	/\/node_modules\/(?:@logtape\/(?:file|pretty)|capnweb|@pluxel\/workbench)(?:\/|$)|\/management(?:\/|[-.])/
 const BARE_CONSOLE_SERVICE_LOAD_PATTERN = /\/node_modules\/@pluxel\/services(?:\/|$)/
 const UNSELECTED_SQL_LOAD_PATTERN =
-	/\/node_modules\/(?:drizzle-(?:orm|kit)|pg(?:-pool)?|@electric-sql\/pglite)(?:\/|$)/
+	/\/node_modules\/(?:drizzle-(?:orm|kit)|pg(?:-pool)?|@electric-sql\/pglite|@libsql\/[^/]+|libsql)(?:\/|$)/
 
 it('does not confuse a pnpm peer suffix with a loaded optional module', () => {
 	const packageUrl =
@@ -41,7 +41,15 @@ it('does not confuse a pnpm peer suffix with a loaded optional module', () => {
 			'file:///tmp/node_modules/.pnpm/@pluxel+services@file+services.tgz_drizzle-orm@0.45.4_pg@8.23.1/node_modules/@pluxel/services/dist/commands.mjs',
 		),
 	).toBe(false)
-	for (const name of ['drizzle-orm', 'drizzle-kit', 'pg', 'pg-pool', '@electric-sql/pglite']) {
+	for (const name of [
+		'drizzle-orm',
+		'drizzle-kit',
+		'pg',
+		'pg-pool',
+		'@electric-sql/pglite',
+		'@libsql/client',
+		'libsql',
+	]) {
 		expect(UNSELECTED_SQL_LOAD_PATTERN.test(`file:///tmp/node_modules/${name}/index.js`)).toBe(true)
 	}
 })
@@ -872,8 +880,13 @@ const { createHost } = await import('@pluxel/host')
 const { Pg, defineDatabase } = await import('@pluxel/services/pg')
 const { pglite } = await import('@pluxel/services/pg/pglite')
 const { postgres } = await import('@pluxel/services/pg/postgres')
+const { Sqlite, defineDatabase: defineSqliteDatabase } = await import('@pluxel/services/sqlite')
+const { libsql } = await import('@pluxel/services/sqlite/libsql')
+const { d1 } = await import('@pluxel/services/sqlite/d1')
 assert.equal(Pg.access, 'owner')
+assert.equal(Sqlite.access, 'owner')
 assert.equal(defineDatabase({ schema: {} }).evolution, 'migrations')
+assert.equal(defineSqliteDatabase({ schema: {} }).dialect, 'sqlite')
 const { NodeModules, nodeModules } = await import('@pluxel/services/node')
 const { Workers, workers, defineWorkerTask } = await import('@pluxel/services/workers')
 const { createCoreContextHost, installOwnerViewService } = await import('@pluxel/core/host')
@@ -887,8 +900,8 @@ class OwnerService {}
 const core = createCoreContextHost({ services: [installOwnerViewService(OwnerService, { createRoot: () => ({}), createView: (_, owner) => owner.name })] })
 const coreRoot = core.createRoot()
 assert.equal(core.createScope(coreRoot, 'isolated').service(OwnerService), 'isolated')
-const first = await createHost({ plugins: [{ plugin: Credentials }], services: [commands(), postgres()] })
-const second = await createHost({ plugins: [{ plugin: Credentials }], services: [pglite()] })
+const first = await createHost({ plugins: [{ plugin: Credentials }], services: [commands(), postgres(), d1({})] })
+const second = await createHost({ plugins: [{ plugin: Credentials }], services: [pglite(), libsql({ directory: './data' })] })
 try {
  await first.startNode(Credentials.nodeAddress())
  await second.startNode(Credentials.nodeAddress())
@@ -898,7 +911,7 @@ try {
  assert.ok(isolated)
  assert.notEqual(owned, isolated)
  assert.deepEqual(first.ctx.service(Commands).list(), [])
- assert.equal(loads.some(url => ${UNSELECTED_SQL_LOAD_PATTERN}.test(url)), false, 'an installed Pg service must load its driver and ORM only on use')
+ assert.equal(loads.some(url => ${UNSELECTED_SQL_LOAD_PATTERN}.test(url)), false, 'installed database services must load their drivers and ORM only on use')
  assert.equal(loads.some(url => ${UNSELECTED_BACKEND_LOAD_PATTERN}.test(url)), false, 'unselected log sinks, Management and Workbench backends must stay unloaded')
  assert.equal(loads.some(url => /age-encryption/.test(url)), false, 'host creation and owner credential access must leave encryption unloaded')
  {

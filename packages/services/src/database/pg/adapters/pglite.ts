@@ -2,7 +2,7 @@ import { mkdir } from 'node:fs/promises'
 import { dirname } from 'node:path'
 import { PGlite, type PGliteOptions } from '@electric-sql/pglite'
 import { drizzle } from 'drizzle-orm/pglite'
-import type { DatabaseAdapter } from '../service'
+import type { DatabaseAdapter } from '../coordinator'
 
 export async function createPgliteDatabaseAdapter(
 	config: PGliteOptions | PGlite,
@@ -17,26 +17,23 @@ export async function createPgliteDatabaseAdapter(
 		return {
 			driver: 'pglite',
 			db: drizzle({ client }),
+			withSchema: (schema) => drizzle({ client, schema }),
 			concurrency: 1,
 			async close() {
 				if (!borrowed) await client.close()
 			},
 		}
 	} catch (cause) {
-		const failure = new Error(
+		let failure = new Error(
 			`PGlite initialization failed${dataDir === undefined ? '' : ` for ${JSON.stringify(dataDir)}`}; inspect the native error cause before retrying the Host.`,
 			{ cause },
 		)
 		if (!borrowed) {
-			let cleanupFailure: { error: unknown } | undefined
 			try {
 				await client.close()
 			} catch (cleanupError) {
-				cleanupFailure = { error: cleanupError }
-			}
-			if (cleanupFailure) {
-				throw new AggregateError(
-					[failure, cleanupFailure.error],
+				failure = new AggregateError(
+					[failure, cleanupError],
 					'PGlite adapter setup and cleanup failed',
 					{ cause },
 				)

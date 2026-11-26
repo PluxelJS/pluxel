@@ -43,7 +43,7 @@ export default defineConfig({
 })
 ```
 
-standalone 构建从应用可达的导入追踪驱动。`@pluxel/services/pg/pglite` 带入 PGlite 及其 WASM 文件，`@pluxel/services/pg/postgres` 带入 `pg`。应用如果导入两个安装器，再根据运行时环境选择，交付目录会包含两个驱动。上例的 `residualDependencies.packages` 用于显式追踪其他需要随应用交付的原生包。
+托管数据库的 standalone 构建按应用可达的安装器追踪驱动。`pglite()` 带入 PGlite 及其 WASM，`postgres()` 带入 `pg`，`libsql()` 带入构建平台的原生 `libsql` 模块。导入多个安装器并在运行时选择时，交付目录会包含这些驱动。[Host 的驱动选择](../host/configuration.md#数据库服务后端选择)
 
 ## CLI 工具核心命令
 

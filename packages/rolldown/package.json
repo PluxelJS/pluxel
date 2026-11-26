@@ -151,6 +151,8 @@
 		"@module-federation/vite": "catalog:build",
 		"@types/node": "catalog:types",
 		"drizzle-kit": "catalog:backend",
+		"drizzle-orm": "catalog:backend",
+		"libpg-query": "catalog:backend",
 		"magic-string": "catalog:prod",
 		"mdast-util-directive": "catalog:prod",
 		"mdast-util-from-markdown": "catalog:prod",

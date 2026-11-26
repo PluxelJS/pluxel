@@ -1,6 +1,6 @@
 import { PGlite } from '@electric-sql/pglite'
-import { createPgliteDatabaseAdapter } from '../src/database/adapters/pglite'
-import { createPostgresDatabaseAdapter } from '../src/database/adapters/postgres'
+import { createPgliteDatabaseAdapter } from '../src/database/pg/adapters/pglite'
+import { createPostgresDatabaseAdapter } from '../src/database/pg/adapters/postgres'
 import { Pool } from 'pg'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 

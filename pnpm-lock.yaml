@@ -373,6 +373,9 @@ catalogs:
     drizzle-orm:
       specifier: ^0.45.4
       version: 0.45.4
+    libpg-query:
+      specifier: 18.2.4
+      version: 18.2.4
     pg:
       specifier: ^8.23.1
       version: 8.23.1
@@ -1610,6 +1613,12 @@ importers:
       drizzle-kit:
         specifier: catalog:backend
         version: 0.31.11
+      drizzle-orm:
+        specifier: catalog:backend
+        version: 0.45.4(@cloudflare/workers-types@5.20261117.1)(@electric-sql/pglite@0.6.0)(@libsql/client@0.18.0)(@opentelemetry/api@1.10.0)(@types/pg@8.23.1)(bun-types@1.4.5)(kysely@0.28.19)(pg@8.23.1)
+      libpg-query:
+        specifier: catalog:backend
+        version: 18.2.4
       magic-string:
         specifier: catalog:prod
         version: 0.30.21
@@ -1747,9 +1756,15 @@ importers:
         specifier: npm:@voidzero-dev/vite-plus-core@1.4.0
         version: '@voidzero-dev/vite-plus-core@1.4.0(@types/node@26.6.6)(esbuild@0.28.2)(jiti@2.7.0)(sass-embedded@1.107.1)(sass@1.107.1)(sugarss@5.0.2(postcss@8.5.32))(terser@5.50.0)(tsx@4.23.15)(typescript@7.0.2)(unrun@0.3.1)(yaml@2.9.1)'
     devDependencies:
+      '@cloudflare/workers-types':
+        specifier: catalog:dev
+        version: 5.20261117.1
       '@electric-sql/pglite':
         specifier: catalog:prod
         version: 0.6.0
+      '@libsql/client':
+        specifier: catalog:backend
+        version: 0.18.0
       '@logtape/logtape':
         specifier: catalog:prod
         version: 2.4.2
@@ -1804,6 +1819,9 @@ importers:
       fs-fixture:
         specifier: catalog:dev
         version: 2.16.0
+      miniflare:
+        specifier: catalog:dev
+        version: 5.20261117.0-beta(@types/node@26.6.6)
       pg:
         specifier: catalog:backend
         version: 8.23.1
@@ -6652,6 +6670,9 @@ packages:
     resolution: {integrity: sha512-tmmZ3lQxAe/k/+rNnXQRawJ4NjxO2hqiOLTHvWchtGZULp4RyFeh6aU4XdOYBFe2KE1oShQTv4AblOs2iOrNnQ==}
     engines: {node: '>= 10.0.0'}
 
+  '@pgsql/types@18.0.0':
+    resolution: {integrity: sha512-jtAY4JU7jdVYZ/Vv3zlZqVP+FRWZokyCLKPPCnAApiaJAElpyyiMC3HRiquBu29kSrVs+rkqZD50SUIb/zyEGw==}
+
   '@platformatic/vfs@0.5.0':
     resolution: {integrity: sha512-U/yG5a2IELJxAtwkgGmhZJnLCHRzyxNyWWbaDKMbCyjB0kuPxU9fvIZCxf7Kv7jz7I7IXlyuY7gXkXGMdLHhPw==}
     engines: {node: '>= 22'}
@@ -9870,6 +9891,9 @@ packages:
     resolution: {integrity: sha512-vh+TiejVy8Xm+hCdnRfn9BthGNvNUZdEXltNjVZL3TzRIKP3s1lnQh8pWd/Q0wCgY0FPAGVVjFF4ZiHUV3LFgA==}
     engines: {node: '>=16'}
     hasBin: true
+
+  libpg-query@18.2.4:
+    resolution: {integrity: sha512-7nqWUm+39v/fYgWP0qR+sYC7tyhmW8lctqAzx7bdKG6V0ySr9G1lcY43BdZM5+lxVSzL0Y5Yy6eM9e+uL7T79w==}
 
   libsql@0.5.29:
     resolution: {integrity: sha512-8lMP8iMgiBzzoNbAPQ59qdVcj6UaE/Vnm+fiwX4doX4Narook0a4GPKWBEv+CR8a1OwbfkgL18uBfBjWdF0Fzg==}
@@ -14435,6 +14459,8 @@ snapshots:
       '@parcel/watcher-win32-x64': 2.5.6
     optional: true
 
+  '@pgsql/types@18.0.0': {}
+
   '@platformatic/vfs@0.5.0': {}
 
   '@pnpm/napi.android-arm64@12.23.0':
@@ -17252,6 +17278,10 @@ snapshots:
   lib0@0.2.119:
     dependencies:
       isomorphic.js: 0.2.5
+
+  libpg-query@18.2.4:
+    dependencies:
+      '@pgsql/types': 18.0.0
 
   libsql@0.5.29:
     dependencies:

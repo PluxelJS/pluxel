@@ -7,24 +7,24 @@ description: 使用 defineHostApplication 统一组装插件、挂载服务、�
 
 ## 目录速查
 
-| 配置主题                                            | 核心内容                                                |
-| --------------------------------------------------- | ------------------------------------------------------- |
-| [原生配置与预设](#原生配置与预设)                   | 原生第三方库（ZenFS、LogTape、Elysia）的直接配置        |
-| [选择服务组合](#选择组合)                           | 官方 `servicesPreset` 与单项服务的选择                  |
-| [应用入口配置](#应用入口)                           | 插件声明、节点配置、启动意图与应用生命周期              |
-| [Vite 开发模式](#vite-开发)                         | 开发期间的 HMR 热更新与控制台支持                       |
-| [动态插件来源](#动态来源)                           | 监听本地目录动态装载插件                                |
-| [环境变量与配置绑定](#绑定部署环境与-json-文件)     | 将系统环境变量映射到插件的 Valibot 配置                 |
-| [文件系统后端](#选择文件后端)                       | 挂载纯内存、本地磁盘或浏览器存储后端                    |
-| [配置与策略持久化](#保存配置和运行策略)             | 配置的 `declared-first`、`saved-first` 模式与热应用机制 |
-| [凭据后端](#部署凭据与-vault-绑定)                  | 配置内建 Vault 的加密后端或只读部署绑定                 |
-| [受管出站 HTTP](#受管出站-http)                     | 共享请求预算、代理及按节点收紧的访问范围                |
-| [日志系统配置](#host-logging)                       | 接入 LogTape 控制台与远程传输 Sink                      |
-| [数据库服务装配](#选择-native-postgresql-或-pglite) | 切换本地嵌入式 PGlite 与生产 PostgreSQL 数据库          |
-| [独立轻量 Host](#独立-http-host)                    | 纯脚本或轻量进程中快速创建 Host                         |
-| [嵌入式 Host](#嵌入式-host)                         | 在页面、Worker、LLRT 或 React Native 中运行插件图       |
-| [Cloudflare Worker Host](#cloudflare-worker-host)   | 在同一 isolate 内跨请求和 Cron 复用插件与服务           |
-| [生产构建与启动判定](#生产启动判定)                 | 打包生产静态制品与严格就绪检查                          |
+| 配置主题                                          | 核心内容                                                |
+| ------------------------------------------------- | ------------------------------------------------------- |
+| [原生配置与预设](#原生配置与预设)                 | 原生第三方库（ZenFS、LogTape、Elysia）的直接配置        |
+| [选择服务组合](#选择组合)                         | 官方 `servicesPreset` 与单项服务的选择                  |
+| [应用入口配置](#应用入口)                         | 插件声明、节点配置、启动意图与应用生命周期              |
+| [Vite 开发模式](#vite-开发)                       | 开发期间的 HMR 热更新与控制台支持                       |
+| [动态插件来源](#动态来源)                         | 监听本地目录动态装载插件                                |
+| [环境变量与配置绑定](#绑定部署环境与-json-文件)   | 将系统环境变量映射到插件的 Valibot 配置                 |
+| [文件系统后端](#选择文件后端)                     | 挂载纯内存、本地磁盘或浏览器存储后端                    |
+| [配置与策略持久化](#保存配置和运行策略)           | 配置的 `declared-first`、`saved-first` 模式与热应用机制 |
+| [凭据后端](#部署凭据与-vault-绑定)                | 配置内建 Vault 的加密后端或只读部署绑定                 |
+| [受管出站 HTTP](#受管出站-http)                   | 共享请求预算、代理及按节点收紧的访问范围                |
+| [日志系统配置](#host-logging)                     | 接入 LogTape 控制台与远程传输 Sink                      |
+| [数据库服务装配](#数据库服务后端选择)             | 为 `Pg` 或 `Sqlite` 选择驱动                            |
+| [独立轻量 Host](#独立-http-host)                  | 纯脚本或轻量进程中快速创建 Host                         |
+| [嵌入式 Host](#嵌入式-host)                       | 在页面、Worker、LLRT 或 React Native 中运行插件图       |
+| [Cloudflare Worker Host](#cloudflare-worker-host) | 在同一 isolate 内跨请求和 Cron 复用插件与服务           |
+| [生产构建与启动判定](#生产启动判定)               | 打包生产静态制品与严格就绪检查                          |
 
 ---
 
@@ -36,7 +36,7 @@ Pluxel 坚持尊重底层优秀生态的原生 API。在宿主配置中，你可
 
 - **文件存储**：直接使用 ZenFS 的标准挂载配置（`mounts`）；
 - **日志输出**：直接使用 LogTape 原生的 Sinks、Filters 与 Formatter 配置；
-- **关系数据库**：直接配置 PostgreSQL 连接参数或 PGlite 原生选项；
+- **关系数据库**：按方言安装 PostgreSQL、PGlite、本地 SQLite 或 Cloudflare D1 驱动；
 - **Web 服务**：基于 Elysia 2 原生实例进行扩展。
 
 预设函数负责填充开箱即用的默认参数，在需要深度定制时，你可以随时覆盖底层原生选项。
@@ -461,7 +461,9 @@ export const coreConfig = {
 
 ## 数据库服务后端选择
 
-应用在 `services` 中安装一个 `Pg` 服务。使用嵌入式 PGlite 时，安装 `@electric-sql/pglite` 并传入原生选项。省略选项会创建内存数据库。
+应用在 `services` 中为每个用到的方言选择一个驱动。PostgreSQL 的 `postgres()` 和 `pglite()` 都提供 `Pg`，SQLite 的 `libsql()` 和 `d1()` 都提供 `Sqlite`。
+
+使用嵌入式 PGlite 时，安装 `@electric-sql/pglite` 并传入原生选项。省略选项会创建内存数据库。
 
 ```ts
 import { defineHostApplication } from '@pluxel/host'
@@ -484,6 +486,62 @@ export default defineHostApplication(({ env }) => ({
 ```
 
 两个入口都在插件首次 `use()` 时打开连接。传入配置时由 Host 在排空操作后关闭资源。传入已有 `PGlite` 或 `pg.Pool` 实例时，由调用方在 Host 关闭后释放它。插件使用同一份 [Drizzle 表定义和查询](../plugin-development/database.md)。
+
+已有数据库使用 v2 迁移清单时，在升级 Host 前按原发布制品转换各实例的迁移记录。转换保留业务行和物理实例，随后由 Drizzle 追加迁移。[已有数据库的一次性切换](https://github.com/PluxelJS/pluxel/blob/main/engineering/DATABASE.md#现有-v2-数据库的一次性切换)
+
+### 本地 SQLite
+
+安装 `@libsql/client`，将 `libsql()` 加入 Node Host 的 `services`。插件首次 `use()` 时，Host 在指定目录打开属于插件或 fork 的文件并应用迁移。插件停止并排空调用后，Host 关闭连接。
+
+```ts
+import { defineHostApplication } from '@pluxel/host'
+import { libsql } from '@pluxel/services/sqlite/libsql'
+
+export default defineHostApplication(() => ({
+	services: [libsql({ directory: './data/sqlite' })],
+}))
+```
+
+### Cloudflare D1
+
+为每个托管插件或 fork 配置独立的 D1 数据库。用插件完整地址把 Worker 的原生绑定传给安装器。这里的 `NOTES_DB` 是 Wrangler 的 D1 binding 名称。
+
+```ts
+import { env } from 'cloudflare:workers'
+import { formatPluginNodeReference } from '@pluxel/core'
+import { defineHostApplication } from '@pluxel/host/application'
+import { d1 } from '@pluxel/services/sqlite/d1'
+import { NotesPlugin } from './notes-plugin'
+
+export default defineHostApplication(() => ({
+	plugins: [{ plugin: NotesPlugin, autoStart: true }],
+	services: [d1({ [formatPluginNodeReference(NotesPlugin.nodeAddress())]: env.NOTES_DB })],
+}))
+```
+
+部署端安装 `@pluxel/rolldown`。从 Node 传入目标 D1 binding 和已发布插件的 `dist/database/migrations` 目录，给每个物理库安排一个串行迁移任务，再发布依赖新表结构的 Worker。下面使用 Wrangler 的本地绑定。部署到远端时，显式选择对应环境与 remote binding。[Wrangler getPlatformProxy](https://developers.cloudflare.com/workers/wrangler/api/#getplatformproxy)
+
+```ts
+import type { D1Database } from '@cloudflare/workers-types'
+import { formatPluginNodeReference } from '@pluxel/core'
+import { migrateD1 } from '@pluxel/services/sqlite/d1/migrate'
+import { getPlatformProxy } from 'wrangler'
+import { NotesPlugin } from './dist/notes-plugin.mjs'
+
+const proxy = await getPlatformProxy<{ NOTES_DB: D1Database }>({ remoteBindings: false })
+try {
+	await migrateD1(proxy.env.NOTES_DB, {
+		owner: formatPluginNodeReference(NotesPlugin.nodeAddress()),
+		migrationsFolder: './dist/database/migrations',
+	})
+} finally {
+	await proxy.dispose()
+}
+```
+
+默认 `evolution` 为 `migrations`。插件使用 `reset-on-schema-change` 时，把定义的 `evolution` 传给 `migrateD1()`。它只接管空库或已有相同身份的托管数据库。保留 Wrangler 迁移历史的应用自管库继续使用原有执行器。滚动发布期间，旧 Worker 仍可能执行查询，请按运行中的版本安排兼容的 schema 变更。
+
+D1 始终启用外键。生成的迁移若依赖 `PRAGMA foreign_keys=OFF` 重建父表，部署检查会指出对应迁移。请在发布前改成适合 D1 的 SQL，并验证原有子记录仍在。`defer_foreign_keys` 只能推迟约束检查，删除父表仍会执行 `ON DELETE CASCADE`。[D1 外键语义](https://developers.cloudflare.com/d1/sql-api/foreign-keys/)
 
 <span id="application-private-database"></span>
 

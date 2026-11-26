@@ -103,11 +103,11 @@
 			"default": "./dist/pg.mjs"
 		},
 		"./pg/pglite": {
-			"@pluxel/source": "./src/database/pglite.ts",
+			"@pluxel/source": "./src/database/pg/pglite.ts",
 			"default": "./dist/pg/pglite.mjs"
 		},
 		"./pg/postgres": {
-			"@pluxel/source": "./src/database/postgres.ts",
+			"@pluxel/source": "./src/database/pg/postgres.ts",
 			"default": "./dist/pg/postgres.mjs"
 		},
 		"./plugins": {
@@ -121,6 +121,22 @@
 		"./sources": {
 			"@pluxel/source": "./src/sources.ts",
 			"default": "./dist/sources.mjs"
+		},
+		"./sqlite": {
+			"@pluxel/source": "./src/sqlite.ts",
+			"default": "./dist/sqlite.mjs"
+		},
+		"./sqlite/d1": {
+			"@pluxel/source": "./src/database/sqlite/d1.ts",
+			"default": "./dist/sqlite/d1.mjs"
+		},
+		"./sqlite/d1/migrate": {
+			"@pluxel/source": "./src/database/sqlite/d1-migrate.ts",
+			"default": "./dist/sqlite/d1/migrate.mjs"
+		},
+		"./sqlite/libsql": {
+			"@pluxel/source": "./src/database/sqlite/libsql.ts",
+			"default": "./dist/sqlite/libsql.mjs"
 		},
 		"./vite": {
 			"@pluxel/source": "./src/vite.ts",
@@ -166,6 +182,10 @@
 			"./plugins": "./dist/plugins.mjs",
 			"./preset": "./dist/preset.mjs",
 			"./sources": "./dist/sources.mjs",
+			"./sqlite": "./dist/sqlite.mjs",
+			"./sqlite/d1": "./dist/sqlite/d1.mjs",
+			"./sqlite/d1/migrate": "./dist/sqlite/d1/migrate.mjs",
+			"./sqlite/libsql": "./dist/sqlite/libsql.mjs",
 			"./vite": "./dist/vite.mjs",
 			"./workers": "./dist/workers.mjs",
 			"./package.json": "./package.json",
@@ -197,7 +217,9 @@
 		"valibot-form": "workspace:^"
 	},
 	"devDependencies": {
+		"@cloudflare/workers-types": "catalog:dev",
 		"@electric-sql/pglite": "catalog:prod",
+		"@libsql/client": "catalog:backend",
 		"@logtape/logtape": "catalog:prod",
 		"@mantine/core": "catalog:frontend",
 		"@pluxel/agent-sdk": "workspace:*",
@@ -216,6 +238,7 @@
 		"capnweb": "catalog:prod",
 		"elysia": "catalog:prod",
 		"fs-fixture": "catalog:dev",
+		"miniflare": "catalog:dev",
 		"pg": "catalog:backend",
 		"playwright-core": "catalog:prod",
 		"react": "catalog:frontend",
@@ -226,7 +249,9 @@
 		"vite-plus": "catalog:build"
 	},
 	"peerDependencies": {
+		"@cloudflare/workers-types": "catalog:dev",
 		"@electric-sql/pglite": "catalog:prod",
+		"@libsql/client": "catalog:backend",
 		"@mantine/core": "catalog:frontend",
 		"@pluxel/commands": "workspace:^",
 		"@pluxel/core": "workspace:^",
@@ -243,6 +268,12 @@
 		"vite": ">=8.2.2 <9"
 	},
 	"peerDependenciesMeta": {
+		"@cloudflare/workers-types": {
+			"optional": true
+		},
+		"@libsql/client": {
+			"optional": true
+		},
 		"@pluxel/commands": {
 			"optional": true
 		},

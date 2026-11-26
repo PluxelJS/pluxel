@@ -9,13 +9,13 @@ import {
 } from '@pluxel/core/federation'
 import type { Program } from 'oxc-parser'
 import { dirname, extname, isAbsolute, join, relative, resolve } from 'pathe'
+import { findDatabasePackageRoot } from '../database/artifact.ts'
 import {
-	findDatabasePackageRoot,
-	loadDatabaseArtifactForSource,
-	type DatabaseBuildArtifact,
-} from '../database/artifact.ts'
+	publishDatabaseArtifact,
+	resolveDatabaseArtifact,
+	type DatabaseSourceArtifact,
+} from '../database/source.ts'
 import { extractDatabaseDeclarations, mayDeclareDatabase } from '../database/declaration.ts'
-import { generateResetDatabaseArtifact } from '../database/reset-artifact.ts'
 import { resolveWithOxc } from '../resolver/oxc.ts'
 import { collectImportSpecifiers } from '../rolldown/plugins/importCollector.ts'
 import type {
@@ -73,11 +73,7 @@ type NodeModuleDeclaration = Readonly<{
 
 type DatabasePackage = Readonly<{
 	sourceFile: string
-	loaded: Promise<{
-		migrationsDir: string
-		artifact: DatabaseBuildArtifact
-		cleanup?: () => Promise<void>
-	}>
+	loaded: Promise<DatabaseSourceArtifact>
 }>
 
 export type PluginArtifactBuildPluginOptions = {
@@ -146,9 +142,8 @@ export function pluginArtifactBuildPlugin(
 	return {
 		name: 'pluxel-plugin-artifact-build',
 		enforce: 'pre',
-		async buildStart() {
+		buildStart() {
 			options.node?.onNativeResidualReset?.()
-			await cleanupGeneratedDatabaseArtifacts(databasePackages)
 			nodeDeclarations.clear()
 			databasePackages.clear()
 		},
@@ -179,19 +174,17 @@ export function pluginArtifactBuildPlugin(
 					if (!owner) {
 						owner = {
 							sourceFile: id,
-							loaded:
-								declaration.evolution === 'reset-on-schema-change'
-									? generateResetDatabaseArtifact({ root: packageRoot, schema: id })
-									: loadDatabaseArtifactForSource(id, root),
+							loaded: resolveDatabaseArtifact(
+								packageRoot,
+								id,
+								declaration,
+								(file) => this.addWatchFile(file),
+								packageRoot === root,
+							),
 						}
 						databasePackages.set(packageRoot, owner)
 					}
 					const loaded = await owner.loaded
-					if (loaded.artifact.evolution !== declaration.evolution) {
-						this.error(
-							`[database] ${id} declares evolution "${declaration.evolution}" but its artifact uses "${loaded.artifact.evolution}"`,
-						)
-					}
 					databaseArtifact = JSON.stringify(loaded.artifact)
 				}
 				for (const declaration of extractedNode) {
@@ -269,7 +262,14 @@ export function pluginArtifactBuildPlugin(
 				...selectedNodeDeclarations
 					.sort((a, b) => a.artifactKey.localeCompare(b.artifactKey))
 					.map((declaration) => buildProductionNodeModule(root, declaration, options)),
-				...(database ? [copyDatabaseMigrations(database.migrationsDir, root, options)] : []),
+				...(database
+					? [
+							publishDatabaseArtifact(
+								database,
+								resolve(root, options.buildDir ?? 'dist', 'database/migrations'),
+							),
+						]
+					: []),
 			])
 			const artifactRoot = resolve(root, options.buildDir ?? 'dist', 'artifacts/node')
 			await mkdir(artifactRoot, { recursive: true })
@@ -301,8 +301,7 @@ export function pluginArtifactBuildPlugin(
 				])
 			}
 		},
-		async closeBundle() {
-			await cleanupGeneratedDatabaseArtifacts(databasePackages)
+		closeBundle() {
 			databasePackages.clear()
 		},
 	}
@@ -564,30 +563,6 @@ function extractNodeModuleDeclarations(
 		})
 	})
 	return out
-}
-
-async function copyDatabaseMigrations(
-	source: string,
-	root: string,
-	options: PluginArtifactBuildPluginOptions,
-): Promise<void> {
-	const target = resolve(root, options.buildDir ?? 'dist', 'database/migrations')
-	await rm(target, { recursive: true, force: true })
-	await mkdir(dirname(target), { recursive: true })
-	await cp(source, target, { recursive: true })
-}
-
-async function cleanupGeneratedDatabaseArtifacts(
-	packages: ReadonlyMap<string, DatabasePackage>,
-): Promise<void> {
-	await Promise.all(
-		[...packages.values()].map(({ loaded }) =>
-			loaded.then(
-				(artifact) => artifact.cleanup?.(),
-				(): undefined => undefined,
-			),
-		),
-	)
 }
 
 function collectModuleConstCallInitializers(ast: Program): Set<NodeLike> {

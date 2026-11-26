@@ -5,12 +5,19 @@ import {
 	type PluginDatabaseHandle,
 } from '@pluxel/services/pg'
 import { pglite } from '@pluxel/services/pg/pglite'
+import { PGlite } from '@electric-sql/pglite'
+import { citext } from '@electric-sql/pglite/contrib/citext'
+import { hstore } from '@electric-sql/pglite/contrib/hstore'
+import { ltree } from '@electric-sql/pglite/contrib/ltree'
+import { createTestHost } from '@pluxel/test'
 import { createHash } from 'node:crypto'
 import { EventEmitter } from 'node:events'
 import { mkdtemp, rm } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import { pgTable, text } from 'drizzle-orm/pg-core'
+import { sql } from 'drizzle-orm'
+import { drizzle } from 'drizzle-orm/pglite'
+import { customType, pgTable, text } from 'drizzle-orm/pg-core'
 import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest'
 
 import {
@@ -19,8 +26,8 @@ import {
 } from '@pluxel/services/internal/test'
 import { BasePlugin, Plugin } from '@pluxel/core/internal/test'
 import { type DatabaseArtifact } from '../../src/database/artifact'
-import { attachPostgresPoolErrorHandler } from '../../src/database/adapters/shared'
-import { subscribeDatabaseHandle } from '../../src/database/service'
+import { attachPostgresPoolErrorHandler } from '../../src/database/pg/adapters/postgres'
+import { subscribeDatabaseHandle } from '../../src/database/pg/coordinator'
 import { lowerTestPlugin } from '../helpers/lowered-plugin'
 
 const migrationSql = `
@@ -32,34 +39,36 @@ const migrationSql = `
 
 const addTagMigrationSql = `
 	ALTER TABLE items ADD COLUMN tag text NOT NULL DEFAULT 'legacy';
+	--> statement-breakpoint
 	UPDATE items SET value = value || '-migrated'
 `.trim()
 
-function databaseFixture(lineage = 'main') {
+function migration(folderMillis: number, source: string) {
+	return {
+		folderMillis,
+		hash: createHash('sha256').update(source).digest('hex'),
+		bps: true,
+		sql: source.split('--> statement-breakpoint'),
+	}
+}
+
+// The server compiler supplies the second argument at the plugin's declaration.
+const compiledDatabase = defineDatabase as <Schema extends Record<string, unknown>>(
+	input: Parameters<typeof defineDatabase<Schema>>[0],
+	artifact: DatabaseArtifact,
+) => DatabaseDefinition<Schema>
+
+function databaseFixture(lineage = 'main', migrations = [migration(1000, migrationSql)]) {
 	const items = pgTable('items', {
 		id: text('id').primaryKey(),
 		value: text('value').notNull(),
 	})
-	const artifact: DatabaseArtifact = {
-		evolution: 'migrations',
-		lineage,
-		migrations: [
-			{
-				id: '0000_initial',
-				checksum: createHash('sha256').update(migrationSql).digest('hex'),
-				sql: migrationSql,
-			},
-		],
-	}
 	return {
 		items,
-		// Production builds inject the validated artifact; tests exercise the same hidden runtime path.
-		database: (
-			defineDatabase as unknown as (
-				input: { schema: { items: typeof items } },
-				artifact: DatabaseArtifact,
-			) => DatabaseDefinition<{ items: typeof items }>
-		)({ schema: { items } }, artifact),
+		database: compiledDatabase(
+			{ schema: { items } },
+			{ evolution: 'migrations', lineage, migrations },
+		),
 	}
 }
 
@@ -72,85 +81,30 @@ function upgradedDatabaseFixture(lineage = 'main') {
 	const artifact: DatabaseArtifact = {
 		evolution: 'migrations',
 		lineage,
-		migrations: [
-			{
-				id: '0000_initial',
-				checksum: createHash('sha256').update(migrationSql).digest('hex'),
-				sql: migrationSql,
-			},
-			{
-				id: '0001_add_tag',
-				checksum: createHash('sha256').update(addTagMigrationSql).digest('hex'),
-				sql: addTagMigrationSql,
-			},
-		],
+		migrations: [migration(1000, migrationSql), migration(2000, addTagMigrationSql)],
 	}
-	return {
-		items,
-		database: (
-			defineDatabase as unknown as (
-				input: { schema: { items: typeof items } },
-				artifact: DatabaseArtifact,
-			) => DatabaseDefinition<{ items: typeof items }>
-		)({ schema: { items } }, artifact),
-	}
+	return { items, artifact, database: compiledDatabase({ schema: { items } }, artifact) }
 }
 
 function invalidDatabaseFixture(lineage: string) {
-	const items = pgTable('items', {
-		id: text('id').primaryKey(),
-		value: text('value').notNull(),
-	})
-	const invalidSql = `${migrationSql};\nSELECT * FROM migration_table_that_does_not_exist`
-	const artifact: DatabaseArtifact = {
-		evolution: 'migrations',
-		lineage,
-		migrations: [
-			{
-				id: '0000_invalid',
-				checksum: createHash('sha256').update(invalidSql).digest('hex'),
-				sql: invalidSql,
-			},
-		],
-	}
-	return {
-		items,
-		database: (
-			defineDatabase as unknown as (
-				input: { schema: { items: typeof items } },
-				artifact: DatabaseArtifact,
-			) => DatabaseDefinition<{ items: typeof items }>
-		)({ schema: { items } }, artifact),
-	}
+	const source = `${migrationSql};
+--> statement-breakpoint
+SELECT * FROM migration_table_that_does_not_exist`
+	return databaseFixture(lineage, [migration(1000, source)])
 }
 
-function resetDatabaseFixture(sql: string) {
+function resetDatabaseFixture(source: string) {
 	const items = pgTable('items', {
 		id: text('id').primaryKey(),
 		value: text('value').notNull(),
 	})
-	const artifact: DatabaseArtifact = {
-		evolution: 'reset-on-schema-change',
-		lineage: 'reset-stable-schema',
-		migrations: [
-			{
-				id: '0000_baseline',
-				checksum: createHash('sha256').update(sql).digest('hex'),
-				sql,
-			},
-		],
-	}
+	const evolution = 'reset-on-schema-change'
 	return {
 		items,
-		database: (
-			defineDatabase as unknown as (
-				input: {
-					schema: { items: typeof items }
-					evolution: 'reset-on-schema-change'
-				},
-				artifact: DatabaseArtifact,
-			) => DatabaseDefinition<{ items: typeof items }>
-		)({ schema: { items }, evolution: 'reset-on-schema-change' }, artifact),
+		database: compiledDatabase(
+			{ schema: { items }, evolution },
+			{ evolution, lineage: 'reset-stable-schema', migrations: [migration(0, source)] },
+		),
 	}
 }
 
@@ -254,6 +208,8 @@ describe('DatabaseService', () => {
 			host.start(CachedDatabaseHandlePlugin)
 			await host.commit()
 			const database = host.require(CachedDatabaseHandlePlugin).db
+			const retiredListener = vi.fn()
+			subscribeDatabaseHandle(database, [definition.items], retiredListener)
 
 			host.remove(CachedDatabaseHandlePlugin)
 			await host.commit()
@@ -264,12 +220,24 @@ describe('DatabaseService', () => {
 			expect(() =>
 				subscribeDatabaseHandle(database, [definition.items], (): undefined => undefined),
 			).toThrow('database handle owner has stopped')
+
+			host.add(CachedDatabaseHandlePlugin)
+			host.start(CachedDatabaseHandlePlugin)
+			await host.commit()
+			const next = host.require(CachedDatabaseHandlePlugin).db
+			const published = Promise.withResolvers<void>()
+			subscribeDatabaseHandle(next, [definition.items], published.resolve)
+			await next.transaction((tx) =>
+				tx.insert(definition.items).values({ id: 'item', value: 'new' }),
+			)
+			await published.promise
+			expect(retiredListener).not.toHaveBeenCalled()
 		} finally {
 			await resetRuntimeHost(host)
 		}
 	}, 30_000)
 
-	it('isolates rows and publishes only committed invalidations for each database owner', async () => {
+	it('schedules isolated owners fairly and publishes only their committed writes', async () => {
 		const definition = databaseFixture()
 		const host = databaseHost
 		try {
@@ -300,8 +268,29 @@ describe('DatabaseService', () => {
 
 			const left = host.require(DatabaseLeft).db
 			const right = host.require(DatabaseRight).db
+			const entered = Promise.withResolvers<void>()
+			const release = Promise.withResolvers<void>()
+			const held = left.read(async () => {
+				entered.resolve()
+				await release.promise
+			})
+			await entered.promise
+			const order: string[] = []
+			const queued = [
+				left.read(() => order.push('left 1')),
+				left.read(() => order.push('left 2')),
+				right.read(() => order.push('right 1')),
+				right.read(() => order.push('right 2')),
+			]
+			release.resolve()
+			await Promise.all([held, ...queued])
+			expect(order).toEqual(['left 1', 'right 1', 'left 2', 'right 2'])
 			const leftPublished = Promise.withResolvers<void>()
 			const rightPublished = vi.fn()
+			const broken = vi.fn(() => {
+				throw new Error('observer failed')
+			})
+			const unsubscribeBroken = subscribeDatabaseHandle(left, [definition.items], broken)
 			const unsubscribeLeft = subscribeDatabaseHandle(left, [definition.items], () => {
 				leftPublished.resolve()
 			})
@@ -320,8 +309,10 @@ describe('DatabaseService', () => {
 				)
 				// Observing the later commit confirms the outbox has processed the earlier transaction.
 				await leftPublished.promise
+				expect(broken).toHaveBeenCalledOnce()
 				expect(rightPublished).not.toHaveBeenCalled()
 			} finally {
+				unsubscribeBroken()
 				unsubscribeLeft()
 				unsubscribeRight()
 			}
@@ -501,9 +492,8 @@ describe('DatabaseService', () => {
 
 			@Plugin({ displayName: 'IncrementalDatabasePlugin' })
 			class UpgradedPlugin extends BasePlugin {
-				db!: PluginDatabaseHandle<typeof upgraded.database>
-				override async init() {
-					this.db = await this.ctx.service(Pg).use(upgraded.database)
+				get pg() {
+					return this.ctx.service(Pg)
 				}
 			}
 			lowerTestPlugin(UpgradedPlugin, { id: 'IncrementalDatabasePlugin' })
@@ -511,7 +501,24 @@ describe('DatabaseService', () => {
 			host.cfg(UpgradedPlugin).setAutoStart(true)
 			host.start(UpgradedPlugin)
 			await host.commit()
-			const next = host.require(UpgradedPlugin).db
+			const pg = host.require(UpgradedPlugin).pg
+			const rewritten = databaseFixture('incremental', [migration(1000, migrationSql + '\n')])
+			await expect(pg.use(rewritten.database)).rejects.toThrow(/immutable prefix/)
+
+			// Installing a trigger for this absent table fails after Drizzle has executed and
+			// journaled the ALTER/UPDATE. Retrying must apply both exactly once.
+			const missing = pgTable('missing', { id: text('id') })
+			const invalid = compiledDatabase(
+				{ schema: { items: upgraded.items, missing } },
+				upgraded.artifact,
+			)
+			await expect(pg.use(invalid)).rejects.toThrow(/missing/)
+			const beforeRetry = await pg.use(initial.database)
+			await expect(beforeRetry.read((db) => db.query.items.findMany())).resolves.toEqual([
+				{ id: 'kept', value: 'before' },
+			])
+			await host.restart(UpgradedPlugin).commit()
+			const next = await host.require(UpgradedPlugin).pg.use(upgraded.database)
 			expect((next as any).instance.instanceId).toBe(initialInstance)
 			await expect(next.read((db) => db.select().from(upgraded.items))).resolves.toEqual([
 				{ id: 'kept', value: 'before-migrated', tag: 'legacy' },
@@ -521,50 +528,118 @@ describe('DatabaseService', () => {
 		}
 	}, 30_000)
 
-	it('activates a fresh instance when the plugin changes lineage', async () => {
+	it('rejects superseded handles across Hosts borrowing one PGlite database', async () => {
 		const first = databaseFixture('release-a')
 		const second = databaseFixture('release-b')
-		const host = databaseHost
+		const client = await PGlite.create()
 		try {
-			@Plugin({ displayName: 'RebasedDatabasePlugin' })
-			class FirstRelease extends BasePlugin {
-				db!: PluginDatabaseHandle<typeof first.database>
-				override async init() {
-					this.db = await this.ctx.service(Pg).use(first.database)
-					await this.db.transaction((tx) =>
-						tx.insert(first.items).values({ id: 'old', value: 'archived' }),
-					)
+			const options = { workbench: false as const, services: [pglite(client)] }
+			await using firstHost = await createServiceInternalTestHarness(options)
+			await using secondHost = await createServiceInternalTestHarness(options)
+			@Plugin()
+			class RebasedPlugin extends BasePlugin {
+				get pg() {
+					return this.ctx.service(Pg)
 				}
 			}
-			lowerTestPlugin(FirstRelease, { id: 'RebasedDatabasePlugin' })
-			host.add(FirstRelease)
-			host.cfg(FirstRelease).setAutoStart(true)
-			host.start(FirstRelease)
-			await host.commit()
-			const firstInstance = (host.require(FirstRelease).db as any).instance.instanceId
-			host.remove(FirstRelease)
-			await host.commit()
-
-			@Plugin({ displayName: 'RebasedDatabasePlugin' })
-			class SecondRelease extends BasePlugin {
-				db!: PluginDatabaseHandle<typeof second.database>
-				override async init() {
-					this.db = await this.ctx.service(Pg).use(second.database)
-				}
+			lowerTestPlugin(RebasedPlugin)
+			for (const host of [firstHost, secondHost]) {
+				host.add(RebasedPlugin)
+				host.start(RebasedPlugin)
+				await host.commit()
 			}
-			lowerTestPlugin(SecondRelease, { id: 'RebasedDatabasePlugin' })
-			host.add(SecondRelease)
-			host.cfg(SecondRelease).setAutoStart(true)
-			host.start(SecondRelease)
-			await host.commit()
-			const next = host.require(SecondRelease).db
-			expect((next as any).instance.instanceId).not.toBe(firstInstance)
+			const previous = await firstHost.require(RebasedPlugin).pg.use(first.database)
+			await previous.transaction((tx) =>
+				tx.insert(first.items).values({ id: 'old', value: 'archived' }),
+			)
+			const next = await secondHost.require(RebasedPlugin).pg.use(second.database)
 			await expect(next.read((db) => db.select().from(second.items))).resolves.toEqual([])
-			await expect(
-				next.transaction((tx) => tx.insert(second.items).values({ id: 'new', value: 'active' })),
-			).resolves.toBeDefined()
+			const callback = vi.fn()
+			await expect(previous.read(callback)).rejects.toThrow(
+				'database handle instance has been replaced',
+			)
+			await expect(previous.transaction(callback)).rejects.toThrow(
+				'database handle instance has been replaced',
+			)
+			expect(callback).not.toHaveBeenCalled()
+			await next.transaction((tx) => tx.insert(second.items).values({ id: 'new', value: 'active' }))
+			expect(await next.read((db) => db.query.items.findMany())).toEqual([
+				{ id: 'new', value: 'active' },
+			])
 		} finally {
-			await resetRuntimeHost(host)
+			await client.close()
+		}
+	}, 30_000)
+
+	it('shares declared PostgreSQL extensions across forks while keeping private schemas isolated', async () => {
+		const client = await PGlite.create({ extensions: { citext, hstore, ltree } })
+		try {
+			await client.exec(
+				`CREATE SCHEMA "app types"; CREATE EXTENSION hstore WITH SCHEMA "app types"; CREATE EXTENSION ltree WITH SCHEMA public`,
+			)
+			const items = pgTable('items', {
+				id: customType<{ data: string }>({ dataType: () => 'citext' })().primaryKey(),
+			})
+			const definition = compiledDatabase(
+				{ schema: { items }, requirements: { extensions: ['citext', 'hstore', 'ltree'] } },
+				{
+					evolution: 'migrations',
+					lineage: 'extensions',
+					migrations: [migration(1000, 'CREATE TABLE items (id citext PRIMARY KEY)')],
+				},
+			)
+			@Plugin({ forkable: true })
+			class ExtensionOwner extends BasePlugin {
+				open() {
+					return this.ctx.service(Pg).use(definition)
+				}
+			}
+			lowerTestPlugin(ExtensionOwner)
+			await using host = await createTestHost({ services: [pglite(client)] })
+			const [owner, fork, another] = await host.start([
+				ExtensionOwner.nodeAddress(),
+				ExtensionOwner.nodeAddress('tenant'),
+				ExtensionOwner.nodeAddress('another'),
+			])
+			const primary = await owner.open()
+			for (const handle of [primary, await fork.open()]) {
+				await handle.transaction((tx) => tx.insert(items).values({ id: 'ABC' }))
+				expect(
+					await handle.read((db) =>
+						db
+							.select({
+								matches: sql<boolean>`${items.id} = 'abc'::citext`,
+								value: sql<string>`'key=>value'::hstore -> 'key'`,
+								depth: sql<number>`nlevel('one.two'::ltree)`,
+							})
+							.from(items),
+					),
+				).toEqual([{ matches: true, value: 'value', depth: 2 }])
+			}
+			const namespaces = () =>
+				client.query<{ name: string; schema: string }>(
+					`SELECT e.extname AS name, n.nspname AS schema FROM pg_extension e JOIN pg_namespace n ON n.oid = e.extnamespace
+				 WHERE extname IN ('citext','hstore','ltree') ORDER BY e.extname`,
+				)
+			const installed = await namespaces()
+			expect(installed.rows).toEqual([
+				{ name: 'citext', schema: 'pluxel_extensions' },
+				{ name: 'hstore', schema: 'app types' },
+				{ name: 'ltree', schema: 'public' },
+			])
+
+			// Reproduce a database where an earlier Host installed citext into its first owner.
+			const [row] = await primary.read((db) =>
+				db.select({ schema: sql<string>`current_schema()` }).from(items),
+			)
+			await drizzle(client).execute(
+				sql`ALTER EXTENSION citext SET SCHEMA ${sql.identifier(row!.schema)}`,
+			)
+			await expect(another.open()).rejects.toThrow(/citext.*private schema.*administrator/)
+			const unchanged = await namespaces()
+			expect(unchanged.rows[0]?.schema).toBe(row!.schema)
+		} finally {
+			await client.close()
 		}
 	}, 30_000)
 

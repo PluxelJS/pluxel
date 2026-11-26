@@ -165,48 +165,75 @@ export const items = pgTable('items', { id: text('id').primaryKey() })`,
 		})
 	})
 
-	it('embeds checked migrations without exposing an author artifact argument', async () => {
-		const migration = 'CREATE TABLE items (id text PRIMARY KEY)'
-		const checksum = createHash('sha256').update(migration).digest('hex')
-		await using fixture = await createFixture({
-			'package.json': JSON.stringify({ name: 'database-fixture', type: 'module' }),
-			'node_modules/@pluxel/services/package.json': JSON.stringify({
-				name: '@pluxel/services',
-				type: 'module',
-				exports: { './pg': './pg.js' },
-			}),
-			'node_modules/@pluxel/services/pg.js':
-				'export const defineDatabase = (definition, artifact) => ({ definition, artifact })',
-			'src/index.ts':
-				"import * as pg from '@pluxel/services/pg'\nexport const database = pg.defineDatabase(({ schema: {} }), /* trailing comma */)\n",
-			'drizzle/0000_initial.sql': `${migration}\n`,
-			'drizzle/pluxel-migrations.json': JSON.stringify({
-				version: 2,
-				lineage: 'main',
-				migrations: [{ id: '0000_initial', file: '0000_initial.sql', checksum }],
-			}),
-		})
-		const bundle = await rolldown({
-			input: `${fixture.path}/src/index.ts`,
-			external: ['@pluxel/services/pg'],
-			plugins: [pluginArtifactBuildPlugin({ root: fixture.path, buildDir: 'dist' })],
-		})
-		await bundle.write({ dir: `${fixture.path}/dist`, format: 'esm' })
-		await bundle.close()
+	it.each(['postgresql', 'sqlite'] as const)(
+		'embeds checked %s migrations in the published plugin',
+		async (dialect) => {
+			const entry = dialect === 'sqlite' ? 'sqlite' : 'pg'
+			const migration = 'CREATE TABLE items (id text PRIMARY KEY)'
+			const checksum = createHash('sha256')
+				.update(migration + '\n')
+				.digest('hex')
+			await using fixture = await createFixture({
+				'package.json': JSON.stringify({ name: 'database-fixture', type: 'module' }),
+				'node_modules/@pluxel/services/package.json': JSON.stringify({
+					name: '@pluxel/services',
+					type: 'module',
+					exports: { [`./${entry}`]: './database.js' },
+				}),
+				'node_modules/@pluxel/services/database.js':
+					'export const defineDatabase = (definition, artifact) => ({ definition, artifact })',
+				'src/index.ts': `import * as dialect from '@pluxel/services/${entry}'\nexport const database = dialect.defineDatabase(({ schema: {} }), /* trailing comma */)\n`,
+				'drizzle/0000_initial.sql': `${migration}\n`,
+				'drizzle/meta/0000_snapshot.json': '{"id":"original snapshot"}',
+				'drizzle/pluxel-migrations.json': JSON.stringify({ lineage: 'main' }),
+				'drizzle/meta/_journal.json': JSON.stringify({
+					dialect,
+					entries: [{ idx: 0, tag: '0000_initial', when: 1, breakpoints: true }],
+				}),
+			})
+			const bundle = await rolldown({
+				input: `${fixture.path}/src/index.ts`,
+				external: [`@pluxel/services/${entry}`],
+				plugins: [
+					pluginArtifactBuildPlugin({ root: fixture.path, buildDir: 'dist' }),
+					{
+						name: 'edit-sql-after-source-transform',
+						async generateBundle() {
+							await writeFile(join(fixture.path, 'drizzle/0000_initial.sql'), 'SELECT 2;')
+							await writeFile(
+								join(fixture.path, 'drizzle/meta/0000_snapshot.json'),
+								'{"id":"changed"}',
+							)
+						},
+					},
+				],
+			})
+			await bundle.write({ dir: `${fixture.path}/dist`, format: 'esm' })
+			await bundle.close()
 
-		const server = await readFile(`${fixture.path}/dist/index.js`, 'utf8')
-		expect(server).toContain('main')
-		expect(server).toContain(checksum)
-		expect(server).toContain(migration)
-		const built = await import(pathToFileURL(join(fixture.path, 'dist/index.js')).href)
-		expect(built.database).toMatchObject({
-			definition: { schema: {} },
-			artifact: { lineage: 'main', migrations: [{ checksum }] },
-		})
-		await expect(
-			readFile(`${fixture.path}/dist/database/migrations/0000_initial.sql`, 'utf8'),
-		).resolves.toBe(`${migration}\n`)
-	})
+			const server = await readFile(`${fixture.path}/dist/index.js`, 'utf8')
+			expect(server).toContain('main')
+			expect(server).toContain(checksum)
+			expect(server).toContain(migration)
+			const built = await import(pathToFileURL(join(fixture.path, 'dist/index.js')).href)
+			expect(built.database).toMatchObject({
+				definition: { schema: {} },
+				artifact: {
+					lineage: 'main',
+					migrations: [{ folderMillis: 1, hash: checksum, bps: true, sql: [migration + '\n'] }],
+				},
+			})
+			await expect(
+				readFile(`${fixture.path}/dist/database/migrations/0000_initial.sql`, 'utf8'),
+			).resolves.toBe(`${migration}\n`)
+			expect(
+				await readFile(
+					join(fixture.path, 'dist/database/migrations/meta/0000_snapshot.json'),
+					'utf8',
+				),
+			).toBe('{"id":"original snapshot"}')
+		},
+	)
 
 	it('rejects parallel database declarations from the same package', async () => {
 		const declaration =
@@ -215,10 +242,11 @@ export const items = pgTable('items', { id: text('id').primaryKey() })`,
 			'package.json': JSON.stringify({ name: 'duplicate-db', type: 'module' }),
 			'first.ts': declaration,
 			'second.ts': declaration,
-			'drizzle/pluxel-migrations.json': JSON.stringify({
-				version: 2,
-				lineage: 'main',
-				migrations: [],
+			'drizzle/pluxel-migrations.json': JSON.stringify({ lineage: 'main' }),
+			'drizzle/0000_initial.sql': 'SELECT 1;',
+			'drizzle/meta/_journal.json': JSON.stringify({
+				dialect: 'postgresql',
+				entries: [{ idx: 0, tag: '0000_initial', when: 1, breakpoints: true }],
 			}),
 		})
 		const bundle = await rolldown({
@@ -287,8 +315,11 @@ export const items = pgTable('items', { id: text('id').primaryKey() })`,
 			expect(server).toMatch(/reset-[a-f0-9]{40}/)
 			const manifest = JSON.parse(
 				await readFile(join(root, 'dist/database/migrations/pluxel-migrations.json'), 'utf8'),
-			) as { evolution: string; lineage: string }
-			expect(manifest.evolution).toBe('reset-on-schema-change')
+			) as { lineage: string }
+			expect(Object.keys(manifest)).toEqual(['lineage'])
+			await expect(
+				readFile(join(root, 'dist/database/migrations/meta/_journal.json'), 'utf8'),
+			).resolves.toContain('0000_baseline')
 			expect(server).toContain(manifest.lineage)
 			await expect(
 				readFile(join(root, 'dist/database/migrations/0000_baseline.sql'), 'utf8'),

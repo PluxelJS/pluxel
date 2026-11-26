@@ -1,7 +1,6 @@
 import { drizzle } from 'drizzle-orm/node-postgres'
 import { Pool, type PoolConfig } from 'pg'
-import { attachPostgresPoolErrorHandler } from './shared'
-import type { DatabaseAdapter } from '../service'
+import type { DatabaseAdapter } from '../coordinator'
 
 export async function createPostgresDatabaseAdapter(
 	config: PoolConfig | Pool,
@@ -18,6 +17,7 @@ export async function createPostgresDatabaseAdapter(
 		return {
 			driver: 'postgres',
 			db: drizzle({ client: pool }),
+			withSchema: (schema) => drizzle({ client: pool, schema }),
 			concurrency,
 			async close() {
 				try {
@@ -29,21 +29,37 @@ export async function createPostgresDatabaseAdapter(
 		}
 	} catch (cause) {
 		detachErrorHandler?.()
+		let failure = cause
 		if (!borrowed) {
-			let cleanupFailure: { error: unknown } | undefined
 			try {
 				await pool.end()
 			} catch (cleanupError) {
-				cleanupFailure = { error: cleanupError }
-			}
-			if (cleanupFailure) {
-				throw new AggregateError(
-					[cause, cleanupFailure.error],
+				failure = new AggregateError(
+					[cause, cleanupError],
 					'PostgreSQL adapter setup and cleanup failed',
 					{ cause },
 				)
 			}
 		}
-		throw cause
+		throw failure
+	}
+}
+
+/** Keep pg-pool idle-client failures operational instead of process-fatal. */
+export function attachPostgresPoolErrorHandler(
+	pool: Pick<Pool, 'on' | 'off'>,
+	report: (error: Error) => void,
+): () => void {
+	const listener = (error: Error): void => {
+		try {
+			report(error)
+		} catch {
+			// EventEmitter treats a thrown `error` listener as process-fatal too. Reporting must be a
+			// terminal boundary because pg-pool has already removed the failed idle client.
+		}
+	}
+	pool.on('error', listener)
+	return () => {
+		pool.off('error', listener)
 	}
 }

@@ -2,29 +2,58 @@ import { createHash } from 'node:crypto'
 import { PGlite } from '@electric-sql/pglite'
 import { BasePlugin, Plugin } from '@pluxel/core'
 import { createHost } from '@pluxel/host'
-import { Pg, defineDatabase, type PluginDatabaseHandle } from '@pluxel/services/pg'
+import {
+	Pg,
+	defineDatabase,
+	type DatabaseDefinition,
+	type PluginDatabaseHandle,
+} from '@pluxel/services/pg'
 import { pglite } from '@pluxel/services/pg/pglite'
 import { postgres } from '@pluxel/services/pg/postgres'
+import { Sqlite, defineDatabase as defineSqliteDatabase } from '@pluxel/services/sqlite'
+import { d1 } from '@pluxel/services/sqlite/d1'
+import { createTestHost } from '@pluxel/test'
+import { relations } from 'drizzle-orm'
 import { pgTable, text } from 'drizzle-orm/pg-core'
-import { expect, it, vi } from 'vitest'
+import { expect, expectTypeOf, it, vi } from 'vitest'
 import type { DatabaseArtifact } from '../src/database/artifact'
 
 const items = pgTable('items', { id: text('id').primaryKey() })
-const migration = 'CREATE TABLE items (id text PRIMARY KEY)'
+const labels = pgTable('labels', {
+	id: text('id').primaryKey(),
+	itemId: text('item_id')
+		.notNull()
+		.references(() => items.id),
+})
+const itemRelations = relations(items, ({ many }) => ({ labels: many(labels) }))
+const labelRelations = relations(labels, ({ one }) => ({
+	item: one(items, { fields: [labels.itemId], references: [items.id] }),
+}))
+const statements = [
+	'CREATE TABLE items (id text PRIMARY KEY)',
+	'CREATE TABLE labels (id text PRIMARY KEY, item_id text NOT NULL REFERENCES items(id))',
+]
 const artifact: DatabaseArtifact = {
 	evolution: 'migrations',
 	lineage: 'host',
 	migrations: [
 		{
-			id: '0000',
-			sql: migration,
-			checksum: createHash('sha256').update(migration).digest('hex'),
+			folderMillis: 1000,
+			bps: true,
+			sql: statements,
+			hash: createHash('sha256').update(statements.join('--> statement-breakpoint')).digest('hex'),
 		},
 	],
 }
-const definition = (defineDatabase as Function)({ schema: { items } }, artifact) as ReturnType<
-	typeof defineDatabase<{ items: typeof items }>
->
+function compiledDatabase<Schema extends Record<string, unknown>>(
+	schema: Schema,
+): DatabaseDefinition<Schema> {
+	return Reflect.apply(defineDatabase, undefined, [
+		{ schema },
+		artifact,
+	]) as DatabaseDefinition<Schema>
+}
+const definition = compiledDatabase({ items, labels, itemRelations, labelRelations })
 let handle!: PluginDatabaseHandle<typeof definition>
 // PGlite cold-start includes WASM compilation; this test measures draining, not startup latency.
 @Plugin({ startTimeoutMs: 15_000 })
@@ -39,6 +68,10 @@ let pg!: Pg
 class DeferredOwner extends BasePlugin {
 	override init() {
 		pg = this.ctx.service(Pg)
+	}
+
+	get sqlite() {
+		return this.ctx.service(Sqlite)
 	}
 }
 
@@ -95,6 +128,51 @@ it('rejects installing both providers for Pg', async () => {
 		code: 'DUPLICATE_SERVICE',
 	})
 })
+
+it('requires a Drizzle release before either service opens a database', async () => {
+	await using host = await createTestHost({ services: [pglite(), d1({})] })
+	const { sqlite } = await host.start(DeferredOwner.nodeAddress())
+	// Plain evaluation is how Drizzle Kit discovers tables before generating the release.
+	await expect(pg.use(Reflect.apply(defineDatabase, undefined, [{ schema: {} }]))).rejects.toThrow(
+		'compiled postgresql',
+	)
+	await expect(
+		sqlite.use(Reflect.apply(defineSqliteDatabase, undefined, [{ schema: {} }])),
+	).rejects.toThrow('compiled sqlite')
+	// @ts-expect-error PostgreSQL and SQLite definitions belong to different services.
+	await expect(sqlite.use(definition)).rejects.toThrow('compiled sqlite')
+})
+
+it('queries declared tables and relations in each owner read and transaction callback', async () => {
+	const host = await createHost({
+		plugins: [{ plugin: Owner }, { plugin: DeferredOwner }],
+		services: [pglite()],
+	})
+	try {
+		await host.startNode(Owner.nodeAddress())
+		await host.startNode(DeferredOwner.nodeAddress())
+		const other = await pg.use(
+			compiledDatabase({ inventory: items, labels, itemRelations, labelRelations }),
+		)
+		await handle.transaction(async (tx) => {
+			await tx.insert(items).values({ id: 'left' })
+			await tx.insert(labels).values({ id: 'tag', itemId: 'left' })
+		})
+		const left = await handle.read((db) => db.query.items.findMany({ with: { labels: true } }))
+		expectTypeOf(left).toEqualTypeOf<{ id: string; labels: { id: string; itemId: string }[] }[]>()
+		expect(left).toEqual([{ id: 'left', labels: [{ id: 'tag', itemId: 'left' }] }])
+
+		const right = await other.transaction(async (tx) => {
+			await tx.insert(items).values({ id: 'right' })
+			return tx.query.inventory.findMany({ with: { labels: true } })
+		})
+		expectTypeOf(right).toEqualTypeOf<typeof left>()
+		expect(right).toEqual([{ id: 'right', labels: [] }])
+		expect(await handle.read((db) => db.query.items.findMany())).toEqual([{ id: 'left' }])
+	} finally {
+		await host.close()
+	}
+}, 30_000)
 
 it.each(['driver', 'metadata'] as const)(
 	'allows another use after a transient %s initialization failure in the same Host',

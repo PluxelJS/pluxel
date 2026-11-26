@@ -1,18 +1,22 @@
 import { createHash } from 'node:crypto'
-import { existsSync } from 'node:fs'
+import { existsSync, writeFileSync } from 'node:fs'
 import { mkdir, mkdtemp, readFile, rm, symlink, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { createFixture } from 'fs-fixture'
 import { describe, expect, it } from 'vitest'
-import { findDatabasePackageRoot, loadDatabaseArtifact } from '../../src/database/artifact.ts'
+import {
+	findDatabasePackageRoot,
+	readDatabaseHistory,
+	writeDatabaseHistory,
+} from '../../src/database/artifact.ts'
 import {
 	checkDatabaseMigrations,
 	generateDatabaseMigrations,
 	rebaseDatabaseMigrations,
 } from '../../src/database/index.ts'
-import { generateResetDatabaseArtifact } from '../../src/database/reset-artifact.ts'
+import { generateResetDatabaseHistory } from '../../src/database/reset-artifact.ts'
 import { normalizeGeneratedOwnerReferences } from '../../src/database/drizzle-kit.ts'
 
 describe('database migration artifact', () => {
@@ -74,78 +78,108 @@ describe('database migration artifact', () => {
 		}
 	})
 
-	it('loads an immutable lineage and checked migration history', async () => {
-		const migration = 'CREATE TABLE items (id text PRIMARY KEY)'
-		const checksum = createHash('sha256').update(migration).digest('hex')
+	it('uses the native journal for order, raw bytes and Drizzle statement boundaries', async () => {
+		const statements = ['CREATE TABLE items (id text PRIMARY KEY);\r\n', '\nSELECT 1;\n']
+		const migration = statements.join('--> statement-breakpoint')
 		await using fixture = await createFixture({
-			'drizzle/0000_initial.sql': migration,
-			'drizzle/pluxel-migrations.json': JSON.stringify({
-				version: 2,
-				lineage: 'release-2026',
-				migrations: [{ id: '0000_initial', file: '0000_initial.sql', checksum }],
+			'drizzle/alpha.sql': migration,
+			'drizzle/zeta.sql': 'SELECT 0;',
+			'drizzle/pluxel-migrations.json': JSON.stringify({ lineage: 'release-2026' }),
+			'drizzle/meta/_journal.json': JSON.stringify({
+				dialect: 'postgresql',
+				entries: [
+					{ idx: 0, tag: 'zeta', when: 2, breakpoints: true },
+					{ idx: 1, tag: 'alpha', when: 3, breakpoints: true },
+				],
 			}),
 		})
-
-		await expect(loadDatabaseArtifact(`${fixture.path}/drizzle`)).resolves.toEqual({
-			evolution: 'migrations',
-			lineage: 'release-2026',
-			migrations: [{ id: '0000_initial', checksum, sql: migration }],
+		const history = await readDatabaseHistory(join(fixture.path, 'drizzle'), 'postgresql')
+		expect(history.lineage).toBe('release-2026')
+		expect(history.tags).toEqual(['zeta', 'alpha'])
+		expect(history.migrations[1]).toEqual({
+			folderMillis: 3,
+			hash: createHash('sha256').update(migration).digest('hex'),
+			bps: true,
+			sql: statements,
 		})
+		const projection = join(fixture.path, 'execution')
+		await writeDatabaseHistory(projection, history)
+		expect(await readFile(join(projection, 'alpha.sql'), 'utf8')).toBe(migration)
+		expect(await readFile(join(projection, 'meta/_journal.json'), 'utf8')).toBe(
+			history.journalSource,
+		)
+		const directory = join(fixture.path, 'drizzle')
+		await expect(
+			readDatabaseHistory(directory, 'postgresql', (file) => {
+				if (file.endsWith('_journal.json'))
+					writeFileSync(
+						join(directory, 'pluxel-migrations.json'),
+						JSON.stringify({ lineage: 'next' }),
+					)
+			}),
+		).rejects.toThrow('lineage changed while reading')
 	})
 
-	it('rejects manifests without an explicit lineage', async () => {
+	it('requires a lineage, complete SQL coverage and unique increasing timestamps', async () => {
+		const entries = [
+			{ idx: 0, tag: 'first', when: 2, breakpoints: true },
+			{ idx: 1, tag: 'next', when: 2, breakpoints: true },
+		]
 		await using fixture = await createFixture({
-			'drizzle/pluxel-migrations.json': JSON.stringify({ version: 1, migrations: [] }),
+			'drizzle/pluxel-migrations.json': '{}',
+			'drizzle/meta/_journal.json': JSON.stringify({ dialect: 'postgresql', entries }),
+			'drizzle/first.sql': 'SELECT 1;',
 		})
-		await expect(loadDatabaseArtifact(`${fixture.path}/drizzle`)).rejects.toThrow(
-			'invalid migration manifest',
+		const dir = join(fixture.path, 'drizzle')
+		await expect(readDatabaseHistory(dir, 'postgresql')).rejects.toThrow('invalid database lineage')
+		await writeFile(join(dir, 'pluxel-migrations.json'), JSON.stringify({ lineage: 'main' }))
+		await expect(readDatabaseHistory(dir, 'postgresql')).rejects.toThrow(
+			'strictly increasing timestamp',
 		)
+		entries[1]!.when = 3
+		await writeFile(
+			join(dir, 'meta/_journal.json'),
+			JSON.stringify({ dialect: 'postgresql', entries }),
+		)
+		await expect(readDatabaseHistory(dir, 'postgresql')).rejects.toThrow('cover each SQL file')
 	})
 
-	it('generates a stable reset lineage directly from the current schema', async () => {
-		const root = await mkdtemp(join(tmpdir(), 'pluxel-database-reset-test-'))
-		const schema = join(root, 'src/database.ts')
-		await mkdir(join(root, 'src'), { recursive: true })
-		await mkdir(join(root, 'node_modules'), { recursive: true })
-		await symlink(
-			fileURLToPath(new URL('../../../services/node_modules/drizzle-orm/', import.meta.url)),
-			join(root, 'node_modules/drizzle-orm'),
-			'dir',
-		)
-		await writeFile(join(root, 'package.json'), JSON.stringify({ type: 'module' }), 'utf8')
-		await writeFile(
-			schema,
-			[
-				"import { pgTable, text } from 'drizzle-orm/pg-core'",
-				"export const items = pgTable('items', { id: text('id').primaryKey() })",
-			].join('\n'),
-			'utf8',
-		)
+	it.each(['postgresql', 'sqlite'] as const)(
+		'generates a stable reset lineage from a %s schema',
+		async (dialect) => {
+			const table = dialect === 'sqlite' ? 'sqliteTable' : 'pgTable'
+			const core = dialect === 'sqlite' ? 'sqlite-core' : 'pg-core'
+			const root = await mkdtemp(join(tmpdir(), 'pluxel-database-reset-test-'))
+			const schema = join(root, 'src/database.ts')
+			await mkdir(join(root, 'src'), { recursive: true })
+			await mkdir(join(root, 'node_modules'), { recursive: true })
+			await symlink(
+				fileURLToPath(new URL('../../../services/node_modules/drizzle-orm/', import.meta.url)),
+				join(root, 'node_modules/drizzle-orm'),
+				'dir',
+			)
+			await writeFile(join(root, 'package.json'), JSON.stringify({ type: 'module' }), 'utf8')
+			await writeFile(
+				schema,
+				[
+					`import { ${table}, text } from 'drizzle-orm/${core}'`,
+					`export const items = ${table}('items', { id: text('id').primaryKey() })`,
+				].join('\n'),
+				'utf8',
+			)
 
-		try {
-			const first = await generateResetDatabaseArtifact({ root, schema })
-			const second = await generateResetDatabaseArtifact({ root, schema })
 			try {
-				expect(first.artifact.evolution).toBe('reset-on-schema-change')
-				expect(first.artifact.lineage).toMatch(/^reset-[a-f0-9]{40}$/)
-				expect(second.artifact.lineage).toBe(first.artifact.lineage)
-				expect(second.artifact.migrations).toEqual(first.artifact.migrations)
-				expect(existsSync(join(first.migrationsDir, 'meta'))).toBe(false)
-				const manifest = JSON.parse(
-					await readFile(join(first.migrationsDir, 'pluxel-migrations.json'), 'utf8'),
-				) as { evolution: string; lineage: string }
-				expect(manifest).toMatchObject({
-					evolution: 'reset-on-schema-change',
-					lineage: first.artifact.lineage,
-				})
+				const first = await generateResetDatabaseHistory({ root, schema, dialect })
+				const second = await generateResetDatabaseHistory({ root, schema, dialect })
+				expect(first.lineage).toMatch(/^reset-[a-f0-9]{40}$/)
+				expect(first.migrations[0]?.folderMillis).toBe(0)
+				expect(second).toEqual(first)
 			} finally {
-				await first.cleanup()
-				await second.cleanup()
+				await rm(root, { recursive: true, force: true })
 			}
-		} finally {
-			await rm(root, { recursive: true, force: true })
-		}
-	}, 15_000)
+		},
+		15_000,
+	)
 
 	it('changes the reset lineage when the physical schema changes', async () => {
 		const root = await mkdtemp(join(tmpdir(), 'pluxel-database-reset-change-test-'))
@@ -167,7 +201,7 @@ describe('database migration artifact', () => {
 				].join('\n'),
 				'utf8',
 			)
-			const first = await generateResetDatabaseArtifact({ root, schema })
+			const first = await generateResetDatabaseHistory({ root, schema, dialect: 'postgresql' })
 			await writeFile(
 				schema,
 				[
@@ -176,13 +210,8 @@ describe('database migration artifact', () => {
 				].join('\n'),
 				'utf8',
 			)
-			const second = await generateResetDatabaseArtifact({ root, schema })
-			try {
-				expect(second.artifact.lineage).not.toBe(first.artifact.lineage)
-			} finally {
-				await first.cleanup()
-				await second.cleanup()
-			}
+			const second = await generateResetDatabaseHistory({ root, schema, dialect: 'postgresql' })
+			expect(second.lineage).not.toBe(first.lineage)
 		} finally {
 			await rm(root, { recursive: true, force: true })
 		}
@@ -197,9 +226,9 @@ describe('database migration artifact', () => {
 			await writeFile(schema, 'export {}\n', 'utf8')
 			await writeFile(join(root, 'drizzle/pluxel-migrations.json'), '{}\n', 'utf8')
 
-			await expect(generateResetDatabaseArtifact({ root, schema })).rejects.toThrow(
-				'reset-on-schema-change does not use a checked-in migration manifest',
-			)
+			await expect(
+				generateResetDatabaseHistory({ root, schema, dialect: 'postgresql' }),
+			).rejects.toThrow('reset-on-schema-change does not use a checked-in migration manifest')
 		} finally {
 			await rm(root, { recursive: true, force: true })
 		}

@@ -80,15 +80,23 @@ export const databaseGenerateArgs = {
 
 export const databaseGenerateDefinition = {
 	name: 'generate',
-	description: 'Generate a checked-in PostgreSQL migration (migrations evolution only)',
+	description: 'Generate a checked-in Drizzle migration for the declared database dialect',
 	args: databaseGenerateArgs,
+} as const
+
+export const databaseCheckArgs = {
+	...databaseCommonArgs,
+	against: {
+		type: 'string',
+		description: 'Previous release migration directory for an immutable history check',
+	},
 } as const
 
 export const databaseCheckDefinition = {
 	name: 'check',
 	description:
-		'Validate migration history, checksums, and schema drift (migrations evolution only)',
-	args: databaseCommonArgs,
+		'Validate the Drizzle journal, schema drift, and optional published history (migrations evolution only)',
+	args: databaseCheckArgs,
 } as const
 
 export const databaseRebaseArgs = {

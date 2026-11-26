@@ -1,10 +1,11 @@
 import { PGlite, type Extension, types } from '@electric-sql/pglite'
 import { pglite } from '@pluxel/services/pg/pglite'
 import { postgres } from '@pluxel/services/pg/postgres'
-import { defineDatabase } from '../src/database/definition'
-import { createPgliteDatabaseAdapter } from '../src/database/adapters/pglite'
-import { createPostgresDatabaseAdapter } from '../src/database/adapters/postgres'
+import { defineDatabase } from '../src/pg'
+import { createPgliteDatabaseAdapter } from '../src/database/pg/adapters/pglite'
+import { createPostgresDatabaseAdapter } from '../src/database/pg/adapters/postgres'
 import { sql } from 'drizzle-orm'
+import { pgTable, text } from 'drizzle-orm/pg-core'
 import { Pool, type PoolConfig } from 'pg'
 import { describe, expect, it, vi } from 'vitest'
 
@@ -34,6 +35,10 @@ describe('native database backends', () => {
 		const pool = Reflect.get(adapter.db, '$client') as Pool
 		try {
 			expect(pool).toBeInstanceOf(Pool)
+			const items = pgTable('items', { id: text('id').primaryKey() })
+			const ownerClient = adapter.withSchema({ items })
+			expect(Reflect.get(ownerClient, '$client')).toBe(pool)
+			expect(ownerClient.query.items.findMany().toSQL().sql).toContain('from "items"')
 			expect(pool.options).toMatchObject(config)
 			expect(pool.options.password).toBe(password)
 			expect(pool.options.ssl).toBe(ssl)

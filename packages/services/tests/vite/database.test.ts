@@ -8,17 +8,18 @@ import { vitePreset } from '@pluxel/services/vite'
 it('loads checked database migration facts through the official Vite preset', async () => {
 	const sql = 'CREATE TABLE items (id text PRIMARY KEY);'
 	const checksum = createHash('sha256').update(sql).digest('hex')
+	const source = `import { defineDatabase } from '@pluxel/services/pg'
+export const database = defineDatabase({ schema: {} })`
 	await using fixture = await createDiskFixture({
 		'package.json': JSON.stringify({ name: 'database-source-fixture', type: 'module' }),
 		'app.ts':
 			"import { defineHostApplication } from '@pluxel/host'; export default defineHostApplication(() => ({ plugins: [] }))",
-		'database.ts': `import { defineDatabase } from '@pluxel/services/pg'
-export const database = defineDatabase({ schema: {} })`,
+		'database.ts': source,
 		'drizzle/0000_initial.sql': sql,
-		'drizzle/pluxel-migrations.json': JSON.stringify({
-			version: 2,
-			lineage: 'fixture',
-			migrations: [{ id: '0000_initial', file: '0000_initial.sql', checksum }],
+		'drizzle/pluxel-migrations.json': JSON.stringify({ lineage: 'fixture' }),
+		'drizzle/meta/_journal.json': JSON.stringify({
+			dialect: 'postgresql',
+			entries: [{ idx: 0, tag: '0000_initial', when: 1, breakpoints: true }],
 		}),
 		'node_modules/@pluxel/services/package.json': JSON.stringify({
 			name: '@pluxel/services',
@@ -39,15 +40,17 @@ export const database = defineDatabase({ schema: {} })`,
 	})
 	try {
 		const environment = server.environments[HOST_VITE_ENVIRONMENT] as RunnableDevEnvironment
-		const loaded = await environment.runner.import<{ database: unknown }>(
-			`${fixture.path}/database.ts`,
-		)
+		const sourceFile = `${fixture.path}/database.ts`
+		const loaded = await environment.runner.import<{ database: unknown }>(sourceFile)
+		const map = environment.runner.evaluatedModules.getModuleSourceMapById(sourceFile)
+		const index = map?.resolvedSources.indexOf(sourceFile)
+		expect(map?.map.sourcesContent?.[index ?? -1]).toBe(source)
 		const standardSsr = await server.ssrLoadModule(`${fixture.path}/database.ts`)
 		expect(standardSsr.database).toBeUndefined()
 		expect(loaded.database).toEqual({
 			evolution: 'migrations',
 			lineage: 'fixture',
-			migrations: [{ id: '0000_initial', checksum, sql }],
+			migrations: [{ folderMillis: 1, hash: checksum, bps: true, sql: [sql] }],
 		})
 	} finally {
 		await server.close()

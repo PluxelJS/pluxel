@@ -1,13 +1,10 @@
 import { readFile } from 'node:fs/promises'
+import MagicString from 'magic-string'
 import { relative, resolve } from 'pathe'
 import type { Plugin } from 'vite'
-import {
-	findDatabasePackageRoot,
-	loadDatabaseArtifactForSource,
-	type DatabaseBuildArtifact,
-} from '../database/artifact.ts'
+import { findDatabasePackageRoot } from '../database/artifact.ts'
+import { resolveDatabaseArtifact } from '../database/source.ts'
 import { extractDatabaseDeclarations, mayDeclareDatabase } from '../database/declaration.ts'
-import { generateResetDatabaseArtifact } from '../database/reset-artifact.ts'
 import { parseStandaloneWithLang } from '../rolldown/plugins/pluginUtils.ts'
 import { normalizeViteId } from '../rolldown/plugins/viteNormalizeId.ts'
 
@@ -51,31 +48,15 @@ export function databaseSourceVitePlugin(options: { root?: string } = {}): Plugi
 			packages.set(packageRoot, id)
 
 			const declaration = declarations[0]!
-			let artifact: DatabaseBuildArtifact
-			if (declaration.evolution === 'reset-on-schema-change') {
-				const generated = await generateResetDatabaseArtifact({ root: packageRoot, schema: id })
-				try {
-					artifact = generated.artifact
-				} finally {
-					await generated.cleanup()
-				}
-			} else {
-				const loaded = await loadDatabaseArtifactForSource(id, root)
-				artifact = loaded.artifact
+			const loaded = await resolveDatabaseArtifact(packageRoot, id, declaration, (file) =>
+				this.addWatchFile(file),
+			)
+			const transformed = new MagicString(code)
+			transformed.appendLeft(declaration.insertOffset, `, ${JSON.stringify(loaded.artifact)}`)
+			return {
+				code: transformed.toString(),
+				map: transformed.generateMap({ source: id, includeContent: true, hires: true }),
 			}
-			if (artifact.evolution !== declaration.evolution) {
-				this.error(
-					`[database] ${id} declares evolution "${declaration.evolution}" but its artifact uses "${artifact.evolution}"`,
-				)
-			}
-			const value = JSON.stringify(artifact)
-			let transformed = code
-			for (const item of declarations.sort(
-				(left, right) => right.insertOffset - left.insertOffset,
-			)) {
-				transformed = `${transformed.slice(0, item.insertOffset)}, ${value}${transformed.slice(item.insertOffset)}`
-			}
-			return { code: transformed, map: null }
 		},
 	}
 }

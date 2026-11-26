@@ -1,5 +1,5 @@
 import type { Program } from 'oxc-parser'
-import type { DatabaseEvolutionArtifact } from './artifact.ts'
+import type { DatabaseDialect, DatabaseEvolutionArtifact } from './artifact.ts'
 import {
 	readIdentifier,
 	readLiteralString,
@@ -7,14 +7,21 @@ import {
 	walkAst,
 } from '../rolldown/plugins/pluginUtils.ts'
 
-const DATABASE_IMPORT_SOURCE = '@pluxel/services/pg'
+const databaseImports = new Map<string, DatabaseDialect>([
+	['@pluxel/services/pg', 'postgresql'],
+	['@pluxel/services/sqlite', 'sqlite'],
+])
 
 export function mayDeclareDatabase(code: string): boolean {
-	return code.includes(DATABASE_IMPORT_SOURCE) && code.includes('defineDatabase')
+	return (
+		code.includes('defineDatabase') &&
+		[...databaseImports.keys()].some((name) => code.includes(name))
+	)
 }
 
 export type DatabaseDeclaration = Readonly<{
 	insertOffset: number
+	dialect: DatabaseDialect
 	evolution: DatabaseEvolutionArtifact
 }>
 
@@ -30,7 +37,8 @@ export function extractDatabaseDeclarations(
 	walkAst(ast, (node) => {
 		if (node.type !== 'CallExpression') return
 		const callee = sourceSlice(code, object(node.callee) ?? undefined)
-		if (!localNames.has(callee)) return
+		const dialect = localNames.get(callee)
+		if (!dialect) return
 		if (!moduleConstCalls.has(node)) {
 			throw new Error(
 				`[database] defineDatabase() must be the direct initializer of a module-level const in ${id}`,
@@ -61,6 +69,7 @@ export function extractDatabaseDeclarations(
 			suffix.matchAll(/\/\*[\s\S]*?\*\/|\/\/[^\r\n\u2028\u2029]*|,/gu),
 		).find((match) => match[0] === ',')
 		declarations.push({
+			dialect,
 			insertOffset: trailingComma ? argumentEnd + trailingComma.index : end,
 			evolution,
 		})
@@ -71,19 +80,15 @@ export function extractDatabaseDeclarations(
 	return declarations
 }
 
-function collectDatabaseImports(ast: Program): Set<string> {
-	const names = new Set<string>()
+function collectDatabaseImports(ast: Program): Map<string, DatabaseDialect> {
+	const names = new Map<string, DatabaseDialect>()
 	for (const statement of ast.body) {
-		if (
-			statement.type !== 'ImportDeclaration' ||
-			statement.importKind === 'type' ||
-			statement.source.value !== DATABASE_IMPORT_SOURCE
-		) {
-			continue
-		}
+		if (statement.type !== 'ImportDeclaration' || statement.importKind === 'type') continue
+		const dialect = databaseImports.get(statement.source.value)
+		if (!dialect) continue
 		for (const specifier of statement.specifiers) {
 			if (specifier.type === 'ImportNamespaceSpecifier') {
-				names.add(`${specifier.local.name}.defineDatabase`)
+				names.set(`${specifier.local.name}.defineDatabase`, dialect)
 				continue
 			}
 			if (specifier.type !== 'ImportSpecifier' || specifier.importKind === 'type') continue
@@ -91,7 +96,7 @@ function collectDatabaseImports(ast: Program): Set<string> {
 				specifier.imported.type === 'Identifier'
 					? specifier.imported.name
 					: String((specifier.imported as { value?: unknown }).value ?? '')
-			if (imported === 'defineDatabase') names.add(specifier.local.name)
+			if (imported === 'defineDatabase') names.set(specifier.local.name, dialect)
 		}
 	}
 	return names

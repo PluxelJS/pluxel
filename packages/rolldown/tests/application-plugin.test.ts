@@ -98,6 +98,75 @@ await build({ entry: 'app.ts', plugins: [pluxel({ variant: 'headless', lint: fal
 	60_000,
 )
 
+it('runs the selected SQLite driver from a relocated standalone deployment', async () => {
+	await using fixture = await createDiskFixture({
+		'package.json': JSON.stringify({
+			name: 'sqlite-delivery',
+			type: 'module',
+			exports: './notes.ts',
+		}),
+		'notes.ts': `import { BasePlugin, Plugin } from '@pluxel/core'
+import { defineDatabase, Sqlite } from '@pluxel/services/sqlite'
+import { integer, sqliteTable } from 'drizzle-orm/sqlite-core'
+export const notes = sqliteTable('notes', { id: integer().primaryKey() })
+export const definition = defineDatabase({ schema: { notes } })
+@Plugin()
+export class Notes extends BasePlugin {
+  async init() {
+    const handle = await this.ctx.service(Sqlite).use(definition)
+    const [row] = await handle.run(db => db.insert(notes).values({}).returning())
+    console.log('SQLITE_ROW=' + row.id)
+  }
+}`,
+		'app.ts': `import { defineHostApplication } from '@pluxel/host'
+import { libsql } from '@pluxel/services/sqlite/libsql'
+import { Notes } from './notes'
+export default defineHostApplication(() => ({
+  services: [libsql({ directory: './data' })],
+  plugins: [{ plugin: Notes, autoStart: true }],
+}))`,
+		'drizzle/0000_notes.sql': 'CREATE TABLE notes (id INTEGER PRIMARY KEY)',
+		'drizzle/pluxel-migrations.json': JSON.stringify({ lineage: 'main' }),
+		'drizzle/meta/_journal.json': JSON.stringify({
+			dialect: 'sqlite',
+			entries: [{ idx: 0, tag: '0000_notes', when: 1, breakpoints: true }],
+		}),
+		'build.mjs': `import { build } from ${JSON.stringify(import.meta.resolve('vite-plus/pack'))}
+import { pluxel } from '@pluxel/rolldown'
+await build({entry:'app.ts', plugins:[pluxel({variant:'headless',lint:false})], config:false})`,
+	})
+	const modules = join(fixture.path, 'node_modules')
+	await mkdir(join(modules, '@pluxel'), { recursive: true })
+	for (const name of ['core', 'host', 'services', 'rolldown']) {
+		await symlink(
+			fileURLToPath(new URL(`../../${name}/`, import.meta.url)),
+			join(modules, '@pluxel', name),
+			'dir',
+		)
+	}
+	await symlink(
+		fileURLToPath(new URL('../../services/node_modules/drizzle-orm', import.meta.url)),
+		join(modules, 'drizzle-orm'),
+		'dir',
+	)
+	const run = promisify(execFile)
+	await run(process.execPath, ['build.mjs'], { cwd: fixture.path })
+	await using destination = await createDiskFixture({})
+	await rename(join(fixture.path, 'dist'), join(destination.path, 'release'))
+	const release = join(destination.path, 'release')
+	const deployment = JSON.parse(await readFile(join(release, 'pluxel-deployment.json'), 'utf8'))
+	expect(deployment.residualDependencies.packages).toContain('libsql')
+	expect(deployment.residualDependencies.packages).not.toContain('pg')
+	for (const expected of [1, 2]) {
+		const { stdout } = await run(
+			process.execPath,
+			['--input-type=module', '-e', "const app = await import('./app.mjs'); await app.stop()"],
+			{ cwd: release },
+		)
+		expect(stdout).toContain(`SQLITE_ROW=${expected}`)
+	}
+}, 60_000)
+
 it('freezes a Host-only application without evaluating its async factory and runs fresh configuration outside the workspace', async () => {
 	const root = await mkdtemp(join(tmpdir(), 'pluxel-host-application-'))
 	try {

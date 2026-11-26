@@ -39,11 +39,13 @@ OXC 对未安装包/相对文件返回正常未命中；已发现物理包时，
 
 ## Database migrations
 
-`pluxel database generate` 对当前包唯一 defineDatabase schema 调 Drizzle Kit，生成 PostgreSQL SQL/meta 与带 immutable lineage 的 checksum manifest。check 验证 history、manifest rewrite，并在临时副本重新 generate 检测 schema drift。migrations 默认仅追加；显式放弃旧 lineage 使用 rebase --lineage，在 staging 验证后原子替换整个 drizzle 目录。
+`pluxel database generate` 从 `defineDatabase` 的导入来源确定 `postgresql` 或 `sqlite`，在临时目录运行对应的 Drizzle Kit。SQL、journal 和 snapshots 属于 Drizzle，Pluxel 清单只记录 lineage。校验器检查 journal 方言、SQL 文件覆盖和时间戳顺序。PG 根据 snapshot 调整生成的外键、枚举和序列的默认 schema 限定名，保留字面量、注释与已发布历史。SQLite 保留 Kit 输出。
 
-共享 compiler 识别从 `@pluxel/services/pg` 导入的 module-level defineDatabase。evolution 在 direct object 中用 literal；默认 migrations 读取最近包的 drizzle artifact。reset-on-schema-change 不使用 checked-in history，拒绝 generate/check/rebase；compiler 在 .pluxel staging 从空历史生成 baseline，以去除随机 identity 的规范 Drizzle snapshot 计算稳定 lineage，随后移除部署不需的 meta。
+追加迁移和 `rebase --lineage <id>` 都在新历史通过校验后更新源文件。rebase 只替换迁移文件，保留同目录的其他内容。`check` 在隔离副本重新生成以检测 schema drift，`check --against <上一版迁移目录>` 核对同 lineage 已发布前缀的 tag、时间戳、breakpoints 和 SQL 原文哈希。
 
-两种策略都向 server output 注入 artifact，独立包发布 SQL/manifest 到 dist/database/migrations。Vite server 使用相同规则，transform 注入后立即清理 reset staging；schema HMR 得到新 lineage。browser graph 不运行生成器、不包含 schema/Drizzle/SQL。
+Vite 和生产 compiler 都从声明所在包读取迁移，将 `readMigrationFiles()` 的结果嵌入服务端的 `defineDatabase` 调用。独立包从这次读取的数据生成 `dist/database/migrations`，保留 journal 和 SQL 原文及已捕获的 snapshots。插件代码和发布目录对应同一份历史。浏览器图不携带 SQL 或 Drizzle。开发服务器跟踪声明使用的 journal、lineage 清单与 SQL 文件。
+
+`reset-on-schema-change` 从空历史生成一个 baseline，以除去随机 identity 的规范化 Drizzle snapshot 计算 lineage。发布制品包含 SQL 和单条时间戳为 0 的原生 journal。临时目录在读取后释放。[服务端迁移](DATABASE.md#schema-evolution)
 
 ## Versioned Plugin lowering ABI
 

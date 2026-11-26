@@ -38,6 +38,7 @@ try {
 - `/elysia`：`ElysiaApp` 提供原生 Elysia Plugin 路由，`elysia()` 安装服务，`createElysiaHandler(host)` 创建 Fetch handler。
 - `/elysia/node`：`listenElysia(host, options?)` 用 srvx 启动 Node listener；返回句柄的 `close()` 同时关闭 Host 与 listener。
 - `/pg` 提供 owner 级 PostgreSQL 服务和原生 Drizzle schema/query。Host 通过 `/pg/pglite` 或 `/pg/postgres` 安装驱动，见[数据库](../../docs/plugin-development/database.md)。
+- `/sqlite` 提供 SQLite 定义和 `Sqlite` 服务。Host 通过 `/sqlite/libsql` 安装本地文件驱动，或通过 `/sqlite/d1` 安装 Cloudflare D1 驱动。D1 部署端通过 `/sqlite/d1/migrate` 应用 Drizzle 迁移。[驱动装配](../../docs/host/configuration.md#数据库服务后端选择)
 - `/node`：独立 Node module 声明、artifact 解析与 owner setup/cleanup。
 - `/workers`：共享 Worker 预算与调度，显式依赖 Node modules。
 - `/commands`：owner 绑定的命令注册与调用；初始目录为空，由插件或宿主明确发布命令。
