@@ -17,6 +17,16 @@ import {
 } from '@pluxel/workbench/internal/transport'
 import type { Program } from 'oxc-parser'
 import { dirname, extname, isAbsolute, relative, resolve } from 'pathe'
+import {
+	isParaglideGeneratedFile,
+	paraglideImportPackageRoot,
+	requireParaglideSettingsForImport,
+} from '../i18n/bundler.ts'
+import {
+	compilePluxelParaglide,
+	isPluxelParaglideImport,
+	type CompiledPluxelParaglideProject,
+} from '../i18n/paraglide.ts'
 import { resolvePackageJsonPathWithOxc, resolveWithOxc } from '../resolver/oxc.ts'
 import { collectImportSpecifiers } from '../rolldown/plugins/importCollector.ts'
 import { parseStandaloneWithLang } from '../rolldown/plugins/pluginUtils.ts'
@@ -191,6 +201,8 @@ export type WorkbenchSemanticModuleInput = Readonly<{
 export type WorkbenchSemanticProducerCompilation = Readonly<{
 	/** Exact source and package files already consumed by revision hashing. */
 	sources: readonly string[]
+	/** Translation projects included in this revision and tracked by the artifact watcher. */
+	i18n?: readonly CompiledPluxelParaglideProject[]
 	plan: WorkbenchFederationProducerPlan
 	/** Package root containing the generated Bridge and resolving the producer dependency graph. */
 	root: string
@@ -449,11 +461,24 @@ async function compileWorkbenchSnapshot(
 		for (const [key, publication] of module.publications)
 			if (definitions === undefined || definitions.has(key)) publications.set(key, publication)
 	}
+	const paraglide = new Map<string, Promise<CompiledPluxelParaglideProject | undefined>>()
+	const prepareParaglide = (root: string) => {
+		let prepared = paraglide.get(root)
+		if (!prepared) {
+			prepared = compilePluxelParaglide(root)
+			paraglide.set(root, prepared)
+		}
+		return prepared
+	}
 	// In-flight reads and failures belong only to this snapshot; only successful facts may commit.
 	const getModule = createDefinitionModuleReader(
 		modules,
 		(id) => readFile(id, 'utf8'),
-		async (source, importer) => resolveSource(importer, source),
+		async (source, importer) => {
+			const root = paraglideImportPackageRoot(source, importer)
+			if (root && !(await prepareParaglide(root))) await requireParaglideSettingsForImport(root)
+			return resolveImport(importer, source)?.path
+		},
 	)
 	const readDefinition = publishedDefinitionReader(getModule)
 
@@ -504,12 +529,17 @@ async function compileWorkbenchSnapshot(
 				}),
 				renderer: resolve(dirname(definition.binding.moduleId), descriptor.renderer),
 			}))
-			const { revision: buildRevision, sources } = await buildRevisionFor(
+			const {
+				revision: buildRevision,
+				sources,
+				i18n,
+			} = await buildRevisionFor(
 				buildRoot,
 				sourceRoot,
 				publication.owner.definition,
 				definition,
 				entries,
+				prepareParaglide,
 			)
 			const generatedEntries = await Promise.all(
 				entries.map(async (entry) => ({
@@ -532,7 +562,7 @@ async function compileWorkbenchSnapshot(
 					bridgeEntryPath,
 				})),
 			})
-			producers.push(Object.freeze({ plan, root: buildRoot, sources }))
+			producers.push(Object.freeze({ plan, root: buildRoot, sources, i18n }))
 		}
 		return Object.freeze({
 			producers: Object.freeze(producers),
@@ -1622,7 +1652,10 @@ async function writeProjectedRenderer(input: {
 				replacementTarget = projectionPath
 			} else {
 				replacementTarget = clonedPaths.get(item.target)
-				if (!replacementTarget && !isBareSpecifier(item.specifier)) {
+				if (
+					!replacementTarget &&
+					(!isBareSpecifier(item.specifier) || isPluxelParaglideImport(item.specifier))
+				) {
 					replacementTarget = item.target
 				}
 			}
@@ -1736,6 +1769,7 @@ async function collectRendererProjectionGraph(
 				!typeOnly &&
 				target &&
 				target !== definitionFile &&
+				!isParaglideGeneratedFile(target) &&
 				!isInstalledDependencyPath(target) &&
 				['.js', '.jsx', '.ts', '.tsx', '.mjs', '.mts', '.cjs', '.cts'].includes(extname(target))
 			) {
@@ -2024,6 +2058,8 @@ function readProjectionImport(
 	}
 }
 
+type WorkbenchSourceGraph = Required<Pick<WorkbenchSemanticProducerCompilation, 'sources' | 'i18n'>>
+
 async function buildRevisionFor(
 	root: string,
 	compatibilityRoot: string,
@@ -2033,7 +2069,8 @@ async function buildRevisionFor(
 		descriptor: WorkbenchFederationDescriptorIdentity
 		renderer: string
 	}>[],
-): Promise<Readonly<{ revision: string; sources: readonly string[] }>> {
+	prepareParaglide: (root: string) => Promise<CompiledPluxelParaglideProject | undefined>,
+): Promise<WorkbenchSourceGraph & Readonly<{ revision: string }>> {
 	const hash = createHash('sha256')
 	hash.update(`workbench-semantic-abi:${GENERATED_ABI_VERSION}\n`)
 	hash.update(`workbench-build-revision:${BUILD_REVISION_VERSION}\n`)
@@ -2048,21 +2085,30 @@ async function buildRevisionFor(
 	const roots = [
 		...new Set([definition.binding.moduleId, ...entries.map((entry) => entry.renderer)]),
 	].sort()
-	const sources = await hashSourceGraph(hash, root, roots)
-	return Object.freeze({ revision: hash.digest('hex').slice(0, 24), sources })
+	const graph = await hashSourceGraph(hash, root, roots, prepareParaglide)
+	return Object.freeze({ revision: hash.digest('hex').slice(0, 24), ...graph })
 }
 
 async function hashSourceGraph(
 	hash: ReturnType<typeof createHash>,
 	root: string,
 	entryPaths: readonly string[],
-): Promise<readonly string[]> {
+	prepareParaglide: (root: string) => Promise<CompiledPluxelParaglideProject | undefined>,
+): Promise<WorkbenchSourceGraph> {
 	const queue = [...entryPaths]
 	const visited = new Set<string>()
 	const packageMetadata = new Map<string, PackageFingerprint>()
 	const packageDirectories = new Map<string, string | null>()
 	const dependencyQueue: PackageFingerprint[] = []
 	const expandedDependencies = new Set<string>()
+	const projects = new Set<CompiledPluxelParaglideProject>()
+	const includeParaglide = async (packageRoot: string) => {
+		const project = await prepareParaglide(packageRoot)
+		if (project) projects.add(project)
+		return project
+	}
+	// The generated package imports must exist before OXC walks the source graph.
+	await includeParaglide(root)
 	const rootPackageJson = resolve(root, 'package.json')
 	if (existsSync(rootPackageJson)) await readPackageFingerprint(rootPackageJson, packageMetadata)
 	while (queue.length > 0 || dependencyQueue.length > 0) {
@@ -2113,7 +2159,7 @@ async function hashSourceGraph(
 		}
 		const requestedFile = resolve(queue.shift()!)
 		const file = await realpath(requestedFile).catch(() => requestedFile)
-		if (visited.has(file)) continue
+		if (visited.has(file) || isParaglideGeneratedFile(file)) continue
 		visited.add(file)
 		const content = await readFile(file, 'utf-8').catch((cause) => {
 			throw new Error(`[workbench-semantic] renderer source is unavailable: ${file}`, { cause })
@@ -2124,9 +2170,15 @@ async function hashSourceGraph(
 			: undefined
 		hash.update(`file:${normalizeGraphPath(root, file, content, sourcePackage)}\n`)
 		hash.update(content)
-		for (const specifier of sourceImports(file, content)) {
+		const imports = sourceImports(file, content)
+		if (sourcePackage && imports.some(isPluxelParaglideImport)) {
+			if (!(await includeParaglide(sourcePackage.root))) {
+				await requireParaglideSettingsForImport(sourcePackage.root)
+			}
+		}
+		for (const specifier of imports) {
 			const hit = resolveImport(file, specifier)
-			if (!hit) continue
+			if (!hit || isParaglideGeneratedFile(hit.path)) continue
 			let dependencyPackage: PackageFingerprint | undefined
 			if (hit.packageJsonPath) {
 				dependencyPackage = await readPackageFingerprint(hit.packageJsonPath, packageMetadata)
@@ -2155,7 +2207,37 @@ async function hashSourceGraph(
 			`package:${JSON.stringify({ identity: item.identity, metadata: item.metadata, resolutions })}\n`,
 		)
 	}
-	return Object.freeze([...new Set([...visited, ...packageMetadata.keys()])].sort())
+	const projectRecords = [...projects]
+		.map((project) => ({
+			project,
+			path: normalizeGraphPath(
+				root,
+				project.settingsPath,
+				project.fingerprint,
+				packageMetadata.get(resolve(project.packageRoot, 'package.json')),
+			),
+		}))
+		.sort(
+			(left, right) =>
+				left.path.localeCompare(right.path) ||
+				left.project.fingerprint.localeCompare(right.project.fingerprint),
+		)
+	const i18n = projectRecords.map(({ project, path }) => {
+		hash.update(`paraglide:${path}:${project.fingerprint}\n`)
+		return project
+	})
+	return Object.freeze({
+		i18n: Object.freeze(i18n),
+		sources: Object.freeze(
+			[
+				...new Set([
+					...visited,
+					...packageMetadata.keys(),
+					...i18n.flatMap(({ sources }) => sources),
+				]),
+			].sort(),
+		),
+	})
 }
 
 type PackageFingerprint = {
@@ -2390,10 +2472,6 @@ function resolveImport(
 	if (/^(?:https?:|data:|node:)/.test(specifier)) return null
 	const hit = resolveWithOxc(dirname(importer), specifier, SOURCE_RESOLVE_OPTIONS)
 	return hit ? { path: hit.path, packageJsonPath: hit.packageJsonPath } : null
-}
-
-function resolveSource(importer: string, source: string): string | undefined {
-	return resolveImport(importer, source)?.path
 }
 
 function isBareSpecifier(source: string): boolean {

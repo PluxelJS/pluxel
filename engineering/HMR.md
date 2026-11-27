@@ -119,6 +119,8 @@ Native 每次启动仅扫描预编译来源，next-start，无 watcher。Vite /r
 
 每 transform 在异步前取得更新身份，publication/import facts 随模块候选一起替换，ambient version 防迟到覆盖。失败保留 committed facts，解析 Promise 仅活本次；删除/改普通模块撤 publication。Bridge/projection 目录含 build revision，不能覆盖旧 plan 正在引用的文件。
 
+Vite 将已解析 `#i18n` 的服务端包的设置和词条交给 Host 依赖 watcher，变动进入同一个 Host source 批次。接纳时按包完成编译，随后失效受影响的生成模块和其 importer，再执行候选评估。 `.pluxel/i18n` 的更新由该批次驱动。仅由 renderer 消费的词条作为 Workbench 制品输入走附件重建。 [Paraglide 编译](TOOLCHAIN.md#paraglide)
+
 ### 构建并发与发布权限
 
 同 producer task 去重，新 plan supersede 旧 build。MF 当前进程两个 slots：同 application root 最多并发两个，不同 root 按到达顺序 cohort，切换前排空，后来的同 root 不能跨越等待中的其他 root。Node 独立两个 slots；同 output transaction 始终排序。

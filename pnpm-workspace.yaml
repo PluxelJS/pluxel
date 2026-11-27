@@ -92,6 +92,7 @@ catalogs:
     # Workers types, Miniflare and Wrangler follow the stable Cloudflare Vite plugin's workerd release.
     '@cloudflare/workers-types': 5.20261117.1
     '@fumapress/tegami': ^1.1.4
+    '@inlang/plugin-message-format': 4.6.0
     '@logtape/logtape': ^2.4.2
     '@logtape/otel': ^2.4.2
     '@opentelemetry/api': ^1.10.0
@@ -225,6 +226,7 @@ catalogs:
     '@fumapress/tegami': ^1.1.4
     '@grpc/grpc-js': ^1.14.7
     '@inlang/paraglide-js': ^3.1.0
+    '@inlang/sdk': 4.2.0
     '@logtape/file': ^2.4.2
     '@logtape/logtape': ^2.4.2
     '@logtape/pretty': ^2.4.2

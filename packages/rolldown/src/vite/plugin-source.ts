@@ -21,6 +21,7 @@ import {
 	type PluginSemanticsCollector,
 	type PluginSemanticsPluginOptions,
 } from '../rolldown/plugins/pluginSemanticsPlugin'
+import { createParaglideViteIntegration, type ParaglideViteUpdates } from '../i18n/vite'
 
 export type PluginSourceVitePluginsOptions = {
 	root?: string
@@ -38,6 +39,8 @@ export type PluginSourceVitePluginsOptions = {
 
 export type PluginSourceVitePipeline = Readonly<{
 	plugins: readonly PluginOption[]
+	/** @internal Host admission owns compilation for its paused and automatic updates. */
+	paraglide: ParaglideViteUpdates
 	semantics: Pick<
 		PluginSemanticsCollector,
 		| 'snapshot'
@@ -69,6 +72,7 @@ export function pluginSourceVitePlugins(
 	options: PluginSourceVitePluginsOptions = {},
 ): PluginOption[] {
 	return [
+		createParaglideViteIntegration(options).plugin,
 		...createPluginSourcePlugins(
 			options,
 			(root) =>
@@ -157,9 +161,15 @@ export function createPluginSourceVitePipeline(
 	options: PluginSourceVitePluginsOptions & {
 		/** The sole server environment owning this pipeline's semantic collector. @default 'ssr' */
 		environment?: string
+		/** @internal Register this server environment's translation inputs with Host admission. */
+		watchParaglideInputs?: (files: readonly string[]) => Promise<void>
 	} = {},
 ): PluginSourceVitePipeline {
 	const environment = options.environment ?? 'ssr'
+	const paraglide = createParaglideViteIntegration(
+		options,
+		options.watchParaglideInputs ? { environment, watch: options.watchParaglideInputs } : undefined,
+	)
 	let collector: PluginSemanticsCollector | undefined
 	let collectorRoot: string | undefined
 	const createSemantics = (root: string): Plugin => {
@@ -188,6 +198,7 @@ export function createPluginSourceVitePipeline(
 		return collector
 	}
 	const plugins = [
+		paraglide.plugin,
 		...createPluginSourcePlugins(options, createSemantics, environment),
 		createSourceConfigPlugin(options, environment),
 	]
@@ -204,11 +215,13 @@ export function createPluginSourceVitePipeline(
 		builtDefinitionModules: (activeModules: Iterable<string>) =>
 			requireCollector().builtDefinitionModules(activeModules),
 		workbenchPlans: () => requireCollector().workbenchPlans(),
-		workbenchCompilations: () => requireCollector().workbenchCompilations(),
-		workbenchContentCompilations: () => requireCollector().workbenchContentCompilations(),
+		workbenchCompilations: (definitions?: ReadonlySet<string>) =>
+			requireCollector().workbenchCompilations(definitions),
+		workbenchContentCompilations: (definitions?: ReadonlySet<string>) =>
+			requireCollector().workbenchContentCompilations(definitions),
 		invalidateWorkbench: () => requireCollector().invalidateWorkbench(),
 	})
-	return Object.freeze({ plugins: Object.freeze(plugins), semantics })
+	return Object.freeze({ plugins: Object.freeze(plugins), semantics, paraglide: paraglide.updates })
 }
 
 function createSourceConfigPlugin(

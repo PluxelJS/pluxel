@@ -28,7 +28,6 @@ it('builds development renderers for the JSX runtime supplied by a packaged Shel
 		minify: false,
 		sourcemap: false,
 		typeAssets: 'optional',
-		paraglide: null,
 	})
 	const files = await readdir(fixture.getPath('dist/assets'))
 	const chunks = await Promise.all(
@@ -62,7 +61,6 @@ it.each([undefined, 'false'])('preserves the upstream federation test opt-in %s'
 		minify: false,
 		sourcemap: false,
 		typeAssets: 'optional',
-		paraglide: null,
 	})
 	expect(process.env.MFE_VITE_NO_TEST_ENV_CHECK).toBe(value)
 	// Vite still builds, but upstream intentionally omits MF artifacts without the test opt-in.

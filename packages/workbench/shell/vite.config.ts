@@ -1,5 +1,6 @@
 import { defineConfig } from 'vite'
 import { fileURLToPath } from 'node:url'
+import { pluxelParaglideVitePlugin } from '@pluxel/rolldown/vite/paraglide'
 import {
 	buildPluxelFrontendResolveConditions,
 	createPluxelUiChunkGroups,
@@ -41,6 +42,7 @@ export default defineConfig(({ mode }) => {
 		},
 
 		plugins: [
+			pluxelParaglideVitePlugin({ root: fileURLToPath(new URL('..', import.meta.url)) }),
 			tanstackRouter({
 				target: 'react',
 				autoCodeSplitting: true,

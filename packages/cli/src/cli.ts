@@ -8,6 +8,7 @@ import {
 	devCommandDefinition,
 	distributionCommandDefinition,
 	docsCommandDefinition,
+	i18nCommandDefinition,
 	newCommandDefinition,
 	publishCommandDefinition,
 	sourceCommandDefinition,
@@ -49,6 +50,13 @@ const commands = new Map<string, SubCommandable>([
 		lazy(
 			() => import('./commands/build').then((module) => module.buildCommand),
 			buildCommandDefinition,
+		),
+	],
+	[
+		'i18n',
+		lazy(
+			() => import('./commands/i18n').then((module) => module.i18nCommand),
+			i18nCommandDefinition,
 		),
 	],
 	[

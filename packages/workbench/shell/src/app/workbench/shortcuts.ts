@@ -1,3 +1,4 @@
+import { baseLocale, m, type Locale } from '#i18n'
 import { formatForDisplay } from '@tanstack/react-hotkeys'
 
 export const WORKBENCH_HOTKEYS = {
@@ -20,23 +21,26 @@ export const WORKBENCH_HOTKEY_LABELS = {
 	maximize: formatForDisplay(WORKBENCH_HOTKEYS.maximize),
 }
 
-export const WORKBENCH_SHORTCUT_ITEMS = [
-	[
-		`${WORKBENCH_HOTKEY_LABELS.commandPalette} / ${WORKBENCH_HOTKEY_LABELS.focusSearch}`,
-		'打开命令面板：查找页面、插件入口与工作区命令',
-	],
-	['↑ / ↓', '在命令面板结果间移动；Enter 执行所选项'],
-	[WORKBENCH_HOTKEY_LABELS.showNavigation, '显示或收起左侧导航'],
-	[WORKBENCH_HOTKEY_LABELS.closeActiveTab, '关闭活动文档（遵守固定与未保存保护）'],
-	[WORKBENCH_HOTKEY_LABELS.prevTab, '按原生布局顺序激活上一个文档'],
-	[WORKBENCH_HOTKEY_LABELS.nextTab, '按原生布局顺序激活下一个文档'],
-	[WORKBENCH_HOTKEY_LABELS.maximize, '最大化或还原活动文档所在容器'],
-	['Shift + F10 / 菜单键', '打开所聚焦标签、分组或容器的菜单'],
-	['F2', '重命名所聚焦标签'],
-	['Ctrl + Delete', '关闭所聚焦标签'],
-	['F6', '在所选标签和内容间切换焦点'],
-	['Ctrl + F6 / Ctrl + Shift + F6', '聚焦下一个或上一个标签容器'],
-] as const
+export function workbenchShortcutItems(locale: Locale = baseLocale) {
+	const options = { locale }
+	return [
+		[
+			`${WORKBENCH_HOTKEY_LABELS.commandPalette} / ${WORKBENCH_HOTKEY_LABELS.focusSearch}`,
+			m['keyboard.palette']({}, options),
+		],
+		['↑ / ↓', m['keyboard.result']({}, options)],
+		[WORKBENCH_HOTKEY_LABELS.showNavigation, m['keyboard.sidebar']({}, options)],
+		[WORKBENCH_HOTKEY_LABELS.closeActiveTab, m['keyboard.closeActive']({}, options)],
+		[WORKBENCH_HOTKEY_LABELS.prevTab, m['keyboard.previous']({}, options)],
+		[WORKBENCH_HOTKEY_LABELS.nextTab, m['keyboard.next']({}, options)],
+		[WORKBENCH_HOTKEY_LABELS.maximize, m['keyboard.maximize']({}, options)],
+		[`Shift + F10 / ${m['keyboard.menuKey']({}, options)}`, m['keyboard.menu']({}, options)],
+		['F2', m['keyboard.rename']({}, options)],
+		['Ctrl + Delete', m['keyboard.closeFocused']({}, options)],
+		['F6', m['keyboard.focusContent']({}, options)],
+		['Ctrl + F6 / Ctrl + Shift + F6', m['keyboard.focusGroup']({}, options)],
+	] as const
+}
 
 export const CATALOG_SHORTCUT_ITEMS = [
 	['/', '聚焦搜索'],

@@ -21,7 +21,6 @@ import {
 	runWorkbenchFederationBuild,
 	runWorkbenchOutputTransaction,
 } from '../workbench/build-scheduler.ts'
-import { resolveParaglideIntegration } from './paraglide.ts'
 import { validateWorkbenchFederationArtifact } from '../workbench/artifact.ts'
 import { runWorkbenchViteBuild, type WorkbenchViteBuildOptions } from './workbench-vite-build.ts'
 
@@ -50,6 +49,8 @@ export type BuildWorkbenchFederationProducerOptions = Readonly<{
 	 * Development defaults to a runtime-only producer; source and distribution default to strict types.
 	 */
 	typeAssets?: WorkbenchFederationTypeAssetPolicy
+	/** Translation fingerprints from the source compilation that produced this plan. */
+	i18n?: WorkbenchViteBuildOptions['i18n']
 	/**
 	 * Prevents a queued Federation build from starting or publishing after abort. An already-running
 	 * Vite build finishes before this operation rejects because Vite has no build cancellation API.
@@ -108,7 +109,6 @@ export async function buildWorkbenchFederationProducer(
 		const candidateDir = `${outDir}.candidate-${buildId}`
 		const cache = resolveBuildCacheDir(root, plan, options, typeAssets, buildId)
 		try {
-			const paraglide = resolveParaglideIntegration(root)
 			const viteBuild: WorkbenchViteBuildOptions = {
 				producerRoot: root,
 				applicationRoot,
@@ -125,7 +125,7 @@ export async function buildWorkbenchFederationProducer(
 				minify: options.minify ?? true,
 				sourcemap: options.sourcemap ?? false,
 				typeAssets,
-				paraglide: paraglide ? { project: paraglide.project, outdir: paraglide.outdir } : null,
+				i18n: options.i18n,
 			}
 			if (options.signal?.aborted) throw options.signal.reason
 			await runWorkbenchBuildCacheTransaction(cache.dir, () =>

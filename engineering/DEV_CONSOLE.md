@@ -26,6 +26,8 @@ Host-vite 负责在项目模块图中加载脚本、等待源码更新并绑定�
 
 模块失效在 route publication 前完成。static catalog 精确失效 importer，script-only 更新保留 Plugin 实例；同一 watcher 事件不会再次驱逐已发布 constructor。删除和读取失败进入来源移除路径。paused 且有运行时 pending，或 auto 模式仍有失败 pending 时，加载以 `hmr_pending` 结束。constructor 与 catalog 不符报告 `stale_target`；定义缺失和节点未运行分别诊断。
 
+TypeScript 从生成声明检查 `#i18n`，执行准备阶段同时记录对应生成模块的可执行闭包，加载后复核原始字节。生成模块的失效由词条源码进入 Host 批次时驱动。 [Paraglide 编译](TOOLCHAIN.md#paraglide)
+
 ### 独立 HMR 控制
 
 pause/apply/resume 直接调用 [HMR 调度器](HMR.md#开发批次调度)，独立于脚本 loader、Host scope 和应用 ready。控制 owner 随 Vite 实例存活；full-host replacement 只 abortScripts，不撤回促成 replacement 的控制 run。

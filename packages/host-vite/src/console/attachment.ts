@@ -44,6 +44,8 @@ export type AttachProjectScriptsOptions = Readonly<{
 	getApplicationStatus?(): Readonly<Record<string, unknown>>
 	getUpdateStatus?(): HostViteUpdateStatus
 	assertApplied?(): void
+	/** These modules are byte-verified at load, and updated by the Host's authored input watcher. */
+	isGeneratedDependency?(file: string): boolean
 	control?(action: 'pause' | 'apply' | 'resume', run: RunExecution): Promise<unknown>
 	/** Drain the finite set of real updates admitted before this call, before evaluation. */
 	prepare(file: string, signal: AbortSignal): Promise<void>
@@ -176,7 +178,8 @@ export async function attachProjectScripts(
 				if (
 					!isAbsolute(dependency) ||
 					dependency.includes('\0') ||
-					dependency.includes('/node_modules/')
+					dependency.includes('/node_modules/') ||
+					options.isGeneratedDependency?.(dependency)
 				)
 					continue
 				if (nextDependencies.size >= 4096)

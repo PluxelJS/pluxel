@@ -438,6 +438,9 @@ catalogs:
     '@fumapress/tegami':
       specifier: ^1.1.4
       version: 1.1.4
+    '@inlang/plugin-message-format':
+      specifier: 4.6.0
+      version: 4.6.0
     '@logtape/logtape':
       specifier: ^2.4.2
       version: 2.4.2
@@ -748,6 +751,9 @@ catalogs:
     '@inlang/paraglide-js':
       specifier: ^3.1.0
       version: 3.1.0
+    '@inlang/sdk':
+      specifier: 4.2.0
+      version: 4.2.0
     '@logtape/file':
       specifier: ^2.4.2
       version: 2.4.2
@@ -1601,6 +1607,9 @@ importers:
       '@inlang/paraglide-js':
         specifier: catalog:prod
         version: 3.1.0(@voidzero-dev/vite-plus-core@1.4.0(@types/node@26.6.6)(esbuild@0.28.2)(jiti@2.7.0)(sass-embedded@1.107.1)(sass@1.107.1)(sugarss@5.0.2(postcss@8.5.32))(terser@5.50.0)(tsx@4.23.15)(typescript@7.0.2)(unrun@0.3.1)(yaml@2.9.1))(typescript@7.0.2)
+      '@inlang/sdk':
+        specifier: catalog:prod
+        version: 4.2.0
       '@module-federation/bridge-react':
         specifier: catalog:frontend
         version: 2.9.3(react-dom@19.3.1(react@19.3.1))(react@19.3.1)
@@ -1680,6 +1689,9 @@ importers:
         specifier: catalog:prod
         version: 2.9.1
     devDependencies:
+      '@inlang/plugin-message-format':
+        specifier: catalog:dev
+        version: 4.6.0
       '@libsql/client':
         specifier: catalog:backend
         version: 0.18.0
@@ -1972,6 +1984,9 @@ importers:
       '@dnd-kit/sortable':
         specifier: catalog:frontend
         version: 10.0.0(@dnd-kit/core@6.3.1(react-dom@19.3.1(react@19.3.1))(react@19.3.1))(react@19.3.1)
+      '@inlang/plugin-message-format':
+        specifier: catalog:dev
+        version: 4.6.0
       '@mantine/core':
         specifier: catalog:frontend
         version: 9.7.4(@mantine/hooks@9.7.4(react@19.3.1))(@types/react@19.3.0)(react-dom@19.3.1(react@19.3.1))(react@19.3.1)
@@ -5291,6 +5306,9 @@ packages:
         optional: true
       vite:
         optional: true
+
+  '@inlang/plugin-message-format@4.6.0':
+    resolution: {integrity: sha512-DK2GZvypDygLchnUaFK/RdCIm2baiRlQftOiesGNKDtjNqioqWHnnu0zg6NKNlo3kD42h5xlRCke7zEjBFzZrg==}
 
   '@inlang/recommend-sherlock@0.2.1':
     resolution: {integrity: sha512-ckv8HvHy/iTqaVAEKrr+gnl+p3XFNwe5D2+6w6wJk2ORV2XkcRkKOJ/XsTUJbPSiyi4PI+p+T3bqbmNx/rDUlg==}
@@ -13389,6 +13407,11 @@ snapshots:
       vite: '@voidzero-dev/vite-plus-core@1.4.0(@types/node@26.6.6)(esbuild@0.28.2)(jiti@2.7.0)(sass-embedded@1.107.1)(sass@1.107.1)(sugarss@5.0.2(postcss@8.5.32))(terser@5.50.0)(tsx@4.23.15)(typescript@7.0.2)(unrun@0.3.1)(yaml@2.9.1)'
     transitivePeerDependencies:
       - typescript
+
+  '@inlang/plugin-message-format@4.6.0':
+    dependencies:
+      '@inlang/sdk': 4.2.0
+      '@sinclair/typebox': 0.31.30
 
   '@inlang/recommend-sherlock@0.2.1':
     dependencies:

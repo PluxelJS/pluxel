@@ -9,6 +9,9 @@ import type { ScriptArtifact, ScriptDiagnostic } from '@pluxel/host/internal/age
 import { ScriptInputs, ScriptTypecheckError } from './script-inputs'
 import { readScriptControlModule } from './script-control-inputs'
 import { lowerScriptServiceRefs } from './script-service-refs'
+import { isParaglideGeneratedFile } from './i18n/bundler'
+import { collectImportSpecifiers } from './rolldown/plugins/importCollector'
+import { parseStandaloneWithLang } from './rolldown/plugins/pluginUtils'
 
 export type ScriptCompileOptions = Readonly<{
 	/** Ordinary TS/JS module. Compilation never evaluates it or the application factory. */
@@ -429,9 +432,11 @@ export async function checkProjectScript(
 	const inputs = new ScriptInputs(options.signal)
 	try {
 		await inputs.check(file, options.exportName)
-		for (const path of inputs.snapshot().keys())
+		const checked = inputs.snapshot()
+		for (const path of checked.keys())
 			if (path.endsWith('/index.d.mts'))
 				await readScriptControlModule(inputs, path.slice(0, -'.d.mts'.length) + '.mjs')
+		readProjectScriptParaglideRuntime(inputs, checked.keys())
 	} catch (cause) {
 		if (options.signal?.aborted) throw options.signal.reason
 		throw new ScriptCompileError(
@@ -444,4 +449,27 @@ export async function checkProjectScript(
 		)
 	}
 	return Object.freeze({ inputs: inputs.snapshot() })
+}
+
+function readProjectScriptParaglideRuntime(inputs: ScriptInputs, checked: Iterable<string>): void {
+	// TypeScript selects Paraglide's declarations. Capture their executable closure before Vite
+	// loads it, so the Host can still verify each evaluated module against this input snapshot.
+	const queue = [...checked]
+		.filter((file) => file.endsWith('.d.ts') && isParaglideGeneratedFile(file))
+		.map((file) => file.slice(0, -'.d.ts'.length) + '.js')
+	const visited = new Set<string>()
+	while (queue.length > 0) {
+		const file = queue.pop()!
+		if (visited.has(file)) continue
+		visited.add(file)
+		const content = inputs.read(file)
+		if (content === null) throw new Error(`Generated Paraglide runtime file is missing: ${file}`)
+		const program = parseStandaloneWithLang(content, file)
+		if (!program) throw new Error(`Cannot parse generated Paraglide runtime file: ${file}`)
+		for (const { specifier } of collectImportSpecifiers(program)) {
+			if (!specifier.startsWith('.')) continue
+			const dependency = resolve(dirname(file), specifier)
+			if (isParaglideGeneratedFile(dependency)) queue.push(dependency)
+		}
+	}
 }

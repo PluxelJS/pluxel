@@ -38,6 +38,8 @@ tsdown.config.ts       tsdown 打包规则
 vite.config.ts         全包任务调度（Vite Task）
 ```
 
+使用 Paraglide 的插件还在包根维护 `project.inlang/settings.json` 和消息文件。 `pluxel i18n` 在单独运行 TypeScript 检查前准备类型，`pluxel build` 自动编译消息。 [插件国际化](../plugin-development/i18n.md)
+
 ## 插件身份与导出规范
 
 - **权威身份**：插件的全局身份由其公开的 npm 包入口与具名导出（Named Export）共同决定，而非类名或 `displayName`。

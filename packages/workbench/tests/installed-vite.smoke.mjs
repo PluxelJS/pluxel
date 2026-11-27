@@ -53,11 +53,22 @@ const until = async (predicate) => {
 	}
 }
 const write = (name, source) => writeFile(join(root, name), source)
+const writeTranslationSettings = (pathPattern) =>
+	write(
+		'project.inlang/settings.json',
+		JSON.stringify({
+			baseLocale: 'en',
+			locales: ['en', 'zh-CN'],
+			modules: ['./message-format.js'],
+			'plugin.inlang.messageFormat': { pathPattern },
+		}),
+	)
 function viewSource(marker) {
 	return `import { createWorkbenchRenderer } from '@pluxel/workbench/react'
+import { m, resolveLocale } from '#i18n'
 import { UI } from './definition'
 const page = createWorkbenchRenderer(UI.page)
-export default page.render(function View() { return ${JSON.stringify(marker)} })
+export default page.render(function View() { return ${JSON.stringify(marker)} + m.heading({}, { locale: resolveLocale('zh-CN') }) })
 `
 }
 try {
@@ -87,10 +98,19 @@ try {
 			name: '@test/independent-workbench',
 			type: 'module',
 			exports: { '.': './plugin.ts' },
+			imports: { '#i18n': './.pluxel/i18n/index.js' },
 			peerDependencies: { capnweb: capnwebPackage.version },
 			devDependencies: { capnweb: capnwebPackage.version },
 		}),
 	)
+	await mkdir(join(root, 'project.inlang'))
+	await mkdir(join(root, 'locales'))
+	await write(
+		'message-format.js',
+		await readFile(new URL(import.meta.resolve('@inlang/plugin-message-format')), 'utf8'),
+	)
+	await writeTranslationSettings('./locales/{locale}.json')
+	await write('locales/en.json', JSON.stringify({ heading: 'Original heading' }))
 	await write('guide.md', '# First guide\n')
 	await write('view.ts', viewSource('first renderer'))
 	await write(
@@ -297,6 +317,35 @@ export default defineHostApplication(({bindings}) => ({plugins:[{plugin:Viewer,a
 				(entry) => entry.federatedViewRef?.buildRevision !== pageRevision && entry.federatedViewRef,
 			),
 	)
+	assert.equal(instance, original)
+	const viewRevision = () =>
+		backend.registry.getLayout(address).entries.find((entry) => entry.federatedViewRef)
+			?.federatedViewRef.buildRevision
+	const untranslated = viewRevision()
+	assert.ok(untranslated)
+	const localized = 'locales/zh-CN.json'
+	const writeTranslation = async (heading) => {
+		const previous = viewRevision()
+		await write(localized, JSON.stringify({ heading }))
+		await until(() => viewRevision() && viewRevision() !== previous)
+		assert.equal(instance, original, 'a renderer translation refresh keeps the same Host')
+	}
+	await writeTranslation('初始标题')
+	await writeTranslation('更新标题')
+	await rm(join(root, localized))
+	await until(() => viewRevision() === untranslated)
+	const relocated = 'relocated-locales/zh-CN.json'
+	await mkdir(join(root, 'relocated-locales'))
+	await write('relocated-locales/en.json', JSON.stringify({ heading: 'Moved heading' }))
+	await write(relocated, '{')
+	await writeTranslationSettings('./relocated-locales/{locale}.json')
+	await until(() => {
+		const report = readHostRecentUpdates(instance.ctx)?.latestUpdate()
+		return report?.outcome === 'retained-previous' && /\[pluxel:i18n\]/.test(report.error.message)
+	})
+	assert.equal(viewRevision(), untranslated)
+	await write(relocated, JSON.stringify({ heading: '恢复后的标题' }))
+	await until(() => viewRevision() && viewRevision() !== untranslated)
 	assert.equal(instance, original)
 	const lastSession = backend.createSession({ provider: 'fixture', subject: 'reader' }, () => {})
 	await server.close()

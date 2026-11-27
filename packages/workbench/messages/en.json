@@ -1,0 +1,91 @@
+{
+	"$schema": "https://inlang.com/schema/inlang-message-format",
+	"language": {
+		"label": "Language",
+		"name": "English"
+	},
+	"actions": {
+		"confirm": "Confirm",
+		"cancel": "Cancel",
+		"close": "Close"
+	},
+	"workspace": {
+		"title": "Workspace",
+		"documentCount": [
+			{
+				"declarations": ["input count", "local pluralCount = count: plural"],
+				"selectors": ["pluralCount"],
+				"match": {
+					"pluralCount=one": "{count} document",
+					"pluralCount=other": "{count} documents"
+				}
+			}
+		],
+		"showPlugins": "Show plugin directory",
+		"showApps": "Show app directory",
+		"closeActive": "Close active document",
+		"closeAll": "Close all documents",
+		"closeAllMenu": "Close all documents (keep layout)",
+		"closeAllDescription": "This closes documents in every group, including collapsed groups. Pinned or protected documents can prevent closing. Unsaved changes still require confirmation.",
+		"keepWorkspace": "Keep workspace",
+		"document": "Documents",
+		"closeAllHint": "Documents · Keeps the layout and asks for confirmation",
+		"duplicateTab": "Duplicate active tab",
+		"preview": "Preview",
+		"unsaved": "Unsaved changes",
+		"empty": "No documents are open",
+		"findEntry": "Find a page or plugin entry",
+		"security": "Authentication and security",
+		"storageError": "Layout has not been saved",
+		"retrySave": "Retry save"
+	},
+	"layout": {
+		"controls": "Layout controls",
+		"label": "Layout",
+		"left": "Left navigation",
+		"right": "Right panel",
+		"bottom": "Bottom panel",
+		"show": "Show {panel}",
+		"hide": "Hide {panel}",
+		"maximize": "Maximize or restore active group",
+		"reset": "Restore default layout",
+		"resetMenu": "Restore default layout (close documents and reload)",
+		"resetHint": "Layout · Closes documents and reloads"
+	},
+	"appearance": {
+		"label": "Appearance",
+		"light": "Switch to light mode",
+		"dark": "Switch to dark mode"
+	},
+	"palette": {
+		"title": "Command palette",
+		"open": "Open command palette",
+		"prompt": "Find or run a command"
+	},
+	"keyboard": {
+		"label": "Keyboard shortcuts",
+		"title": "Workspace keyboard shortcuts",
+		"help": "Help",
+		"note": "Workspace shortcuts ignore text fields. You can still open the command palette while typing. Arrow keys follow the focus rules of tabs and menus.",
+		"palette": "Open the command palette to find pages, plugin entries, and workspace commands",
+		"result": "Move between palette results. Press Enter to run the selected result.",
+		"sidebar": "Show or hide the left navigation",
+		"closeActive": "Close the active document, respecting pinned tabs and unsaved changes",
+		"previous": "Activate the previous document in layout order",
+		"next": "Activate the next document in layout order",
+		"maximize": "Maximize or restore the active document group",
+		"menuKey": "Menu key",
+		"menu": "Open the menu for the focused tab, group, or container",
+		"rename": "Rename the focused tab",
+		"closeFocused": "Close the focused tab",
+		"focusContent": "Move focus between the selected tab and its content",
+		"focusGroup": "Focus the next or previous tab container"
+	},
+	"notifications": {
+		"history": "Notification history",
+		"unread": "Notification history, {count} unread",
+		"clear": "Clear history",
+		"fallbackTitle": "Workbench",
+		"empty": "No notifications"
+	}
+}

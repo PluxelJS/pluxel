@@ -35,7 +35,7 @@ CLI scaffold 只有 Plugin package identity 和 bundled `plugin` template。完�
 
 可选能力：
 
-- `build`、`workspace` → `@pluxel/rolldown`；
+- `build`、`i18n`、`workspace` → `@pluxel/rolldown`；
 
 `publish` 直接提交市场 HTTP 通知并输出持久回执，不加载可选 market 包；npm 拥有发布与 provenance，市场拥有收录结果。
 

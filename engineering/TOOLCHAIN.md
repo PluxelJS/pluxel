@@ -88,6 +88,12 @@ provider 按同次 facts 保持 external peer。optional type import 不生成�
 
 交付 owner 决定拓扑：插件包保留 runtime peer/dts/exports，modules 保留包 imports 并导出应用工厂，standalone 添加 runtime closure、residual tracing 和部署装配。共享 source pipeline 只处理声明与编译，装配见 [Application Build](APPLICATION_BUILD.md)。
 
+### Paraglide
+
+[包级编译器](../packages/rolldown/src/i18n/paraglide.ts)采用工作区固定的 Paraglide 3 与 inlang SDK，沿用 `project.inlang/settings.json` 的 locale、模块和 message-format 路径。编译器检查 inlang 加载诊断，用同一份输入快照编译并生成确定性的 ESM 和声明。并发按包的真实路径合并，内容相同的文件保留时间戳。开发和生产共用 `locale-modules`，减少生成文件数，Rolldown 可裁剪未调用的消息。生成运行时使用 `baseLocale` 策略，关闭 AsyncLocalStorage。
+
+Rolldown 在构建开始以及解析所属包的 `#i18n` 时准备产物；Vite 开发以首次解析作为准备入口。解析仍由包的 `imports` 声明决定。 `pluxel i18n` 是独立 TypeScript 检查的显式入口。 [插件国际化](../docs/plugin-development/i18n.md)
+
 ### Vite 与 TypeScript 配置
 
 Host-vite 自动组合 `@pluxel/rolldown/vite` adapter。preprocessor 参与 client 与选定 Host environment，semantic/lint/config 仅参与 Host server，legacy decorators 由 Vite/OXC 转换。`configResolved` 在顶层注册，transform 用 `applyToEnvironment` 布尔过滤，读取 Vite 已解析 mode/env。

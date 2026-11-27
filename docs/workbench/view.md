@@ -7,6 +7,8 @@ description: 使用 React 与 Cap'n Web RPC 编写功能完整的 Workbench 页�
 
 页面有三个入口。Definition 声明页面和 RPC 类型，插件在 `init()` 发布每次打开时创建的 Target，React renderer 默认导出页面组件。下面把 scope、查询和组件放在一个 renderer 文件里。
 
+renderer 可通过 `scope.useWorkbench().host.locale` 读取工作台当前的语言，并在偏好切换时重新渲染。 [插件国际化](../plugin-development/i18n.md#按请求语言调用)
+
 <span id="默认路径snapshot--mutation"></span>
 
 ## 默认路径：snapshot + mutation

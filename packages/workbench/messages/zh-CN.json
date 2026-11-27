@@ -1,0 +1,82 @@
+{
+	"$schema": "https://inlang.com/schema/inlang-message-format",
+	"language": {
+		"label": "语言",
+		"name": "简体中文"
+	},
+	"actions": {
+		"confirm": "确认",
+		"cancel": "取消",
+		"close": "关闭"
+	},
+	"workspace": {
+		"title": "工作区",
+		"documentCount": "{count} 个文档",
+		"showPlugins": "显示插件目录",
+		"showApps": "显示应用目录",
+		"closeActive": "关闭活动文档",
+		"closeAll": "关闭所有文档",
+		"closeAllMenu": "关闭所有文档（保留布局）",
+		"closeAllDescription": "将关闭全部文档，包括折叠分组中的文档。固定或受保护文档会阻止关闭；未保存更改仍需确认。",
+		"keepWorkspace": "保留工作区",
+		"document": "文档",
+		"closeAllHint": "文档 · 保留布局，需确认",
+		"duplicateTab": "复制当前标签页",
+		"preview": "预览",
+		"unsaved": "未保存的更改",
+		"empty": "工作区没有打开的文档",
+		"findEntry": "查找页面或插件入口",
+		"security": "认证与安全",
+		"storageError": "布局尚未保存",
+		"retrySave": "重试保存"
+	},
+	"layout": {
+		"controls": "布局控制",
+		"label": "布局",
+		"left": "左侧导航",
+		"right": "右侧面板",
+		"bottom": "底部面板",
+		"show": "显示{panel}",
+		"hide": "收起{panel}",
+		"maximize": "最大化或还原活动容器",
+		"reset": "恢复默认布局",
+		"resetMenu": "恢复默认布局（关闭文档并重新载入）",
+		"resetHint": "布局 · 关闭文档并重新载入"
+	},
+	"appearance": {
+		"label": "外观",
+		"light": "切换到浅色模式",
+		"dark": "切换到深色模式"
+	},
+	"palette": {
+		"title": "命令面板",
+		"open": "打开命令面板",
+		"prompt": "查找或执行命令"
+	},
+	"keyboard": {
+		"label": "键盘操作",
+		"title": "工作区键盘操作",
+		"help": "帮助",
+		"note": "工作区命令忽略文本输入；命令面板可在输入时打开。箭头键遵循原生标签和菜单的焦点规则。",
+		"palette": "打开命令面板：查找页面、插件入口与工作区命令",
+		"result": "在命令面板结果间移动；Enter 执行所选项",
+		"sidebar": "显示或收起左侧导航",
+		"closeActive": "关闭活动文档（遵守固定与未保存保护）",
+		"previous": "按原生布局顺序激活上一个文档",
+		"next": "按原生布局顺序激活下一个文档",
+		"maximize": "最大化或还原活动文档所在容器",
+		"menuKey": "菜单键",
+		"menu": "打开所聚焦标签、分组或容器的菜单",
+		"rename": "重命名所聚焦标签",
+		"closeFocused": "关闭所聚焦标签",
+		"focusContent": "在所选标签和内容间切换焦点",
+		"focusGroup": "聚焦下一个或上一个标签容器"
+	},
+	"notifications": {
+		"history": "通知历史",
+		"unread": "通知历史，{count} 条未读",
+		"clear": "清空历史",
+		"fallbackTitle": "工作台",
+		"empty": "暂无通知"
+	}
+}

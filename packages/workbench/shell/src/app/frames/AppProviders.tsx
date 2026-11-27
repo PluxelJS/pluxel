@@ -1,3 +1,4 @@
+import { m } from '#i18n'
 import { useComputedColorScheme } from '@mantine/core'
 import { pluginNodeIndexKey } from '@pluxel/core'
 import { ModalsProvider, openConfirmModal } from '@mantine/modals'
@@ -7,8 +8,18 @@ import { WorkbenchRuntimeProvider, type WorkbenchBrowserHost } from '../../workb
 import { notifyAndRecord } from '../notifications/notifyBridge'
 import { NotificationCenterProvider } from '../notifications/NotificationCenterProvider'
 import { usePluginOverview } from '../plugins/pluginOverview'
+import { AppLocaleProvider, useAppLocale } from './AppLocaleProvider'
 
 export function AppProviders({ children }: { children: ReactNode }) {
+	return (
+		<AppLocaleProvider>
+			<WorkbenchProviders>{children}</WorkbenchProviders>
+		</AppLocaleProvider>
+	)
+}
+
+function WorkbenchProviders({ children }: { children: ReactNode }) {
+	const { locale } = useAppLocale()
 	const colorScheme = useComputedColorScheme('light', { getInitialValueInEffect: true })
 	const pluginOverview = usePluginOverview()
 	const runningPluginSignature = (pluginOverview.overview?.status.statuses ?? [])
@@ -23,7 +34,7 @@ export function AppProviders({ children }: { children: ReactNode }) {
 
 	const workbenchHost = useMemo<WorkbenchBrowserHost>(() => {
 		return {
-			locale: document.documentElement.lang || navigator.language || 'en',
+			locale,
 			colorScheme,
 			runningPluginKeys,
 			runningPluginsReady: pluginOverview.hasSnapshot,
@@ -48,8 +59,8 @@ export function AppProviders({ children }: { children: ReactNode }) {
 						title: payload?.title,
 						children: payload?.message,
 						labels: {
-							confirm: payload?.confirmLabel ?? '确认',
-							cancel: payload?.cancelLabel ?? '取消',
+							confirm: payload?.confirmLabel ?? m['actions.confirm']({}, { locale }),
+							cancel: payload?.cancelLabel ?? m['actions.cancel']({}, { locale }),
 						},
 						confirmProps: payload?.tone === 'danger' ? { color: 'red' } : undefined,
 						onConfirm: () => resolve(true),
@@ -60,7 +71,7 @@ export function AppProviders({ children }: { children: ReactNode }) {
 				})
 			},
 		}
-	}, [colorScheme, pluginOverview.hasSnapshot, runningPluginKeys])
+	}, [colorScheme, locale, pluginOverview.hasSnapshot, runningPluginKeys])
 
 	return (
 		<WorkbenchRuntimeProvider host={workbenchHost}>

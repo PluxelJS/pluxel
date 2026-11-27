@@ -11,6 +11,7 @@ type PackageManifest = {
 
 type OfficialCapabilityModules = {
 	'rolldown-build': typeof import('@pluxel/rolldown/internal/cli')
+	'rolldown-i18n': typeof import('@pluxel/rolldown/internal/cli')
 	'rolldown-database': typeof import('@pluxel/rolldown/database')
 	'rolldown-distribution': typeof import('@pluxel/rolldown/distribution')
 	'rolldown-workspace-fs': typeof import('@pluxel/rolldown/workspace/fs')
@@ -31,6 +32,12 @@ const STARTUP_CWD_SYMBOL = Symbol.for('pluxel.cli.startupCwd')
 const OFFICIAL_CAPABILITIES = {
 	'rolldown-build': {
 		command: 'build',
+		owner: '@pluxel/rolldown',
+		subpath: './internal/cli',
+		install: 'vp add -D @pluxel/rolldown',
+	},
+	'rolldown-i18n': {
+		command: 'i18n',
 		owner: '@pluxel/rolldown',
 		subpath: './internal/cli',
 		install: 'vp add -D @pluxel/rolldown',

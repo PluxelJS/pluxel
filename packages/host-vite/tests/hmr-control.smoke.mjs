@@ -13,6 +13,7 @@ import { openProjectControl } from './script-control.fixture.mjs'
 
 const workspace = fileURLToPath(new URL('../../../', import.meta.url))
 const require = createRequire(import.meta.url)
+const requireRolldown = createRequire(require.resolve('@pluxel/rolldown/package.json'))
 const root = await mkdtemp(join(tmpdir(), 'pluxel-hmr-control-'))
 const target = { root }
 const entries = ['probe', 'neighbor']
@@ -21,13 +22,21 @@ const artifactFile = join(root, 'content.txt')
 const appFile = join(root, 'app.ts')
 const clockFile = join(root, 'clock.ts')
 const offsetFile = join(root, 'entries/offset.mjs')
+const messagesFile = join(root, 'messages/zh-CN.json')
 const scriptFile = join(root, 'read.ts')
 const entry = (name) => ({
 	kind: 'source-entry',
 	sourceSpace: 'app',
 	path: 'entries/' + name + '.entry.ts',
 })
-const metrics = { evaluated: [], started: [], stopped: [], artifact: null, gate: null }
+const metrics = {
+	evaluated: [],
+	started: [],
+	stopped: [],
+	translations: [],
+	artifact: null,
+	gate: null,
+}
 const errors = []
 const updates = []
 globalThis.__pluxelHmrTest = metrics
@@ -40,6 +49,7 @@ function plugin(name, version) {
 import { BasePlugin, Plugin } from '@pluxel/core'
 import { offset } from './offset.mjs'
 import { metrics } from '../metrics.ts'
+${name === 'probe' ? "import { m, resolveLocale } from '#i18n'" : ''}
 metrics.evaluated.push('${generation}')
 @Plugin()
 export class Probe extends BasePlugin {
@@ -48,6 +58,7 @@ export class Probe extends BasePlugin {
   ${version === 0 ? 'preview' : 'render'}(): number { return this.value }
   async init() {
     metrics.started.push('${generation}')
+    ${name === 'probe' ? "metrics.translations.push(m['groups.count']({ count: this.value }, { locale: resolveLocale('zh_cn') }))" : ''}
     ${name === 'probe' ? 'await metrics.gate?.promise' : ''}
     return () => { metrics.stopped.push('${generation}') }
   }
@@ -171,9 +182,22 @@ try {
 			'dir',
 		)
 	}
-	await mkdir(join(root, 'entries'))
+	for (const directory of ['entries', 'project.inlang', 'messages'])
+		await mkdir(join(root, directory))
 	const files = {
-		'package.json': JSON.stringify({ type: 'module' }),
+		'package.json': JSON.stringify({
+			type: 'module',
+			imports: { '#i18n': './.pluxel/i18n/index.js' },
+		}),
+		'project.inlang/settings.json': JSON.stringify({
+			baseLocale: 'en',
+			locales: ['en', 'zh-CN'],
+			modules: ['./message-format.mjs'],
+			'plugin.inlang.messageFormat': { pathPattern: './messages/{locale}.json' },
+		}),
+		'message-format.mjs': await readFile(requireRolldown.resolve('@inlang/plugin-message-format')),
+		'messages/en.json': JSON.stringify({ groups: { count: 'Groups: {count}' } }),
+		'messages/zh-CN.json': JSON.stringify({ groups: { count: 'Original: {count}' } }),
 		'tsconfig.json': JSON.stringify({
 			compilerOptions: {
 				target: 'ESNext',
@@ -197,6 +221,7 @@ try {
 		'metrics.ts': `
 export const metrics = (globalThis as unknown as { __pluxelHmrTest: {
   evaluated: string[], started: string[], stopped: string[],
+  translations: string[],
   gate: PromiseWithResolvers<void> | null
 } }).__pluxelHmrTest
 `,
@@ -384,6 +409,38 @@ export default (async (sdk) => {
 		const current = await status()
 		return current.hmr.mode === 'auto' && !current.hmr.running && current.hmr.pending.files === 0
 	}, 'Expected the automatic dependency update to settle')
+	await readPlugin(13)
+
+	// Catalog edits obey pause/apply and replace only the importing Plugin.
+	assert.equal(metrics.translations.at(-1), 'Original: 13')
+	const beforeTranslation = await control('pause')
+	const previousStarts = [...metrics.started]
+	const { observedRevision } = beforeTranslation.hmr
+	await observed(() =>
+		writeFile(messagesFile, JSON.stringify({ groups: { count: 'Translated: {count}' } })),
+	)
+	const staged = await status()
+	assert.equal(staged.hmr.pending.files, 1)
+	assert.equal(staged.hmr.observedRevision, observedRevision + 1)
+	assert.equal(metrics.translations.at(-1), 'Original: 13')
+	const translations = await control('apply')
+	assert.equal(translations.application.latestUpdate.trigger, 'messages/zh-CN.json')
+	assert.deepEqual(metrics.started, [...previousStarts, 'probe:3'])
+	assert.equal(metrics.translations.at(-1), 'Translated: 13')
+
+	await observed(() => writeFile(messagesFile, '{"groups":'))
+	const invalidCatalog = await controlHmr({ target, action: 'apply' })
+	assert.equal(invalidCatalog.run.state, 'failed')
+	const rejectedTranslation = await status()
+	assert.equal(rejectedTranslation.application.latestUpdate.outcome, 'retained-previous')
+	assert.equal(metrics.translations.at(-1), 'Translated: 13')
+	await observed(() =>
+		writeFile(messagesFile, JSON.stringify({ groups: { count: 'Repaired: {count}' } })),
+	)
+	const repairedTranslation = await control('resume')
+	assert.equal(metrics.translations.at(-1), 'Repaired: 13')
+	assert.deepEqual(metrics.started, [...previousStarts, 'probe:3', 'probe:3'])
+	assert.equal(repairedTranslation.hmr.pending.files, 0)
 	await readPlugin(13)
 
 	await server.close()

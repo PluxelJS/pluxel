@@ -11,6 +11,7 @@ Pluxel CLI（`@pluxel/cli`）是贯穿工作区初始化、代码生成、构建
 - **查阅项目离线文档**：`pluxel docs [path]`
 - **生成新插件包**：`pluxel new --name @scope/plugin [dir]`
 - **构建插件包**：`pluxel build`
+- **准备词条与生成类型**　`pluxel i18n [--root <package>]`。 [插件国际化](../plugin-development/i18n.md)
 - **数据库迁移维护**：`pluxel database generate/check/rebase`（见 [数据库开发](../plugin-development/database.md)）
 - **应用发行物打包与校验**：`pluxel distribution create/inspect/verify`
 - **发布 npm 包并同步市场**：`pluxel publish --webhook`

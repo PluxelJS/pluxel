@@ -6,6 +6,7 @@ import { createRoot, type Root } from 'react-dom/client'
 import { Actions, DockLocation, TabNode } from 'flexlayout-react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { AppThemeProvider } from '../../src/app/AppThemeProvider'
+import { AppLocaleProvider } from '../../src/app/frames/AppLocaleProvider'
 import { NotificationCenterProvider } from '../../src/app/notifications/NotificationCenterProvider'
 import { notifyAndRecord } from '../../src/app/notifications/notifyBridge'
 import { WorkbenchNavigationProvider } from '../../src/app/workbench/context'
@@ -69,15 +70,17 @@ async function workspace() {
 	await act(async () =>
 		root.render(
 			<AppThemeProvider>
-				<ModalsProvider>
-					<NotificationCenterProvider>
-						<WorkspaceSessionProvider value={session}>
-							<WorkbenchNavigationProvider value={{ navigate: () => undefined, openTab }}>
-								<WorkbenchShell />
-							</WorkbenchNavigationProvider>
-						</WorkspaceSessionProvider>
-					</NotificationCenterProvider>
-				</ModalsProvider>
+				<AppLocaleProvider>
+					<ModalsProvider>
+						<NotificationCenterProvider>
+							<WorkspaceSessionProvider value={session}>
+								<WorkbenchNavigationProvider value={{ navigate: () => undefined, openTab }}>
+									<WorkbenchShell />
+								</WorkbenchNavigationProvider>
+							</WorkspaceSessionProvider>
+						</NotificationCenterProvider>
+					</ModalsProvider>
+				</AppLocaleProvider>
 			</AppThemeProvider>,
 		),
 	)

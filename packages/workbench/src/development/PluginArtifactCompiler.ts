@@ -23,6 +23,7 @@ import {
 } from '@pluxel/core/internal'
 import { isAbsolute, join, resolve } from 'pathe'
 import type { ViteDevServer } from 'vite'
+import type { BuildWorkbenchFederationProducerOptions } from '@pluxel/rolldown/vite/workbench-ui'
 
 export type PluginArtifactCompilerOptions = Readonly<{
 	/** Disk cache root. @defaultValue `.pluxel/plugin-artifacts` under `process.cwd()`. */
@@ -52,6 +53,8 @@ export type WorkbenchProducerCompilation = Readonly<{
 	plan: WorkbenchFederationProducerPlan
 	/** Package root against which generated Bridge entries and dependencies are resolved. */
 	root: string
+	/** Translation fingerprints from the same source compilation as the plan. */
+	i18n?: BuildWorkbenchFederationProducerOptions['i18n']
 }>
 
 export type WorkbenchContentCompilation = Readonly<{
@@ -424,7 +427,7 @@ export class PluginArtifactCompiler {
 		}
 		const existing = this.producerTasks.get(taskKey)
 		if (existing) return existing
-		const task = this.performProducerBuild(plan, root, options).then((candidate) => {
+		const task = this.performProducerBuild(input, root, options).then((candidate) => {
 			this.producerCandidates.set(taskKey, candidate)
 			return candidate
 		})
@@ -437,10 +440,11 @@ export class PluginArtifactCompiler {
 	}
 
 	private async performProducerBuild(
-		plan: WorkbenchFederationProducerPlan,
+		input: WorkbenchProducerCompilation,
 		root: string,
 		options: Readonly<{ repairStaleCache?: boolean; logFailure?: boolean }>,
 	): Promise<WorkbenchArtifactCandidate> {
+		const { plan, i18n } = input
 		const typeAssets = this.workbenchProducerTypeAssets()
 		const outDir = this.producerOutDir(plan)
 		const artifactWasPresent = existsSync(outDir)
@@ -464,6 +468,7 @@ export class PluginArtifactCompiler {
 					root,
 					applicationRoot: this.viteServer?.config.root,
 					packageMode: this.packageMode,
+					i18n,
 					outDir,
 					cacheDir: join(this.cacheDir, 'workbench-vite'),
 					minify: false,

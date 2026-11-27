@@ -42,6 +42,8 @@ standalone 的 source resolution 选择 `@pluxel/hmr` 后仍执行 production lo
 
 entry literal 相对声明模块解析；lowering 在 owning package 的 `.pluxel/workbench-generated` 生成 Bridge，plan 保存 package-relative path。producer root 解析源码/依赖；application root 是 Vite root，决定 shared winner、compatibility signature、MF export detection；两者最小公共祖先作为声明 rootDir。入口、source graph 和 root 均来自真实解析，不接受第二套目录发现或 runtime fallback。
 
+source graph 在解析包内 `#i18n` 前准备该包的 Paraglide 产物。制品 revision 包含实际参与的 inlang 设置和消息指纹，watcher 跟踪同批输入和已配置但尚未创建的文件。 `.pluxel/i18n` 文件是可重建的编译缓存。producer 构建以绝对 producer root 准备生成模块，并复核所用输入指纹与计划一致。
+
 ## Production build
 
 | 输出                                               | 位置                                                                                |

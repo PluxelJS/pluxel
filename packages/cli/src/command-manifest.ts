@@ -67,6 +67,12 @@ export const buildCommandDefinition = {
 	args: buildCommandArgs,
 } as const
 
+export const i18nCommandDefinition = {
+	name: 'i18n',
+	description: 'Generate Paraglide messages and TypeScript declarations for a package',
+	args: { root: { type: 'string', description: 'Package root', default: '.' } },
+} as const
+
 export const databaseCommonArgs = {
 	root: { type: 'string', description: 'Plugin package root', default: '.' },
 	schema: { type: 'string', description: 'Database schema module (auto-detected by default)' },

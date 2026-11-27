@@ -16,6 +16,11 @@ import {
 type AcceptedWorkbenchInputs = Readonly<{
 	compilations: WorkbenchArtifactCompilations
 	sources: ReadonlySet<string>
+	i18n: ReadonlyMap<string, WorkbenchTranslationWatch>
+}>
+type WorkbenchTranslationWatch = Readonly<{
+	watchRoots: readonly string[]
+	matchesSource(file: string): boolean
 }>
 const acceptedInputs = new WeakMap<HostViteCatalog, AcceptedWorkbenchInputs>()
 
@@ -50,29 +55,52 @@ export function workbenchArtifacts(
 						},
 					)
 					let sources = new Set<string>()
+					let watchedProjects = new Map<string, WorkbenchTranslationWatch>()
+					const watchSources = () => {
+						server.watcher.add([
+							...sources,
+							...new Set([...watchedProjects.values()].flatMap((project) => project.watchRoots)),
+						])
+					}
 					const readInputs = async (catalog: HostViteCatalog) => {
 						semantics.invalidateWorkbench()
 						const selected = new Set(catalog.definitions.map(pluginDefinitionIndexKey))
-						const [allProducers, allContent, packaged] = await Promise.all([
-							semantics.workbenchCompilations(),
-							semantics.workbenchContentCompilations(),
+						const [producers, content, packaged] = await Promise.all([
+							semantics.workbenchCompilations(selected),
+							semantics.workbenchContentCompilations(selected),
 							readLoadedWorkbenchArtifacts(
 								semantics.builtDefinitionModules(catalog.modules),
 								selected,
 							),
-						])
-						const producers = allProducers.filter((entry) =>
-							selected.has(pluginDefinitionIndexKey(entry.plan.definition)),
-						)
-						const content = allContent.filter((entry) =>
-							selected.has(pluginDefinitionIndexKey(entry.contentSet.definition)),
-						)
+						]).catch(async (error) => {
+							if (watchedProjects.size > 0) {
+								// A valid pathPattern can point to messages that fail compilation. Watch those paths
+								// so fixing a translation can recover the next candidate.
+								const { readPluxelParaglideProject } =
+									await import('@pluxel/rolldown/vite/paraglide')
+								const projects = await Promise.allSettled(
+									[...watchedProjects.keys()].map((root) => readPluxelParaglideProject(root)),
+								)
+								for (const result of projects) {
+									if (result.status === 'fulfilled' && result.value) {
+										watchedProjects.set(result.value.packageRoot, result.value)
+									}
+								}
+								watchSources()
+							}
+							throw error
+						})
 						return {
 							compilations: { producers, content, packaged },
 							sources: new Set([
 								...producers.flatMap((entry) => entry.sources),
 								...content.flatMap((entry) => entry.sources),
 							]),
+							i18n: new Map(
+								producers.flatMap(({ i18n }) =>
+									(i18n ?? []).map((project) => [project.packageRoot, project] as const),
+								),
+							),
 						}
 					}
 					const prepareInputs = async (
@@ -80,7 +108,8 @@ export function workbenchArtifacts(
 						input: AcceptedWorkbenchInputs,
 					): Promise<HostViteCandidate> => {
 						for (const source of input.sources) sources.add(source)
-						server.watcher.add([...sources])
+						for (const [root, project] of input.i18n) watchedProjects.set(root, project)
+						watchSources()
 						const prepared = await compiler.prepareWorkbenchArtifacts(input.compilations)
 						let settled = false
 						return {
@@ -90,6 +119,7 @@ export function workbenchArtifacts(
 								prepared.commit()
 								acceptedInputs.set(catalog, input)
 								sources = new Set(input.sources)
+								watchedProjects = new Map(input.i18n)
 							},
 							rollback: () => {
 								if (settled) return
@@ -113,7 +143,9 @@ export function workbenchArtifacts(
 					}
 					return {
 						prepareCandidate,
-						tracks: (file: string) => sources.has(file),
+						tracks: (file: string) =>
+							sources.has(file) ||
+							[...watchedProjects.values()].some((project) => project.matchesSource(file)),
 						dispose: async () => {
 							removeUrlPrinter()
 							await compiler.dispose()

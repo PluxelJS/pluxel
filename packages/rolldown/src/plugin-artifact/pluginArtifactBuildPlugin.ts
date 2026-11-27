@@ -237,6 +237,11 @@ export function pluginArtifactBuildPlugin(
 				options.workbench === false ? [] : await (options.workbench?.compilations?.() ?? [])
 			const contentCompilations =
 				options.workbench === false ? [] : await (options.workbench?.contentCompilations?.() ?? [])
+			for (const { i18n } of producerCompilations) {
+				for (const project of i18n ?? []) {
+					for (const source of project.watchFiles) this.addWatchFile(source)
+				}
+			}
 			for (const compilation of contentCompilations) {
 				for (const source of compilation.sources) this.addWatchFile(source)
 			}
@@ -339,7 +344,7 @@ async function buildProductionProducer(
 	compilation: WorkbenchSemanticProducerCompilation,
 	options: PluginArtifactBuildPluginOptions,
 ): Promise<void> {
-	const { plan, root: sourceRoot } = compilation
+	const { i18n, plan, root: sourceRoot } = compilation
 	const target = options.workbench === false ? {} : (options.workbench ?? {})
 	const outDir = resolve(
 		deploymentRoot,
@@ -351,6 +356,7 @@ async function buildProductionProducer(
 		root: sourceRoot,
 		applicationRoot: deploymentRoot,
 		packageMode: 'source',
+		i18n,
 		plan,
 		outDir,
 		minify: target.minify ?? true,

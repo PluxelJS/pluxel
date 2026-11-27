@@ -2,7 +2,7 @@ import { Badge, Group, Modal, Stack, Text } from '@mantine/core'
 import {
 	CATALOG_SHORTCUT_ITEMS,
 	PLUGIN_DETAIL_SHORTCUT_ITEMS,
-	WORKBENCH_SHORTCUT_ITEMS,
+	workbenchShortcutItems,
 } from '../../../workbench/shortcuts'
 
 type CatalogHelpModalProps = {
@@ -25,7 +25,7 @@ export function CatalogHelpModal({ opened, onClose }: CatalogHelpModalProps) {
 					<Text fw={700} size="sm">
 						工作台快捷键
 					</Text>
-					{WORKBENCH_SHORTCUT_ITEMS.map(([key, description]) => (
+					{workbenchShortcutItems().map(([key, description]) => (
 						<Group key={key} justify="space-between" align="center" wrap="nowrap">
 							<Badge variant="light" color="grape" size="sm">
 								{key}

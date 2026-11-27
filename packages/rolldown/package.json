@@ -146,6 +146,7 @@
 	},
 	"dependencies": {
 		"@inlang/paraglide-js": "catalog:prod",
+		"@inlang/sdk": "catalog:prod",
 		"@module-federation/bridge-react": "catalog:frontend",
 		"@module-federation/sdk": "catalog:prod",
 		"@module-federation/vite": "catalog:build",
@@ -173,6 +174,7 @@
 		"yaml": "catalog:prod"
 	},
 	"devDependencies": {
+		"@inlang/plugin-message-format": "catalog:dev",
 		"@libsql/client": "catalog:backend",
 		"@pluxel/agent-sdk": "workspace:*",
 		"@pluxel/core": "workspace:*",

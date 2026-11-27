@@ -118,8 +118,10 @@ export function host(options: HostViteOptions): PluginOption[] {
 	const bindings = Object.freeze({ ...inputBindings })
 	const moduleBytes = createHostModuleBytes()
 	let profile: HostViteProfile = 'development'
+	let translationsWatch: ReturnType<typeof createHostDependencyWatch> | undefined
 	const pipeline = createPluginSourceVitePipeline({
 		environment: HOST_VITE_ENVIRONMENT,
+		watchParaglideInputs: async (files) => translationsWatch?.replace(files),
 		get packageMode() {
 			return profile === 'production' ? 'distribution' : 'development'
 		},
@@ -205,6 +207,7 @@ export function host(options: HostViteOptions): PluginOption[] {
 	}
 	const apply = async (batch?: HostViteBatch): Promise<void> => {
 		if (closing) return
+		let translations: string[] = []
 		if (batch) {
 			const sourceSnapshot = acceptedSources
 			let validatedSources = false
@@ -251,34 +254,46 @@ export function host(options: HostViteOptions): PluginOption[] {
 					await updateArtifacts(batch.changes[0]?.file)
 				return
 			}
+			const sourceChanges = changes.filter(
+				({ file }) =>
+					!pipeline.paraglide.tracks(file) || files.has(file) || controls.owners.has(file),
+			)
+			translations = changes
+				.filter(({ file }) => pipeline.paraglide.tracks(file))
+				.map(({ file }) => file)
 			const dependenciesToCheck = new Set<string>()
-			for (const change of changes) {
+			for (const change of sourceChanges) {
 				if (sources.covers(change.file)) {
 					for (const file of collectHostImportFiles(server, change.file))
 						dependenciesToCheck.add(file)
 				}
 			}
-			invalidateHostChangedModules({
-				server,
-				changes: [
-					...changes.map(({ file }) => ({ file, reloadDependencies: sources.covers(file) })),
-					...new Set(changes.flatMap(({ file }) => [...(controls.owners.get(file) ?? [])])),
-				].map((change) =>
-					typeof change === 'string' ? { file: change, reloadDependencies: false } : change,
-				),
-				applicationFiles: recovery.invalidationFiles(files),
-				changedDependencies: await moduleBytes.changed(dependenciesToCheck),
-				recoverMissingImports:
-					// An unavailable Host can retain evaluated modules from an attempt whose
-					// compiler facts rolled back. Retry those modules with the repaired one.
-					!active ||
-					batch.full ||
-					changes.some(
-						(change) =>
-							recovery.requiresResolutionRetry(change.file) ||
-							(change.type === 'create' && !sources.covers(change.file)),
+			if (sourceChanges.length > 0 || batch.full) {
+				invalidateHostChangedModules({
+					server,
+					changes: [
+						...sourceChanges.map(({ file }) => ({
+							file,
+							reloadDependencies: sources.covers(file),
+						})),
+						...new Set(sourceChanges.flatMap(({ file }) => [...(controls.owners.get(file) ?? [])])),
+					].map((change) =>
+						typeof change === 'string' ? { file: change, reloadDependencies: false } : change,
 					),
-			})
+					applicationFiles: recovery.invalidationFiles(files),
+					changedDependencies: await moduleBytes.changed(dependenciesToCheck),
+					recoverMissingImports:
+						// An unavailable Host can retain evaluated modules from an attempt whose
+						// compiler facts rolled back. Retry those modules with the repaired one.
+						!active ||
+						batch.full ||
+						sourceChanges.some(
+							(change) =>
+								recovery.requiresResolutionRetry(change.file) ||
+								(change.type === 'create' && !sources.covers(change.file)),
+						),
+				})
+			}
 		}
 		const candidate = beginHostCandidate({ entry, semantics: pipeline.semantics, recovery })
 		let sourceCandidate: HostSourceCandidate<ResolvedHostApplication> | undefined
@@ -320,6 +335,17 @@ export function host(options: HostViteOptions): PluginOption[] {
 		}
 		try {
 			await candidate.run(async () => {
+				if (batch?.full || translations.length > 0) {
+					const affected = await pipeline.paraglide.prepare(batch?.full ? undefined : translations)
+					if (affected.length > 0 || !active) {
+						invalidateHostChangedModules({
+							server,
+							changes: affected.map((file) => ({ file, reloadDependencies: true })),
+							applicationFiles: recovery.invalidationFiles(files),
+							recoverMissingImports: !active,
+						})
+					}
+				}
 				const namespace = await importHostModule<Record<string, unknown>>(server, entry)
 				if (typeof namespace.default !== 'function')
 					throw new TypeError(
@@ -480,7 +506,10 @@ export function host(options: HostViteOptions): PluginOption[] {
 				await settle(true)
 				await dependencies?.replace(
 					[...new Set([...files, ...controls.dependencies])].filter(
-						(file) => !sources.covers(file),
+						(file) =>
+							!sources.covers(file) &&
+							!pipeline.paraglide.isGenerated(file) &&
+							!pipeline.paraglide.tracks(file),
 					),
 				)
 			})
@@ -498,7 +527,10 @@ export function host(options: HostViteOptions): PluginOption[] {
 					await settle(true)
 					await dependencies?.replace(
 						[...new Set([...files, ...controls.dependencies])].filter(
-							(file) => !sources.covers(file),
+							(file) =>
+								!sources.covers(file) &&
+								!pipeline.paraglide.isGenerated(file) &&
+								!pipeline.paraglide.tracks(file),
 						),
 					)
 				} else {
@@ -695,6 +727,7 @@ export function host(options: HostViteOptions): PluginOption[] {
 				() => scripts?.close(),
 				() => sources?.close(),
 				() => dependencies?.close(),
+				() => translationsWatch?.close(),
 				() => recovery.close(),
 				() => drained,
 				() => stopObservingUpdates?.(),
@@ -735,6 +768,7 @@ export function host(options: HostViteOptions): PluginOption[] {
 			installHostViteShutdown(server, close)
 			dependencies = createHostDependencyWatch({
 				onChange: async (file, type) => {
+					if (pipeline.paraglide.tracks(file)) return
 					const changes = await Promise.allSettled(
 						Object.values(server.environments).map((environment) =>
 							environment.pluginContainer.watchChange(file, { event: type }),
@@ -752,9 +786,16 @@ export function host(options: HostViteOptions): PluginOption[] {
 				},
 				onError: sourceFailed,
 			})
+			translationsWatch = createHostDependencyWatch({ onChange: update, onError: sourceFailed })
 			entry = normalizePath(resolve(server.config.root, inputEntry))
 			files.add(entry)
-			recovery.attach(server, update, sourceFailed)
+			recovery.attach(
+				server,
+				async (file, type) => {
+					if (!pipeline.paraglide.tracks(file)) await update(file, type)
+				},
+				sourceFailed,
+			)
 			sources = createHostSourceEvaluator({
 				server,
 				root: server.config.root,
@@ -795,6 +836,7 @@ export function host(options: HostViteOptions): PluginOption[] {
 					getApplicationStatus: applicationStatus,
 					getUpdateStatus: driver.status,
 					assertApplied: driver.assertApplied,
+					isGeneratedDependency: pipeline.paraglide.isGenerated,
 					control: async (action, run) => {
 						await driver.control(action, run.signal)
 						return { hmr: driver.status(), application: applicationStatus() }
@@ -812,6 +854,7 @@ export function host(options: HostViteOptions): PluginOption[] {
 			async handler(context) {
 				if (this.environment.name !== HOST_VITE_ENVIRONMENT || closing) return undefined
 				try {
+					if (pipeline.paraglide.tracks(context.file)) return []
 					scripts?.observed(context.file)
 					if (sources.covers(context.file)) return undefined
 					if (dependencies?.covers(context.file)) return undefined

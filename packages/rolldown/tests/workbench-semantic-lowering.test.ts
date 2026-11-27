@@ -1643,6 +1643,137 @@ class SemanticPlugin {
 		expect(rendererRevision).not.toBe(definitionRevision)
 	})
 
+	it('builds localized nested producers and keys immutable artifacts by translation inputs', async () => {
+		const messageFormat = await readFile(
+			testRequire.resolve('@inlang/plugin-message-format'),
+			'utf8',
+		)
+		const settings = JSON.stringify({
+			baseLocale: 'en',
+			locales: ['en', 'zh-CN'],
+			modules: ['./message-format.js'],
+			'plugin.inlang.messageFormat': { pathPattern: './strings/{locale}.json' },
+		})
+		const imports = {
+			'#i18n': './.pluxel/i18n/index.js',
+			'#i18n/messages': './.pluxel/i18n/messages.js',
+		}
+		const files = fixtureFiles()
+		for (const name of ['nested', 'shared']) {
+			const path = `packages/${name}`
+			files[`${path}/package.json`] = JSON.stringify({
+				name: `@example/${name}`,
+				type: 'module',
+				imports,
+			})
+			files[`${path}/project.inlang/settings.json`] = settings
+			files[`${path}/message-format.js`] = messageFormat
+			files[`${path}/strings/en.json`] = JSON.stringify({
+				heading: `${name}-localized-heading`,
+				unused: `${name}-unused-translation-sentinel`,
+			})
+		}
+		files['packages/nested/src/settings.tsx'] = `
+import { m, resolveLocale } from '#i18n'
+import { settingsLabel } from '../../shared/label.ts'
+export default function Settings() { return m.heading({}, { locale: resolveLocale('zh-CN') }) + settingsLabel() }
+`
+		files['packages/shared/label.ts'] = `
+import { heading } from '#i18n/messages'
+export function settingsLabel() { return heading() }
+`
+		await using fixture = await createFixture(files)
+		const producerRoot = resolve(fixture.path, 'packages/nested')
+		const siblingRoot = resolve(fixture.path, 'packages/shared')
+		const lowering = createWorkbenchSemanticLowering(fixture.path)
+		await collectModule(
+			lowering,
+			fixture.path,
+			'packages/nested/src/plugin.ts',
+			`
+import { Workbench, workbench } from '@pluxel/workbench'
+export const SemanticWorkbench = workbench.define(import.meta.url, {
+	settings: workbench.view({ renderer: './settings.tsx', placement: { kind: 'tab' } }),
+})
+class SemanticPlugin {
+	init() { this.ctx.service(Workbench).publish(SemanticWorkbench, { settings: () => ({}) }) }
+}
+`,
+		)
+		const [first] = await lowering.compilations()
+		const localizedMessage = resolve(producerRoot, 'strings/zh-CN.json')
+		expect(first?.i18n?.map((project) => project.packageRoot).sort()).toEqual([
+			producerRoot,
+			siblingRoot,
+		])
+		expect(first?.i18n?.some((project) => project.matchesSource(localizedMessage))).toBe(true)
+		expect(first?.sources).toEqual(
+			expect.arrayContaining([
+				resolve(producerRoot, 'project.inlang/settings.json'),
+				resolve(producerRoot, 'strings/en.json'),
+				resolve(siblingRoot, 'strings/en.json'),
+			]),
+		)
+		expect(first?.sources.some((source) => source.includes('/.pluxel/i18n/'))).toBe(false)
+		expect(first?.sources).not.toContain(localizedMessage)
+		await expect(stat(resolve(fixture.path, '.pluxel/i18n/index.d.ts'))).rejects.toMatchObject({
+			code: 'ENOENT',
+		})
+
+		const build = (compilation: typeof first, outDir?: string) =>
+			buildWorkbenchFederationProducer({
+				root: producerRoot,
+				applicationRoot: fixture.path,
+				packageMode: 'development',
+				minify: false,
+				plan: compilation!.plan,
+				i18n: compilation!.i18n,
+				outDir,
+			})
+		const chunks = async (outDir: string) => {
+			const entries = await readdir(outDir, { recursive: true })
+			const javascript = await Promise.all(
+				entries
+					.filter((file) => file.endsWith('.js'))
+					.map((file) => readFile(resolve(outDir, file), 'utf8')),
+			)
+			return javascript.join('\n')
+		}
+		const initialBuild = await build(first)
+		const initialCode = await chunks(initialBuild.outDir)
+		expect(initialCode).toContain('nested-localized-heading')
+		expect(initialCode).toContain('shared-localized-heading')
+		expect(initialCode).not.toMatch(/unused-translation-sentinel|node:async_hooks/)
+		const stamp = resolve(initialBuild.outDir, 'pluxel-producer.json')
+		const initialStamp = await stat(stamp)
+		lowering.invalidate()
+		const [unchanged] = await lowering.compilations()
+		expect(unchanged?.plan.buildRevision).toBe(first?.plan.buildRevision)
+		expect(await build(unchanged)).toEqual(initialBuild)
+		const reusedStamp = await stat(stamp)
+		expect(reusedStamp.mtimeMs).toBe(initialStamp.mtimeMs)
+
+		await writeFile(localizedMessage, JSON.stringify({ heading: 'new-localized-heading' }))
+		lowering.invalidate()
+		const [changed] = await lowering.compilations()
+		expect(changed?.plan.buildRevision).not.toBe(first?.plan.buildRevision)
+		expect(changed?.sources).toContain(localizedMessage)
+		await expect(build(first, resolve(fixture.path, 'stale-output'))).rejects.toThrow(
+			/translation inputs changed/,
+		)
+		const updatedBuild = await build(changed)
+		expect(await chunks(updatedBuild.outDir)).toContain('new-localized-heading')
+
+		await rm(localizedMessage)
+		lowering.invalidate()
+		const [removed] = await lowering.compilations()
+		expect(removed?.plan.buildRevision).toBe(first?.plan.buildRevision)
+
+		await rm(resolve(producerRoot, 'project.inlang'), { recursive: true })
+		lowering.invalidate()
+		await expect(lowering.compilations()).rejects.toThrow(/Missing .*project.inlang\/settings.json/)
+	}, 60_000)
+
 	it('fingerprints the resolved UI closure while ignoring unrelated lockfile updates', async () => {
 		const registry = 'node_modules/@example/registry-ui'
 		const dependency = 'node_modules/@example/theme'

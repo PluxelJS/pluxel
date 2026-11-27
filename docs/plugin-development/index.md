@@ -19,6 +19,7 @@ description: 掌握 Pluxel 插件的核心模型、依赖注入、生命周期�
 - **部署凭据**　用 `ctx.vault` 读取部署方注入的记录。需要在运行中修改凭据时，由宿主提供可写的加密后端。 [Vault](./vault.md)
 - **[拆分内部逻辑（PluginPart）](./parts.md)**：对于逻辑庞大的插件，使用 `PluginPart` 拆分子模块与局部配置，随父插件统一启停。
 - **[插件测试](./testing.md)**：借助 `@pluxel/test` 在纯内存测试宿主中进行端到端隔离验证。
+- **[国际化](./i18n.md)**　用 Paraglide 生成类型化消息，在服务端与 Workbench 视图中传入本次使用的语言。
 
 ## 按需扩展服务
 

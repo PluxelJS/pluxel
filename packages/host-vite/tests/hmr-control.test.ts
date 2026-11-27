@@ -7,7 +7,7 @@ it('controls real Vite updates through the published client across edits and Hos
 	const result = await promisify(execFile)(
 		process.execPath,
 		[fileURLToPath(new URL('./hmr-control.smoke.mjs', import.meta.url))],
-		{ timeout: 90_000 },
+		{ timeout: 120_000 },
 	)
 	expect(result.stdout).toContain('HMR_CONTROL_SMOKE_OK')
-}, 100_000)
+}, 130_000)

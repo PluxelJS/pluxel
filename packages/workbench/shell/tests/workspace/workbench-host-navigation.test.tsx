@@ -17,6 +17,7 @@ import { Actions } from 'flexlayout-react'
 import { StrictMode, act } from 'react'
 import { createRoot, type Root } from 'react-dom/client'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
+import { useWorkbenchReactRuntime } from '../../../src/workbench/react-context'
 import { App } from '../../src/app'
 import { WorkspaceSession } from '../../src/app/workbench/session'
 import {
@@ -191,9 +192,12 @@ beforeEach(() => {
 		const key = id.split('/').at(-1)
 		const entry = [manager, account, preview].find((candidate) => candidate.descriptor.key === key)!
 		return {
-			default: createWorkbenchBridge(entry.federatedViewRef.descriptor, () => (
-				<input aria-label={`${key} draft`} defaultValue="local draft" />
-			)),
+			default: createWorkbenchBridge(entry.federatedViewRef.descriptor, function FixtureRenderer() {
+				const { host } = useWorkbenchReactRuntime()
+				return (
+					<input aria-label={`${key} draft`} data-locale={host.locale} defaultValue="local draft" />
+				)
+			}),
 		}
 	})
 	fixture.nodes = [owner]
@@ -292,6 +296,42 @@ async function mount(
 }
 
 describe('Plugin host navigation through the authenticated native App', () => {
+	it('applies and remembers the workspace language while retaining the open federated View', async () => {
+		const { workspace, container, host, session } = await mount('/')
+		const input = container.querySelector<HTMLInputElement>('[aria-label="manager draft"]')!
+		const active = workspace.workbench.getActiveDocument()!
+		const openCount = vi.mocked(session.openEntry).mock.calls.length
+		const menu = container.querySelector<HTMLButtonElement>('.plx-workspace__workspace-menu')!
+		expect(input.dataset.locale).toBe('zh-CN')
+		expect(menu.textContent).toContain('工作区')
+		input.value = 'retain this draft'
+
+		await act(async () => menu.click())
+		const english = document.querySelector<HTMLButtonElement>('[role="menuitemradio"] [lang="en"]')!
+		await act(async () => english.click())
+		await vi.waitFor(() => expect(input.dataset.locale).toBe('en'))
+
+		expect(menu.textContent).toContain('Workspace')
+		expect(document.documentElement.lang).toBe('en')
+		expect(JSON.parse(window.localStorage.getItem('pluxel-workbench-locale')!)).toBe('en')
+		expect(host.facade.locale).toBe('en')
+		expect(host.active).toBe(true)
+		expect(session.openEntry).toHaveBeenCalledTimes(openCount)
+		expect(workspace.workbench.getActiveDocument()?.id).toBe(active.id)
+		expect(container.querySelector('[aria-label="manager draft"]')).toBe(input)
+		expect(input.value).toBe('retain this draft')
+	})
+
+	it('uses the stored language when first opening a View', async () => {
+		window.localStorage.setItem('pluxel-workbench-locale', JSON.stringify('en'))
+		const { container, host } = await mount('/')
+		expect(host.facade.locale).toBe('en')
+		expect(
+			container.querySelector('[aria-label="manager draft"]')?.getAttribute('data-locale'),
+		).toBe('en')
+		expect(container.querySelector('[aria-label="Open command palette"]')).not.toBeNull()
+	})
+
 	it('publishes clearing the plugin log URL when focus changes within the active document', async () => {
 		const { workspace, container, prefix } = await mount('/__pluxel/workbench')
 		await act(async () =>

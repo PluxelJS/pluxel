@@ -13,6 +13,10 @@
 		"!**/*.map"
 	],
 	"type": "module",
+	"imports": {
+		"#i18n": "./.pluxel/i18n/index.js",
+		"#i18n/messages": "./.pluxel/i18n/messages.js"
+	},
 	"exports": {
 		".": {
 			"@pluxel/source": "./src/index.ts",
@@ -134,6 +138,7 @@
 		"@dnd-kit/core": "catalog:frontend",
 		"@dnd-kit/modifiers": "catalog:frontend",
 		"@dnd-kit/sortable": "catalog:frontend",
+		"@inlang/plugin-message-format": "catalog:dev",
 		"@mantine/core": "catalog:frontend",
 		"@mantine/hooks": "catalog:frontend",
 		"@mantine/modals": "catalog:frontend",

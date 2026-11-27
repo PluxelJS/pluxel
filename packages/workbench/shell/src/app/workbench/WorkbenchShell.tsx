@@ -1,3 +1,4 @@
+import { isLocale, locales, m } from '#i18n'
 import { Workbench, useWorkbenchState, type WorkbenchProps } from '@worksplit/react'
 import {
 	ActionIcon,
@@ -34,6 +35,7 @@ import {
 import { Actions, BorderNode, type ILayoutApi } from 'flexlayout-react'
 import { useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore } from 'react'
 import { ThemeCustomizer } from '../../theme'
+import { useAppLocale } from '../frames/AppLocaleProvider'
 import { useNotificationCenter } from '../notifications/NotificationCenterProvider'
 import { useProduct } from '../product'
 import { useWorkbenchNavigation } from './context'
@@ -42,7 +44,7 @@ import { useWorkbenchTargetSnapshot } from '../../workbench/runtime'
 import { useWorkspaceSession } from './workspaceContext'
 import { WorkspaceNavigation, type WorkspaceCommand } from './WorkspaceNavigation'
 import { useNativeMenus } from './nativeMenus'
-import { WORKBENCH_HOTKEYS, WORKBENCH_HOTKEY_LABELS, WORKBENCH_SHORTCUT_ITEMS } from './shortcuts'
+import { WORKBENCH_HOTKEYS, WORKBENCH_HOTKEY_LABELS, workbenchShortcutItems } from './shortcuts'
 import { WorkbenchUpdateStatus } from './shell/WorkbenchUpdateStatus'
 import '@worksplit/react/style.css'
 import 'flexlayout-react/style/light.css'
@@ -52,6 +54,16 @@ export function WorkbenchShell() {
 	const session = useWorkspaceSession()
 	const navigation = useWorkbenchNavigation()
 	const product = useProduct()
+	const { locale, setLocale } = useAppLocale()
+	const messageOptions = { locale }
+	const duplicateTabLabel = m['workspace.duplicateTab']({}, messageOptions)
+	const previewLabel = m['workspace.preview']({}, messageOptions)
+	const unsavedLabel = m['workspace.unsaved']({}, messageOptions)
+	const closeAllLabel = m['workspace.closeAll']({}, messageOptions)
+	const closeActiveLabel = m['workspace.closeActive']({}, messageOptions)
+	const maximizeLabel = m['layout.maximize']({}, messageOptions)
+	const keyboardLabel = m['keyboard.label']({}, messageOptions)
+	const securityLabel = m['workspace.security']({}, messageOptions)
 	const root = useRef<HTMLDivElement>(null)
 	const layoutRef = useRef<ILayoutApi>(null)
 	const [searchOpen, setSearchOpen] = useState(false)
@@ -198,8 +210,8 @@ export function WorkbenchShell() {
 							className="plx-workspace__after-tab"
 							size="xs"
 							variant="subtle"
-							aria-label="复制当前标签页"
-							title="复制当前标签页"
+							aria-label={duplicateTabLabel}
+							title={duplicateTabLabel}
 							onPointerDown={(event) => event.stopPropagation()}
 							onMouseDown={(event) => event.stopPropagation()}
 							onClick={(event) => {
@@ -218,13 +230,15 @@ export function WorkbenchShell() {
 				values.content = (
 					<span className="plx-workspace__tab-label" title={document?.href}>
 						<span>{node.getName()}</span>
-						{document?.preview && <span className="plx-workspace__tab-preview">预览</span>}
+						{document?.preview && (
+							<span className="plx-workspace__tab-preview">{previewLabel}</span>
+						)}
 						{dirty && (
 							<span
 								className="plx-workspace__tab-dirty"
 								role="status"
-								aria-label="未保存的更改"
-								title="未保存的更改"
+								aria-label={unsavedLabel}
+								title={unsavedLabel}
 							>
 								●
 							</span>
@@ -233,14 +247,21 @@ export function WorkbenchShell() {
 				)
 			},
 		}),
-		[menu.native, session, activeDocumentId, navigation],
+		[
+			menu.native,
+			session,
+			activeDocumentId,
+			navigation,
+			duplicateTabLabel,
+			previewLabel,
+			unsavedLabel,
+		],
 	)
 	const closeDocuments = () =>
 		openConfirmModal({
-			title: '关闭所有文档',
-			children:
-				'将关闭全部文档，包括折叠分组中的文档。固定或受保护文档会阻止关闭；未保存更改仍需确认。',
-			labels: { confirm: '关闭所有文档', cancel: '保留工作区' },
+			title: closeAllLabel,
+			children: m['workspace.closeAllDescription']({}, messageOptions),
+			labels: { confirm: closeAllLabel, cancel: m['workspace.keepWorkspace']({}, messageOptions) },
 			confirmProps: { color: 'red' },
 			onConfirm: () => {
 				setPending(true)
@@ -257,12 +278,23 @@ export function WorkbenchShell() {
 			.catch((error: unknown) => session.report(error))
 			.finally(() => setPending(false))
 	}
-	const sideLabels = { left: '左侧导航', right: '右侧面板', bottom: '底部面板' } as const
+	const sideLabels = {
+		left: m['layout.left']({}, messageOptions),
+		right: m['layout.right']({}, messageOptions),
+		bottom: m['layout.bottom']({}, messageOptions),
+	}
+	const layoutLabel = m['layout.label']({}, messageOptions)
+	const layoutActionLabel = (side: keyof typeof sideLabels) => {
+		const input = { panel: sideLabels[side] }
+		return borderVisible(side)
+			? m['layout.hide'](input, messageOptions)
+			: m['layout.show'](input, messageOptions)
+	}
 	const commands: WorkspaceCommand[] = [
 		...(['left', 'right', 'bottom'] as const).map((side): WorkspaceCommand => ({
 			id: `toggle-${side}`,
-			label: `${borderVisible(side) ? '收起' : '显示'}${sideLabels[side]}`,
-			description: '布局',
+			label: layoutActionLabel(side),
+			description: layoutLabel,
 			keywords: 'panel sidebar 面板 侧栏',
 			shortcut: side === 'left' ? WORKBENCH_HOTKEY_LABELS.showNavigation : undefined,
 			disabled: !session.panelAvailable(side),
@@ -270,8 +302,8 @@ export function WorkbenchShell() {
 		})),
 		{
 			id: 'close-active',
-			label: '关闭活动文档',
-			description: '文档',
+			label: closeActiveLabel,
+			description: m['workspace.document']({}, messageOptions),
 			keywords: 'close tab 标签',
 			shortcut: WORKBENCH_HOTKEY_LABELS.closeActiveTab,
 			disabled: !count || pending,
@@ -279,8 +311,8 @@ export function WorkbenchShell() {
 		},
 		{
 			id: 'maximize',
-			label: '最大化或还原活动容器',
-			description: '布局',
+			label: maximizeLabel,
+			description: layoutLabel,
 			keywords: 'maximize 全屏',
 			shortcut: WORKBENCH_HOTKEY_LABELS.maximize,
 			disabled: !activeGroup || activeGroup.startsWith('border_'),
@@ -288,31 +320,34 @@ export function WorkbenchShell() {
 		},
 		{
 			id: 'close-all',
-			label: '关闭所有文档',
-			description: '文档 · 保留布局，需确认',
+			label: closeAllLabel,
+			description: m['workspace.closeAllHint']({}, messageOptions),
 			keywords: 'close all tabs 标签',
 			disabled: !count || pending,
 			run: closeDocuments,
 		},
 		{
 			id: 'reset-layout',
-			label: '恢复默认布局',
-			description: '布局 · 关闭文档并重新载入',
+			label: m['layout.reset']({}, messageOptions),
+			description: m['layout.resetHint']({}, messageOptions),
 			keywords: 'reset layout 重置',
 			disabled: pending,
 			run: resetLayout,
 		},
 		{
 			id: 'color-scheme',
-			label: colorScheme === 'dark' ? '切换到浅色模式' : '切换到深色模式',
-			description: '外观',
+			label:
+				colorScheme === 'dark'
+					? m['appearance.light']({}, messageOptions)
+					: m['appearance.dark']({}, messageOptions),
+			description: m['appearance.label']({}, messageOptions),
 			keywords: 'theme dark light 主题 明暗',
 			run: () => setColorScheme(colorScheme === 'dark' ? 'light' : 'dark'),
 		},
 		{
 			id: 'shortcuts',
-			label: '键盘操作',
-			description: '帮助',
+			label: keyboardLabel,
+			description: m['keyboard.help']({}, messageOptions),
 			keywords: 'keyboard shortcuts 快捷键',
 			run: () => setHelpOpen(true),
 		},
@@ -333,11 +368,12 @@ export function WorkbenchShell() {
 						size="compact-sm"
 						leftSection={<IconSearch size={15} />}
 						onClick={showSearch}
-						aria-label="打开命令面板"
+						aria-label={m['palette.open']({}, messageOptions)}
 						className="plx-workspace__search-button"
 					>
 						<span className="plx-workspace__search-label">
-							查找或执行命令 <kbd>{WORKBENCH_HOTKEY_LABELS.commandPalette}</kbd>
+							{m['palette.prompt']({}, messageOptions)}{' '}
+							<kbd>{WORKBENCH_HOTKEY_LABELS.commandPalette}</kbd>
 						</span>
 					</Button>
 					<Menu position="bottom-start" shadow="md" width={265}>
@@ -350,32 +386,52 @@ export function WorkbenchShell() {
 								disabled={pending}
 								className="plx-workspace__workspace-menu"
 							>
-								工作区
+								{m['workspace.title']({}, messageOptions)}
 							</Button>
 						</Menu.Target>
 						<Menu.Dropdown>
-							<Menu.Label>{count} 个文档</Menu.Label>
-							<Menu.Item onClick={showNavigation}>显示插件目录</Menu.Item>
-							<Menu.Item onClick={() => navigation.navigate('/apps')}>显示应用目录</Menu.Item>
+							<Menu.Label>{m['workspace.documentCount']({ count }, messageOptions)}</Menu.Label>
+							<Menu.Item onClick={showNavigation}>
+								{m['workspace.showPlugins']({}, messageOptions)}
+							</Menu.Item>
+							<Menu.Item onClick={() => navigation.navigate('/apps')}>
+								{m['workspace.showApps']({}, messageOptions)}
+							</Menu.Item>
 							<Menu.Item
 								disabled={!count}
 								onClick={closeActive}
 								rightSection={<kbd>{WORKBENCH_HOTKEY_LABELS.closeActiveTab}</kbd>}
 							>
-								关闭活动文档
+								{closeActiveLabel}
 							</Menu.Item>
 							<Menu.Item
 								disabled={!activeGroup || activeGroup.startsWith('border_')}
 								onClick={maximize}
 							>
-								最大化或还原活动容器
+								{maximizeLabel}
 							</Menu.Item>
-							<Menu.Item onClick={() => setHelpOpen(true)}>键盘操作</Menu.Item>
+							<Menu.Item onClick={() => setHelpOpen(true)}>{keyboardLabel}</Menu.Item>
 							<Menu.Divider />
 							<Menu.Item color="red" disabled={!count} onClick={closeDocuments}>
-								关闭所有文档（保留布局）
+								{m['workspace.closeAllMenu']({}, messageOptions)}
 							</Menu.Item>
-							<Menu.Item onClick={resetLayout}>恢复默认布局（关闭文档并重新载入）</Menu.Item>
+							<Menu.Item onClick={resetLayout}>
+								{m['layout.resetMenu']({}, messageOptions)}
+							</Menu.Item>
+							<Menu.Divider />
+							<Menu.Label>{m['language.label']({}, messageOptions)}</Menu.Label>
+							<Menu.RadioGroup
+								value={locale}
+								onChange={(value) => {
+									if (isLocale(value)) setLocale(value)
+								}}
+							>
+								{locales.map((choice) => (
+									<Menu.RadioItem key={choice} value={choice}>
+										<span lang={choice}>{m['language.name']({}, { locale: choice })}</span>
+									</Menu.RadioItem>
+								))}
+							</Menu.RadioGroup>
 						</Menu.Dropdown>
 					</Menu>
 				</Group>
@@ -383,21 +439,21 @@ export function WorkbenchShell() {
 					gap="xs"
 					wrap="nowrap"
 					className="plx-workspace__layout-controls"
-					aria-label="布局控制"
+					aria-label={m['layout.controls']({}, messageOptions)}
 				>
 					{(
 						[
-							['left', '左侧导航', IconLayoutSidebarLeftExpand],
-							['right', '右侧面板', IconLayoutSidebarRight],
-							['bottom', '底部面板', IconLayoutBottombar],
+							['left', IconLayoutSidebarLeftExpand],
+							['right', IconLayoutSidebarRight],
+							['bottom', IconLayoutBottombar],
 						] as const
-					).map(([side, label, Icon]) => (
-						<Tooltip key={side} label={`${borderVisible(side) ? '收起' : '显示'}${label}`}>
+					).map(([side, Icon]) => (
+						<Tooltip key={side} label={layoutActionLabel(side)}>
 							<ActionIcon
 								size="sm"
 								variant={borderVisible(side) ? 'light' : 'subtle'}
 								color={borderVisible(side) ? 'brand' : 'gray'}
-								aria-label={label}
+								aria-label={sideLabels[side]}
 								aria-pressed={borderVisible(side)}
 								disabled={!session.panelAvailable(side)}
 								onClick={() => toggleBorder(side)}
@@ -410,11 +466,11 @@ export function WorkbenchShell() {
 				<Group gap="xs" wrap="nowrap" ml="auto" className="plx-workspace__utilities">
 					<WorkbenchUpdateStatus />
 					<NotificationHistory />
-					<Tooltip label="认证与安全">
+					<Tooltip label={securityLabel}>
 						<ActionIcon
 							variant="subtle"
 							size="sm"
-							aria-label="认证与安全"
+							aria-label={securityLabel}
 							onClick={() => navigation.navigate('/security')}
 						>
 							<IconShieldLock size={17} />
@@ -424,7 +480,11 @@ export function WorkbenchShell() {
 				</Group>
 			</header>
 			{storageError && (
-				<Alert color="yellow" title="布局尚未保存" className="plx-workspace__storage-error">
+				<Alert
+					color="yellow"
+					title={m['workspace.storageError']({}, messageOptions)}
+					className="plx-workspace__storage-error"
+				>
 					<Group gap="sm" align="start">
 						<Text size="xs" style={{ flex: 1 }}>
 							{storageError}
@@ -435,7 +495,7 @@ export function WorkbenchShell() {
 							size="compact-xs"
 							onClick={() => session.storage.retry()}
 						>
-							重试保存
+							{m['workspace.retrySave']({}, messageOptions)}
 						</Button>
 					</Group>
 				</Alert>
@@ -451,10 +511,10 @@ export function WorkbenchShell() {
 					empty={
 						<Stack gap="xs" align="center">
 							<Text c="dimmed" size="sm">
-								工作区没有打开的文档
+								{m['workspace.empty']({}, messageOptions)}
 							</Text>
 							<Button variant="light" size="xs" onClick={showSearch}>
-								查找页面或插件入口
+								{m['workspace.findEntry']({}, messageOptions)}
 							</Button>
 						</Stack>
 					}
@@ -463,7 +523,7 @@ export function WorkbenchShell() {
 			<Modal
 				opened={searchOpen}
 				onClose={() => setSearchOpen(false)}
-				title="命令面板"
+				title={m['palette.title']({}, messageOptions)}
 				size="lg"
 				centered
 			>
@@ -479,12 +539,12 @@ export function WorkbenchShell() {
 			<Modal
 				opened={helpOpen}
 				onClose={() => setHelpOpen(false)}
-				title="工作区键盘操作"
+				title={m['keyboard.title']({}, messageOptions)}
 				size="lg"
 				centered
 			>
 				<Stack gap="xs">
-					{WORKBENCH_SHORTCUT_ITEMS.map(([key, description]) => (
+					{workbenchShortcutItems(locale).map(([key, description]) => (
 						<Group key={key} wrap="nowrap" align="start">
 							<Badge variant="light" color="gray" miw={125}>
 								{key}
@@ -493,7 +553,7 @@ export function WorkbenchShell() {
 						</Group>
 					))}
 					<Text c="dimmed" size="xs">
-						工作区命令忽略文本输入；命令面板可在输入时打开。箭头键遵循原生标签和菜单的焦点规则。
+						{m['keyboard.note']({}, messageOptions)}
 					</Text>
 				</Stack>
 			</Modal>
@@ -503,6 +563,8 @@ export function WorkbenchShell() {
 
 function NotificationHistory() {
 	const center = useNotificationCenter()
+	const { locale } = useAppLocale()
+	const options = { locale }
 	const [opened, setOpened] = useState(false)
 	return (
 		<Popover opened={opened} onChange={setOpened} position="bottom-end" width={360} shadow="md">
@@ -511,7 +573,7 @@ function NotificationHistory() {
 					<ActionIcon
 						variant="subtle"
 						size="sm"
-						aria-label={`通知历史，${center.unread} 条未读`}
+						aria-label={m['notifications.unread']({ count: center.unread }, options)}
 						onClick={() => {
 							setOpened((value) => !value)
 							center.markAllRead()
@@ -525,7 +587,7 @@ function NotificationHistory() {
 				<Stack gap="sm">
 					<Group justify="space-between">
 						<Text fw={600} size="sm">
-							通知历史
+							{m['notifications.history']({}, options)}
 						</Text>
 						<Button
 							size="compact-xs"
@@ -533,7 +595,7 @@ function NotificationHistory() {
 							disabled={center.items.length === 0}
 							onClick={center.clear}
 						>
-							清空历史
+							{m['notifications.clear']({}, options)}
 						</Button>
 					</Group>
 					<ScrollArea.Autosize mah={320} type="auto">
@@ -542,19 +604,19 @@ function NotificationHistory() {
 								center.items.map((item) => (
 									<div key={item.id} className="plx-workspace__notification">
 										<Text size="sm" fw={600}>
-											{item.title ?? '工作台'}
+											{item.title ?? m['notifications.fallbackTitle']({}, options)}
 										</Text>
 										<Text size="xs" style={{ whiteSpace: 'pre-wrap', overflowWrap: 'anywhere' }}>
 											{item.message}
 										</Text>
 										<Text size="xs" c="dimmed">
-											{new Date(item.createdAt).toLocaleString()}
+											{new Date(item.createdAt).toLocaleString(locale)}
 										</Text>
 									</div>
 								))
 							) : (
 								<Text c="dimmed" size="sm">
-									暂无通知
+									{m['notifications.empty']({}, options)}
 								</Text>
 							)}
 						</Stack>
@@ -565,7 +627,7 @@ function NotificationHistory() {
 						leftSection={<IconX size={13} />}
 						onClick={() => setOpened(false)}
 					>
-						关闭
+						{m['actions.close']({}, options)}
 					</Button>
 				</Stack>
 			</Popover.Dropdown>

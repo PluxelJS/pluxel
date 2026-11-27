@@ -1,6 +1,5 @@
 import { mkdir, rm, symlink, writeFile } from 'node:fs/promises'
 import { createRequire } from 'node:module'
-import { paraglideVitePlugin } from '@inlang/paraglide-js'
 import { federation, type ModuleFederationOptions } from '@module-federation/vite'
 import { build, type InlineConfig, type Plugin, type PluginOption } from 'vite'
 import {
@@ -11,6 +10,8 @@ import {
 } from '@pluxel/core/federation'
 import { dirname, resolve } from 'pathe'
 import PreprocessorDirectives from 'unplugin-preprocessor-directives/vite'
+import { compilePluxelParaglide, type CompiledPluxelParaglideProject } from '../i18n/paraglide.ts'
+import { pluxelParaglideVitePlugin } from './paraglide.ts'
 
 // DTS generation is owned by this toolchain; a producer is not required to install TypeScript.
 const toolchainRequire = createRequire(import.meta.url)
@@ -30,12 +31,36 @@ export type WorkbenchViteBuildOptions = Readonly<{
 	minify: boolean
 	sourcemap: boolean
 	typeAssets: WorkbenchFederationTypeAssetPolicy
-	paraglide: Readonly<{ project: string; outdir: string }> | null
+	i18n?: readonly Pick<CompiledPluxelParaglideProject, 'packageRoot' | 'fingerprint'>[]
 }>
 
 export async function runWorkbenchViteBuild(options: WorkbenchViteBuildOptions): Promise<void> {
+	await verifyTranslationInputs(options)
 	const dtsTsConfigPath = options.typeAssets === 'required' ? await writeDtsTsConfig(options) : null
 	await build(createViteConfig(options, dtsTsConfigPath))
+	if (options.i18n) await verifyTranslationInputs(options)
+}
+
+async function verifyTranslationInputs(options: WorkbenchViteBuildOptions): Promise<void> {
+	const rootProject = await compilePluxelParaglide(options.producerRoot)
+	if (!options.i18n) return
+	const changed = (root: string) =>
+		new Error(
+			`[workbench-ui] translation inputs changed for ${root} while building ${options.producer}`,
+		)
+	if (
+		rootProject &&
+		!options.i18n.some(({ packageRoot }) => packageRoot === rootProject.packageRoot)
+	) {
+		throw changed(rootProject.packageRoot)
+	}
+	for (const input of options.i18n) {
+		const project =
+			input.packageRoot === rootProject?.packageRoot
+				? rootProject
+				: await compilePluxelParaglide(input.packageRoot)
+		if (project?.fingerprint !== input.fingerprint) throw changed(input.packageRoot)
+	}
 }
 
 function createViteConfig(
@@ -150,20 +175,11 @@ function createPlugins(
 ): PluginOption[] {
 	const [declareFullSharedSurface, removeSharedSurfaceDeclaration] =
 		fullSharedSurfaceAnalysisPlugins(options)
-	const plugins: PluginOption[] = [
+	return [
 		rejectHostOwnedMantineStyles(),
 		declareFullSharedSurface,
 		PreprocessorDirectives(),
-	]
-	if (options.paraglide) {
-		plugins.push(
-			paraglideVitePlugin({
-				project: options.paraglide.project,
-				outdir: options.paraglide.outdir,
-			}),
-		)
-	}
-	plugins.push(
+		pluxelParaglideVitePlugin({ root: options.producerRoot }),
 		federation({
 			name: options.producer,
 			filename: WORKBENCH_FEDERATION_REMOTE_ENTRY_FILE,
@@ -187,8 +203,7 @@ function createPlugins(
 			shareStrategy: WORKBENCH_FEDERATION_SHARE_STRATEGY,
 		}),
 		removeSharedSurfaceDeclaration,
-	)
-	return plugins
+	]
 }
 
 function fullSharedSurfaceAnalysisPlugins(

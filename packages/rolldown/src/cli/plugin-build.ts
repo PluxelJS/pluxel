@@ -13,6 +13,7 @@ import type { BuildLogger } from './types'
 import type { OutputChunk, Plugin } from 'rolldown'
 import { createPluginControlPlugin } from '../control/plugin'
 import { addControlExport, assertControlHostPeer, controlEntry } from './control-exports'
+import { paraglideBuildPlugin } from '../i18n/bundler'
 
 type TsdownInputOptions = Exclude<
 	NonNullable<InlineConfig['inputOptions']>,
@@ -80,6 +81,7 @@ function createPipeline(
 	return {
 		semantics,
 		plugins: [
+			paraglideBuildPlugin(options.root),
 			PreprocessorDirectives(),
 			semantics.plugin,
 			Macros(),
