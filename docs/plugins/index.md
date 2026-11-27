@@ -86,6 +86,6 @@ export class ReportsPlugin extends BasePlugin {
 | **`@pluxel/plugin-storage`**     | S3 兼容的对象存储服务，支持本地与云端存储  | [S3 对象存储](./storage.md)            |
 | **`@pluxel/plugin-cache`**       | 插件级隔离的多级缓存抽象与后端适配         | [缓存服务](./cache.md)                 |
 | **`@pluxel/plugin-rates`**       | 基于令牌桶/滑动窗口的 API 频率限制         | [请求限流](./rates.md)                 |
-| **`@pluxel/plugin-permissions`** | 按主体、权限组和范围裁决，并解释命中来源   | [权限管理](./permissions.md)           |
+| **`@pluxel/plugin-permissions`** | 按主体、角色和多维范围裁决，解释命中来源   | [权限管理](./permissions.md)           |
 | **`@pluxel/plugin-otel`**        | OpenTelemetry 指标与链路追踪数据上报       | [OpenTelemetry](./otel.md)             |
 | **`@pluxel/plugin-typst`**       | 基于 Typst 的高性能排版、矢量图与 PDF 渲染 | [Typst 文档排版](./rendering/typst.md) |
