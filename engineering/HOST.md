@@ -1,6 +1,6 @@
 # Host 与服务架构
 
-Host 拥有服务安装、应用启动、catalog、运行意图和资源关闭，复用 Core 的 graph/lifecycle。应用用法见 [Host services](../docs/host/services.md)，整体分层见 [Plugin 系统](PLUGIN_SYSTEM.md)。
+Host 拥有服务安装、应用启动、catalog、运行意图和资源关闭，复用 Core 的 graph/lifecycle。应用用法见 [Host services](../docs/host/services.md)，整体分层与 Core 设施 / Host Service / Plugin 的选型边界见 [Plugin 系统](PLUGIN_SYSTEM.md#能力归属边界)。
 
 `defineHostApplication(factory)` 返回工厂本身，由驱动在启动时求值。Node 应用可用 `servicesPreset()` 和 `vitePreset()` 组合运行时服务及开发附件，使用 `@pluxel/rolldown` 的 `pluxel()` 构建交付。
 

@@ -4,7 +4,7 @@ Pluxel 的框架架构、实现入口与验证方法由本目录维护。应用�
 
 ## 架构入口
 
-[系统边界](PLUGIN_SYSTEM.md)串起源码声明、Host 装配、Core generation 与可选 Workbench 的执行路径；[工程原则](DESIGN_PRINCIPLES.md)维护跨领域不变量。Context 是同步能力 kernel，Core 管 Plugin graph 和生命周期，Host 管装配与运行策略，Services 提供具体能力。领域页进一步说明机制、源码和测试。
+[系统边界](PLUGIN_SYSTEM.md)串起源码声明、Host 装配、Core generation 与可选 Workbench 的执行路径，并维护 Core 设施、Host Service 与 Plugin 的[能力归属边界](PLUGIN_SYSTEM.md#能力归属边界)；[工程原则](DESIGN_PRINCIPLES.md)维护跨领域不变量。Context 是同步能力 kernel，Core 管 Plugin graph 和生命周期，Host 管装配与运行策略，Services 提供具体能力。领域页进一步说明机制、源码和测试。
 
 公开入口以 package 的 `exports` 为准。修改公共 API 时同时检查 [API 设计规则](../.agents/rules/library-api-design.md)与真实调用方；依赖、导出和 workspace 调整由 [Governance](GOVERNANCE.md)维护。
 

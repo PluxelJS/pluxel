@@ -65,6 +65,27 @@ prepare 的结构拒绝保留旧事实。第一次关闭旧 generation admission
 
 Constructor dependency facade 固定 provider generation 和 caller Context。Part occurrence、缓存与并发调用不能串 owner；任一相关 generation 撤回后，旧 facade 不能继续调用。可调用 surface 与 Context 规则见 [CORE](CORE.md)，完整 commit/late-init/publication 语义及测试证据见 [生命周期矩阵](CORE_LIFECYCLE_SEMANTICS.md)。
 
+## 能力归属边界
+
+消费者侧的 `ctx.service(Service)` / `defineServiceRef<Service>()` 与 `constructor(dep: Plugin)` / `definePluginRef<Plugin>()` 外形接近，但它们属于不同的所有权与生命周期层级。规划新能力时按运行期事实分层，不以调用写法相近为由混用：
+
+| 维度           | Core 内建设施                                                                 | Host Service（非内置服务）                                                                    | Plugin                                                                                         |
+| -------------- | ----------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------- |
+| 拓扑与寿命     | 挂在 Context 上，随 Core root 建立与排空                                      | 在 DI 图外；创建 root 前固定集合，先于全部 Plugin `prepare()`、后于全部 Plugin 释放           | 在 DI 图内；有 `definition → node → generation`，支持独立启停、重启、动态加载与 HMR            |
+| 变更与故障半径 | 部署期 `coreConfig` 决定，改配置须重建 Host                                   | 准备失败阻塞整个 Host 启动；替换实现或改配置须重建 Host                                       | 启动失败仅阻塞依赖它的下游闭包；热更与重启只级联影响下游                                       |
+| 平台绑定与特权 | 由 Core/Host 装配注入基础后端，面向全部宿主                                   | 可注入平台原生载体/绑定（如 D1、Node listener、Worker 池、原生宿主 API）并访问真实 `ctx.root` | 消费宿主提供的服务与设施，保持跨平台可移植性，不持有 `ctx.root`                                |
+| 插件生态能力   | 自身即为底座能力                                                              | 无 `configs.use()`、无 plugin-owned 数据库句柄、无独立 Workbench 发布节点                     | 直接使用 `configs.use()`、`envBindings`、托管 `Sqlite`/`Pg`、`WorkbenchRef` 发布管理页         |
+| 多实例与多态   | 单一 Core 设施                                                                | 同一个 Service token 在一个 Host root 内全局唯一（重复安装报 `DUPLICATE_SERVICE`）            | 支持 `forkable` 多节点隔离，以及 `abstract class` + `providerDefaults` / `dependencyOverrides` |
+| 典型代表       | `ctx.logger`、`ctx.fs`、`ctx.tinybase`、`ctx.vault`、`ctx.wretch`/`ctx.fetch` | `Elysia`、`Pg`、`Sqlite`、`Commands`、`NodeModules`、`Workers`、`Management`、`Workbench`     | `Cache`、`Rates`、`Redis`、`Storage`、`Auth`、`Permissions`、`Fonts`、`PackageManager`         |
+
+选择归属遵循以下判断规则：
+
+- **归入 Core 内建设施**：几乎所有宿主与插件都会直接碰到的基础原语，或需要部署层统一收口的全局边界控制（例如原 `Wretch` 插件因属于全宿主出站网络策略与平台 Fetch 接入边界，已迁入 `coreConfig.http` 与 `ctx.wretch`/`ctx.fetch`）。
+- **优先设计为 Host Service**：需要按运行平台在启动边界注入原生驱动、绑定或物理载体；必须在任何插件启动前就绪且不因业务插件故障而不可用（如入站路由、命令根目录、管理面与 Workbench）；需要访问 `ctx.root` 治理全宿主；并且自身不需要 Valibot 受管配置表单、独立 Workbench 页面、多实例 fork 或动态热替换。
+- **优先设计为 Plugin**：领域语义存在多种流派或可替换策略（如缓存/限流后端、权限模型、认证实现）；自身依赖托管服务并形成「配置 schema + 持久化 + 管理 UI」闭环；需要 `forkable` 多节点隔离、抽象令牌覆写、动态来源安装或开发期独立 HMR；或希望缺失与故障通过 DI 图显式阻断下游（fail-closed）而不拖垮整个 Host。
+- **灰区模式——薄 Service 插槽 + 重 Plugin 实现**：当宿主入口或管线需要感知某项能力，而具体策略、配置、凭据/存储与 UI 应保留在插件生态内时，在 Host Service 只留极薄的协议插槽，由普通 Plugin 在 `init()` 中接入并随 generation effects 自动撤回。典型先例是 `ManagementAccess` 服务插槽与 `@pluxel/plugin-auth`（`AuthPlugin`）；需要为底层设施附加独立管理界面时，也采用配套 Plugin（如 `@pluxel/services/plugins` 中的 `VaultAdminPlugin`），不让 Service 反向承担插件 UI 职责。
+- **应用私有服务例外**：垂直产品在自己的专属 Host 中，若某能力是整个应用的不可关闭启动前提（例如应用私有数据库或强绑定宿主入口管线的原生能力），可在应用 `prepare()` 中准备并作为自定义 `HostService` 暴露；此选择明确放弃插件配置、fork、HMR 与 DI 图可见性。面向多应用复用的生态能力默认优先设计为 Plugin。
+
 ## 服务、来源与宿主策略
 
 Node 的 `servicesPreset()` 组合入站 HTTP、Commands、NodeModules、Workers、Management、管理命令及可选 Workbench。`workbench: false` 保留管理能力，定制宿主和隔离测试直接组合单项安装器。Pg 由应用单独选择。安装顺序与 root/service/generation 资源边界见 [HOST](HOST.md)。
