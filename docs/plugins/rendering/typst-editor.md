@@ -123,7 +123,7 @@ React 页面把解析成功后的 `value.document` 作为 `TypstDocumentEditor` 
 
 正文转换、无 DOM 编辑器与 React 编辑器共用同一套节点、属性和标记。`parseTypstDocument` 在嵌套链接的内层源码范围报告 `UNSUPPORTED_SYNTAX`，包括 Typst 自动识别的裸 URL。外层链接若要显示 URL 文字，可以写成 `#link("https://outer.example")[#text("https://inner.example")]`。
 
-宿主可按需开放本章原生源码。人或 Agent 读取获准章节的 `.typ` 和基线修订，提交修改后走相同的生成与接纳路径。宿主核对章节权限、修订、引用目标与素材，再提交生成的 `.typ`。可公开素材直接使用原文件。需要保护原件时，宿主提供获准的发布版，并用同一批输入产生预览和原生 PDF。PDF 保留编译器生成的文本、矢量内容和链接。 [分章项目书示例](https://github.com/PluxelJS/pluxel/blob/5acd5b22dbe62cf96b50421fa37f95f507d5ce02/plugins/render/typst/tests/consumer/README.md) · [编译与 PDF 导出](./typst.md)
+宿主可按需开放本章原生源码。人或 Agent 读取获准章节的 `.typ` 和基线修订，提交修改后走相同的生成与接纳路径。宿主核对章节权限、修订、引用目标与素材，再提交生成的 `.typ`。可公开素材直接使用原文件。需要保护原件时，宿主提供获准的发布版，并用同一批输入产生预览和原生 PDF。PDF 保留编译器生成的文本、矢量内容和链接。 [分章项目书示例](https://github.com/PluxelJS/plugins/blob/9a631b7b5ea0d49edb6290e17d94b111f9c8745b/render/typst/tests/consumer/README.md) · [编译与 PDF 导出](./typst.md)
 
 ## Agent 源码事务与增量补丁
 

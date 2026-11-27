@@ -4,11 +4,13 @@
 
 ## 消费者已有的材料
 
-| 消费者                 | 可直接使用的事实                                                                                                                                                                                                                                       |
-| ---------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| 市场 Worker            | 从 registry 读取包名、版本和 SHA-512，核对整份归档的字节，再检查包内 `package.json`、显式 exports 目标、Core peer 和 `pluxel.pluginPackages`。[发行检查](../../../projects/plugin-market/README.md#制品容量与迁移)                                     |
-| 项目与 Package Manager | 发布后的 npm 字段给出公开入口、依赖范围和可选关系。版本及兼容范围由作者维护，项目使用自己的包管理器和锁文件，托管安装由 pnpm 解析。[插件包构建](../../../docs/development/plugin-package.md)                                                           |
-| Host 安装预检          | 编译器生成的 `pluxel.control` 清单列出定义、控制契约及材料。可选的 `dependencies.json` 为能静态确定的定义给出 required、optional、provider 和 fork 信息。缺失声明时预览报告预测缺口。[安装设计](../../../plugins/package-manager/DESIGN.md#准备与确认) |
+| 消费者                 | 可直接使用的事实                                                                                                                                                                                                   |
+| ---------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| 市场 Worker            | 从 registry 读取包名、版本和 SHA-512，核对整份归档的字节，再检查包内 `package.json`、显式 exports 目标、Core peer 和 `pluxel.pluginPackages`。[发行检查](../../../projects/plugin-market/README.md#制品容量与迁移) |
+| 项目与 Package Manager | 发布后的 npm 字段给出公开入口、依赖范围和可选关系。版本及兼容范围由作者维护，项目使用自己的包管理器和锁文件，托管安装由 pnpm 解析。[插件包构建](../../../docs/development/plugin-package.md)                       |
+| Host 安装预检          | 编译器生成的 `pluxel.control` 清单列出定义、控制契约及材料。可选的 `dependencies.json` 为能静态确定的定义给出 required、optional、provider 和 fork 信息。缺失声明时预览报告预测缺口。[安装设计]                    |
+
+[安装设计]: https://github.com/PluxelJS/plugins/blob/main/package-manager/DESIGN.md#准备与确认
 
 控制清单逐文件记录的是**控制材料**的长度和 SHA-256。若消费端需要核对某个运行资源，应确定它在包内的路径、当前负责定位或验证它的组件，以及现有整包 SHA-512 为什么不足以支持这项操作。[控制清单](../../../packages/core/src/internal/control-manifest.ts) · [市场归档检查](../../../projects/plugin-market/src/registry/tarball.ts)
 

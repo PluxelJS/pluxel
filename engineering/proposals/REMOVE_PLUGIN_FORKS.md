@@ -5,7 +5,7 @@ Core 与 Host 继续支持同一 concrete definition 的 default 和 fork 节点
 ## 已知调用方
 
 - Redis connections 和 S3 buckets 已由各自的 Plugin 管理。consumer 通过 ID 选择连接或 bucket，provider 对句柄和资源寿命负责。这两种装配已有领域实现。[Redis 连接目录](../../docs/plugins/redis.md#连接目录与生命周期)、[S3 bucket 目录](../../docs/plugins/storage.md#bucket-目录与生命周期)
-- 实验插件 `InvoicePlugin` 声明 `forkable: true`，依赖抽象 `Playwright`，并读取本节点的配置和 Vault。其测试装配启动默认节点。需从实际应用核对是否同时部署多个 Invoice 节点，各自选择哪个 Playwright provider，以及谁依赖该节点的独立启停。[Invoice 实现](../../plugins/browser/invoice/src/index.ts)、[测试装配](../../plugins/browser/invoice/tests/setup.ts)
+- 实验插件 `InvoicePlugin` 声明 `forkable: true`，依赖抽象 `Playwright`，并读取本节点的配置和 Vault。其测试装配启动默认节点。需从实际应用核对是否同时部署多个 Invoice 节点，各自选择哪个 Playwright provider，以及谁依赖该节点的独立启停。[Invoice 实现](https://github.com/PluxelJS/plugins/blob/main/browser/invoice/src/index.ts)、[测试装配](https://github.com/PluxelJS/plugins/blob/main/browser/invoice/tests/setup.ts)
 - 生成的 `control` 入口公开 `nodeAddress(forkId)`。脚本可列出已声明的 fork，再按地址读配置、启停或调用实例。调查下游时也要查这样的脚本以及保存的节点引用。仓库另有演示 consumer 选择 fork 的示例。[插件控制](../../docs/development/plugin-control.md)、[Fork 示例](../../projects/plugin-host/src/demo/advanced/DemoForks.ts)
 
 ## 用实际装配决定

@@ -48,7 +48,7 @@ prepare → host.start / 服务结算 → acceptStartup → launch
 
 固定 `plugins` 与声明式 `sources` 进入同一 catalog。policy/config/bindings 使用 canonical address，提前声明动态节点不会加载代码、创建 fork 或启动节点。Host 保持进程 cwd；入口和来源锚定 startup root，env 由 startup 显式传入。输入合并由 [Config](CONFIG.md#static-startup-config) 维护。
 
-Native 与 Vite 将每个动态入口的物理路径登记在提交的 catalog provenance 中，同一个 constructor 可以由多个入口提供。`readPluginSourceImpact` 从协调器同步读取 catalog、策略、节点和 Core 的直接依赖边。已排队或正在执行的图变更返回 `HOST_GRAPH_BUSY`，以免等待一个正在排空调用者的事务。来源路径用于识别发布者，Plugin identity 仍取自声明地址。携带候选声明时，预检与运行接纳共同使用声明级的策略求解；运行接纳单独为选中的节点附加真实实现并生成 Core 操作。[动态来源](../docs/host/configuration.md#动态来源) · [安装预览](../plugins/package-manager/DESIGN.md#准备与确认)
+Native 与 Vite 将每个动态入口的物理路径登记在提交的 catalog provenance 中，同一个 constructor 可以由多个入口提供。`readPluginSourceImpact` 从协调器同步读取 catalog、策略、节点和 Core 的直接依赖边。已排队或正在执行的图变更返回 `HOST_GRAPH_BUSY`，以免等待一个正在排空调用者的事务。来源路径用于识别发布者，Plugin identity 仍取自声明地址。携带候选声明时，预检与运行接纳共同使用声明级的策略求解；运行接纳单独为选中的节点附加真实实现并生成 Core 操作。[动态来源](../docs/host/configuration.md#动态来源) · [安装预览](https://github.com/PluxelJS/plugins/blob/main/package-manager/DESIGN.md#准备与确认)
 
 Vite 和生产 launcher 共用应用解析。工厂 identity 变化时重新求值并替换 Host，固定 import 更新也可使工厂失效；求值失败保留旧 Host。工厂未变的动态来源更新复用当前配置、提交 catalog。replacement 失败可用最后成功声明创建 fresh Host 补偿，旧 generation 保持退役。Host-vite 驱动 Node 应用开发；Services/Workbench 分别拥有自己的附件，database lowering 属于工具插件。
 

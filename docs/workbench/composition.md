@@ -34,7 +34,7 @@ this.ctx.service(WorkbenchRef)?.publish(CanvasWorkbench, {
 })
 ```
 
-选择器调用 `provider.setPreferredFamily(family)`。Canvas 和 ECharts 绑定同一个 Fonts 节点时，任一入口保存的偏好都属于该节点，两边共享。完整的导入、构造函数和发布示例见[服务端字体](../plugins/rendering/fonts.md#在工作台修改字体节点的默认偏好)。 [Canvas 位置声明](https://github.com/PluxelJS/pluxel/blob/7ee930604cc3f0a4ba2d64040b335d4cb9894ee3/plugins/render/canvas/src/workbench.ts) · [Canvas 绑定实例](https://github.com/PluxelJS/pluxel/blob/7ee930604cc3f0a4ba2d64040b335d4cb9894ee3/plugins/render/canvas/src/index.ts)
+选择器调用 `provider.setPreferredFamily(family)`。Canvas 和 ECharts 绑定同一个 Fonts 节点时，任一入口保存的偏好都属于该节点，两边共享。完整的导入、构造函数和发布示例见[服务端字体](../plugins/rendering/fonts.md#在工作台修改字体节点的默认偏好)。 [Canvas 位置声明](https://github.com/PluxelJS/plugins/blob/717fead1969e5e2206ac09da1e5e8a8de2d372c2/render/canvas/src/workbench.ts) · [Canvas 绑定实例](https://github.com/PluxelJS/plugins/blob/717fead1969e5e2206ac09da1e5e8a8de2d372c2/render/canvas/src/index.ts)
 
 ## 由消费方保存选择
 

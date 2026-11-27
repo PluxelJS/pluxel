@@ -98,7 +98,7 @@ Workbench 446 项通过。全套检查另外暴露 `workbench-editor-grid.test.t
 
 实施与三路独立复核完成：2026-10-04 至 2026-10-05。本轮已完成框架、调用方、测试、文档与发行说明迁移；未通过和未验证的边界在本节明确保留。当前用法见[Host 配置](../../docs/host/configuration.md)、[应用构建](../APPLICATION_BUILD.md)、[HMR](../HMR.md)和[Package Manager](../../docs/plugins/package-manager.md)。
 
-本轮以真实 Node 进程、独立 tarball 安装和实际 Vite 事件补齐共享身份、文件观察和关闭边界。可重复入口包括 [native admission](../../packages/host/tests/deployment/native-admission.test.ts)、[modules 构建](../../packages/rolldown/tests/modules-application.test.ts)、[不可变安装](../../plugins/package-manager/tests/immutable-installation.test.ts)、[生产 Vite smoke](../../plugins/package-manager/tests/production-vite.smoke.mjs)、[生产运行入口](../../packages/host-vite/tests/run.test.ts)与[生成应用 smoke](../../packages/create/scripts/smoke-starter.ts)。设计与修正历史由 Git 保存。
+本轮以真实 Node 进程、独立 tarball 安装和实际 Vite 事件补齐共享身份、文件观察和关闭边界。可重复入口包括 [native admission](../../packages/host/tests/deployment/native-admission.test.ts)、[modules 构建](../../packages/rolldown/tests/modules-application.test.ts)、[不可变安装](https://github.com/PluxelJS/plugins/blob/main/package-manager/tests/immutable-installation.test.ts)、[生产 Vite smoke](https://github.com/PluxelJS/plugins/blob/main/package-manager/tests/production-vite.smoke.mjs)、[生产运行入口](../../packages/host-vite/tests/run.test.ts)与[生成应用 smoke](../../packages/create/scripts/smoke-starter.ts)。设计与修正历史由 Git 保存。
 
 本轮没有操作已有在线应用；所有运行验证使用隔离目录、临时数据、本地 npm registry 和新建 Node/Vite 进程。
 
@@ -220,7 +220,7 @@ WeakMap 以稳定 `HostStateSnapshot` 为 key；新 state 冷索引仍扫描 aut
 - 用工作区已有的 v3 控制清单，两份预览都识别出新增的 `OtelPlugin`，因清单未声明 `dependencies.json` 返回 `incomplete`，原因为 `dependencies`。
 - 用当前编译器从同一插件源码生成的控制材料，两份预览均为 `projected`。候选提供 `Otel`，required 和 optional 插件引用均为空。新增定义解除了原来的 `consumer_unavailable`，两份预览的 `liveRejections` 均为空。[Host 投影回归](../../packages/host/tests/graph/catalog-provenance.test.ts)
 
-另在隔离 Host 上按同一个默认节点地址启动实际的 `OtelPlugin`，保持 OTLP traces 启用。抓取请求通过 Host 的 HTTP handler 发出。[Otel 启动与指标回归](../../plugins/otel/tests/plugin.test.ts) · [缺服务时的失败报告](../../plugins/otel/tests/native-providers.test.ts)
+另在隔离 Host 上按同一个默认节点地址启动实际的 `OtelPlugin`，保持 OTLP traces 启用。抓取请求通过 Host 的 HTTP handler 发出。[Otel 启动与指标回归](https://github.com/PluxelJS/plugins/blob/main/otel/tests/plugin.test.ts) · [缺服务时的失败报告](https://github.com/PluxelJS/plugins/blob/main/otel/tests/native-providers.test.ts)
 
 | Prometheus 配置                | Host 装配  | 节点启动结果                                                            |
 | ------------------------------ | ---------- | ----------------------------------------------------------------------- |

@@ -3,7 +3,7 @@ title: Typst API 速览
 description: 外部应用如何接入 Typst 编译、预览、富文本和 Agent 源码编辑。
 ---
 
-`@pluxel/plugin-typst` 当前是 workspace 私有包。外部项目可接入 Pluxel 源码，或使用为目标平台构建的制品。原生编译入口需要带 `native/compiler.node` 的完整构建。 [跨仓库源码接入](../../development/source-workspaces.md) · [原生构建](https://github.com/PluxelJS/pluxel/blob/5acd5b22dbe62cf96b50421fa37f95f507d5ce02/plugins/render/typst/native/README.md)
+`@pluxel/plugin-typst` 当前是 workspace 私有包。外部项目可接入 Pluxel 源码，或使用为目标平台构建的制品。原生编译入口需要带 `native/compiler.node` 的完整构建。 [跨仓库源码接入](../../development/source-workspaces.md) · [原生构建](https://github.com/PluxelJS/plugins/blob/9a631b7b5ea0d49edb6290e17d94b111f9c8745b/render/typst/native/README.md)
 
 | 外部应用能做什么                           | 使用的 API                                                                                                             |
 | ------------------------------------------ | ---------------------------------------------------------------------------------------------------------------------- |
@@ -92,4 +92,4 @@ if (!printed.ok) throw new Error('章节编辑未通过校验', { cause: printed
 const chapterSource = printed.value.source
 ```
 
-宿主保存 `chapterSource`，决定可编辑章节、发布的资源和预览导航。如果用户只需填表，直接保存业务 JSON，再用上面的会话重排即可。 [分章项目书与审批表示例](https://github.com/PluxelJS/pluxel/blob/5acd5b22dbe62cf96b50421fa37f95f507d5ce02/plugins/render/typst/tests/consumer/README.md)
+宿主保存 `chapterSource`，决定可编辑章节、发布的资源和预览导航。如果用户只需填表，直接保存业务 JSON，再用上面的会话重排即可。 [分章项目书与审批表示例](https://github.com/PluxelJS/plugins/blob/9a631b7b5ea0d49edb6290e17d94b111f9c8745b/render/typst/tests/consumer/README.md)
