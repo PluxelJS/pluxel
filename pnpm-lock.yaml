@@ -2462,6 +2462,73 @@ importers:
         specifier: catalog:test
         version: 5.0.5(@opentelemetry/api@1.10.0)(@types/node@26.6.6)(@vitest/browser-preview@5.0.5)(@vitest/ui@5.0.5)(@voidzero-dev/vite-plus-core@1.4.0(@types/node@26.6.6)(esbuild@0.28.2)(jiti@2.7.0)(sass-embedded@1.107.1)(sass@1.107.1)(sugarss@5.0.2(postcss@8.5.32))(terser@5.50.0)(tsx@4.23.15)(typescript@7.0.2)(unrun@0.3.1)(yaml@2.9.1))(jsdom@30.1.3(@noble/hashes@2.4.0))
 
+  plugins/permissions:
+    dependencies:
+      valibot:
+        specifier: catalog:validation
+        version: 1.5.0(typescript@7.0.2)
+    devDependencies:
+      '@mantine/core':
+        specifier: catalog:frontend
+        version: 9.7.4(@mantine/hooks@9.7.4(react@19.3.1))(@types/react@19.3.0)(react-dom@19.3.1(react@19.3.1))(react@19.3.1)
+      '@pluxel/cli':
+        specifier: workspace:*
+        version: link:../../packages/cli
+      '@pluxel/core':
+        specifier: workspace:*
+        version: link:../../packages/core
+      '@pluxel/host':
+        specifier: workspace:*
+        version: link:../../packages/host
+      '@pluxel/rolldown':
+        specifier: workspace:*
+        version: link:../../packages/rolldown
+      '@pluxel/services':
+        specifier: workspace:*
+        version: link:../../packages/services
+      '@pluxel/test':
+        specifier: workspace:*
+        version: link:../../packages/test
+      '@pluxel/workbench':
+        specifier: workspace:*
+        version: link:../../packages/workbench
+      '@types/node':
+        specifier: catalog:types
+        version: 26.6.6
+      '@types/react':
+        specifier: catalog:types
+        version: 19.3.0
+      '@types/react-dom':
+        specifier: catalog:types
+        version: 19.3.0(@types/react@19.3.0)
+      capnweb:
+        specifier: catalog:prod
+        version: 0.13.1
+      drizzle-kit:
+        specifier: catalog:backend
+        version: 0.31.11
+      drizzle-orm:
+        specifier: catalog:backend
+        version: 0.45.4(@cloudflare/workers-types@5.20261117.1)(@electric-sql/pglite@0.6.0)(@libsql/client@0.18.0)(@opentelemetry/api@1.10.0)(@types/pg@8.23.1)(bun-types@1.4.5)(kysely@0.28.19)(pg@8.23.1)
+      react:
+        specifier: catalog:frontend
+        version: 19.3.1
+      react-dom:
+        specifier: catalog:frontend
+        version: 19.3.1(react@19.3.1)
+      typescript:
+        specifier: catalog:dev
+        version: 7.0.2
+      vite:
+        specifier: catalog:build
+        version: '@voidzero-dev/vite-plus-core@1.4.0(@types/node@26.6.6)(esbuild@0.28.2)(jiti@2.7.0)(sass-embedded@1.107.1)(sass@1.107.1)(sugarss@5.0.2(postcss@8.5.32))(terser@5.50.0)(tsx@4.23.15)(typescript@7.0.2)(unrun@0.3.1)(yaml@2.9.1)'
+      vite-plus:
+        specifier: catalog:build
+        version: 1.4.0(@opentelemetry/api@1.10.0)(@types/node@26.6.6)(@vitest/ui@5.0.5)(esbuild@0.28.2)(jiti@2.7.0)(jsdom@30.1.3(@noble/hashes@2.4.0))(playwright@1.64.1)(sass-embedded@1.107.1)(sass@1.107.1)(sugarss@5.0.2(postcss@8.5.32))(terser@5.50.0)(tsx@4.23.15)(typescript@7.0.2)(unrun@0.3.1)(yaml@2.9.1)
+      vitest:
+        specifier: catalog:test
+        version: 5.0.5(@opentelemetry/api@1.10.0)(@types/node@26.6.6)(@vitest/browser-preview@5.0.5)(@vitest/ui@5.0.5)(@voidzero-dev/vite-plus-core@1.4.0(@types/node@26.6.6)(esbuild@0.28.2)(jiti@2.7.0)(sass-embedded@1.107.1)(sass@1.107.1)(sugarss@5.0.2(postcss@8.5.32))(terser@5.50.0)(tsx@4.23.15)(typescript@7.0.2)(unrun@0.3.1)(yaml@2.9.1))(jsdom@30.1.3(@noble/hashes@2.4.0))
+
   plugins/rates:
     dependencies:
       valibot:
