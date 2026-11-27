@@ -11,6 +11,7 @@
 		"---工作区预览（不可安装）---",
 		"cache",
 		"rates",
+		"permissions",
 		"redis",
 		"storage",
 		"otel",

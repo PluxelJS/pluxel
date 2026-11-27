@@ -1,6 +1,6 @@
 # Coding agent 工作入口
 
-应用/插件开发与在线排障使用 [pluxel-development skill](.agents/skills/pluxel-development/SKILL.md)；框架维护按下表选工程文档。已知文件直接定位，不为局部改动通读全部文档。
+应用/插件开发与在线排障使用 [pluxel-development skill](.agents/skills/pluxel-development/SKILL.md)；框架维护按下表选工程文档。官方插件源码由 [PluxelJS/plugins](https://github.com/PluxelJS/plugins) 维护，位于本仓的 `plugins/` submodule。在子仓提交源码，在本仓更新联调指针和 lockfile。已知文件直接定位，不为局部改动通读全部文档。
 
 **首要目标：契约可读、行为可观测、修复可审查。** 权威输入必须明确；显式维护工具可以修复契约，运行时不得暗中改写错误输入以伪装成功，见[工程原则](engineering/DESIGN_PRINCIPLES.md#首要目标契约可读行为可观测修复可审查)。
 

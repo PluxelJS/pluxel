@@ -4,3 +4,6 @@
 [submodule "vendor/gqlens"]
 	path = vendor/gqlens
 	url = https://github.com/PluxelJS/GQLens.git
+[submodule "plugins"]
+	path = plugins
+	url = https://github.com/PluxelJS/plugins.git

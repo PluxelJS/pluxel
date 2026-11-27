@@ -60,6 +60,7 @@ export class BillingPlugin extends BasePlugin {
 
 - [快速开始](./docs/getting-started/index.md)：几分钟内创建并运行一个完整的示例应用。
 - [启停和配置内置插件](./docs/host/fixed-plugins.md)：运行浏览器扩展「净链」，给随应用发布的规则接入设置页。
+- [官方插件仓库](https://github.com/PluxelJS/plugins)维护插件源码与发行，并由框架的 `plugins/` submodule 接入联调。
 - [Pluxel Lab](https://github.com/PluxelJS/lab)：独立维护桌面启动器、报表编辑器等有业务场景的应用实验。
 - [为什么是 Pluxel](./docs/why-pluxel.md)：了解 Pluxel 的架构选型与 Cordis 的设计传承。
 - [插件开发指南](./docs/plugin-development/index.md)：依赖模型、事件系统、日志输出、配置与隔离测试。

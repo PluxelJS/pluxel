@@ -106,7 +106,7 @@ export const readNoteCommand = defineCommand({
 现有调用方展示了两种边界：
 
 - 客户查询通过 `ctx.wretch` 把 404 转为 `CustomerNotFound`，再由另一个 Plugin 的 HTTP route 返回普通 JSON 与 404 响应。其他 HTTP、网络及生命周期错误按原契约报告。 [出站 HTTP 示例](https://github.com/PluxelJS/pluxel/blob/main/projects/plugin-host/src/demo/PluginOutboundHttpDemo.ts)
-- [Auth credential preparation](https://github.com/PluxelJS/pluxel/blob/main/plugins/auth/src/credential-provisioning.ts) 在内部组合输入、账户与凭据校验，公开方法继续返回领域 DTO，Workbench 不接收 Result 实例。
+- [Auth credential preparation](https://github.com/PluxelJS/plugins/blob/main/auth/src/credential-provisioning.ts) 在内部组合输入、账户与凭据校验，公开方法继续返回领域 DTO，Workbench 不接收 Result 实例。
 
 ## 跨进程与 RPC 边界
 
