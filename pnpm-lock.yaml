@@ -931,6 +931,9 @@ catalogs:
     kerium:
       specifier: ^1.5.0
       version: 1.5.0
+    lru-cache:
+      specifier: 11.5.3
+      version: 11.5.3
     magic-string:
       specifier: ^0.30.21
       version: 0.30.21
@@ -2464,6 +2467,9 @@ importers:
 
   plugins/permissions:
     dependencies:
+      lru-cache:
+        specifier: catalog:prod
+        version: 11.5.3
       valibot:
         specifier: catalog:validation
         version: 1.5.0(typescript@7.0.2)
@@ -2510,6 +2516,9 @@ importers:
       drizzle-orm:
         specifier: catalog:backend
         version: 0.45.4(@cloudflare/workers-types@5.20261117.1)(@electric-sql/pglite@0.6.0)(@libsql/client@0.18.0)(@opentelemetry/api@1.10.0)(@types/pg@8.23.1)(bun-types@1.4.5)(kysely@0.28.19)(pg@8.23.1)
+      miniflare:
+        specifier: catalog:dev
+        version: 5.20261117.0-beta(@types/node@26.6.6)
       react:
         specifier: catalog:frontend
         version: 19.3.1

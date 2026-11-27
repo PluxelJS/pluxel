@@ -202,6 +202,7 @@ catalogs:
     '@formatjs/intl-locale': 5.4.2
     '@formatjs/intl-numberformat': 10.0.2
     '@formatjs/intl-pluralrules': 7.0.2
+    lru-cache: 11.5.3
     magic-string: ^0.30.21
     modern-tar: ^0.8.6
     tinybase: 10.1.0
